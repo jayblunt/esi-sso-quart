@@ -1,6 +1,5 @@
 import asyncio
 import base64
-import contextlib
 import inspect
 import urllib.parse
 import uuid
@@ -28,6 +27,7 @@ class EveSSO:
     ESI_ALLIANCE_ID: Final = "alliance_id"
     ESI_SECURITY_STATUS: Final = "security_status"
     ESI_ACCESS_TOKEN: Final = "access_token"
+    ESI_TOKEN_SCOPES: Final = "scopes"
     ESI_BIRTHDAY: Final = "birthday"
 
 
@@ -125,8 +125,6 @@ class EveSSO:
                     json = dict(await response.json())
         return json
 
-        
-
 
     async def get_jwks(self, url: str) -> List[Dict]:
         payload = await self.get_json(url)
@@ -186,17 +184,17 @@ class EveSSO:
             "code": quart.request.args['code'],
         }
 
-        character_response = dict()
+        token_response = dict()
         async with aiohttp.ClientSession(headers=post_session_headers) as client_session:
             async with client_session.post(post_character_url, data=post_body) as response:
                 if response.status in [200]:
-                    character_response = dict(await response.json())
+                    token_response = dict(await response.json())
 
         required_response_keys = ["access_token", "token_type", "expires_in", "refresh_token"]
-        if not all(map(lambda x: bool(character_response.get(x)), required_response_keys)):
+        if not all(map(lambda x: bool(token_response.get(x)), required_response_keys)):
             raise Exception(f"{inspect.currentframe().f_code.co_name}: invalid response to {post_character_url}")
 
-        jwt_unverified_header: Final = jose.jwt.get_unverified_header(character_response["access_token"])
+        jwt_unverified_header: Final = jose.jwt.get_unverified_header(token_response["access_token"])
         jwt_key = None
         for jwk_candidate in self.jwks:
             jwt_key_match = True
@@ -211,15 +209,16 @@ class EveSSO:
         if jwt_key:
             decoded_jwt = None
             try:
-                decoded_jwt = jose.jwt.decode(character_response["access_token"], key=jwt_key, issuer=self.JWT_ISSUERS, audience=self.JWT_AUDIENCE)
+                decoded_jwt = jose.jwt.decode(token_response["access_token"], key=jwt_key, issuer=self.JWT_ISSUERS, audience=self.JWT_AUDIENCE)
             except jose.exceptions.JWTError as ex:
                 print(f"{inspect.currentframe().f_code.co_name}: {ex}")
 
             if decoded_jwt:
-                # print(f"decoded_jwt: {decoded_jwt}")
+                print(f"decoded_jwt: {decoded_jwt}")
                 quart.session[self.ESI_CHARACTER_ID] = decoded_jwt.get('sub', '').split(':')[-1]
                 quart.session[self.ESI_CHARACTER_NAME] = decoded_jwt.get('name', '')
-                quart.session[self.ESI_ACCESS_TOKEN] = character_response["access_token"]
+                quart.session[self.ESI_ACCESS_TOKEN] = token_response["access_token"]
+                quart.session[self.ESI_TOKEN_SCOPES] = decoded_jwt.get('scp', [])
 
         if bool(quart.session.get(self.ESI_CHARACTER_ID, False)):
             character_id: Final = quart.session[self.ESI_CHARACTER_ID]
@@ -238,10 +237,11 @@ class EveSSO:
                     if response.status in [200]:
                         character_response = dict(await response.json())
 
-                post_character_roles_url = f"https://esi.evetech.net/latest/characters/{character_id}/roles"
-                async with client_session.get(post_character_roles_url, params=common_params) as response:
-                    if response.status in [200]:
-                        character_roles_response = dict(await response.json())
+                if "esi-characters.read_corporation_roles.v1" in quart.session.get(self.ESI_TOKEN_SCOPES, []):
+                    post_character_roles_url = f"https://esi.evetech.net/latest/characters/{character_id}/roles"
+                    async with client_session.get(post_character_roles_url, params=common_params) as response:
+                        if response.status in [200]:
+                            character_roles_response = dict(await response.json())
 
 
             if character_response is not None:
