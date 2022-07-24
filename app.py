@@ -1,13 +1,14 @@
 import asyncio
+import contextlib
 import os
 import syslog
-import contextlib
 import uuid
 from typing import Final, MutableSet, Optional
 
 import aiohttp
 import aiohttp.client_exceptions
 import quart
+import quart.sessions
 import quart_session
 
 from sso import EveSSO
@@ -21,20 +22,23 @@ local_basedir: Final = os.path.dirname(os.path.realpath(__file__))
 
 
 # Enumerate corporation structures
-async def esi_structure_enumerate(access_token: str, character_id: str, corporation_id: str, alliance_id: Optional[str] = None) -> None:
+async def esi_structure_enumerate(session: quart.sessions.SessionMixin) -> None:
 
     session_headers = {
-        "Authorization": f"Bearer {access_token}"
+        "Authorization": f"Bearer {session.get(EveSSO.ESI_ACCESS_TOKEN)}"
     }
 
     common_params = {
         "datasource": "tranquility"
     }
 
-    structure_set: Final[MutableSet[str]] = set()
+    corporation_id: Final = session.get(EveSSO.ESI_CORPORATEION_ID, '')
+
     required_scopes: Final = {"esi-corporations.read_structures.v1", "esi-industry.read_corporation_mining.v1"}
 
-    if all([quart.session.get(EveSSO.ESI_CHARACTER_STATION_MANAGER_ROLE, False)], [len(required_scopes.intersection(set(quart.session.get(EveSSO.ESI_TOKEN_SCOPES, [])))) == len(required_scopes)]):
+    structure_id_set: Final[MutableSet[str]] = set()
+
+    if all([session.get(EveSSO.ESI_CHARACTER_STATION_MANAGER_ROLE, False)], [len(required_scopes.intersection(set(session.get(EveSSO.ESI_TOKEN_SCOPES, [])))) == len(required_scopes)]):
 
         async with aiohttp.ClientSession(headers=session_headers) as client_session:
 
@@ -45,7 +49,7 @@ async def esi_structure_enumerate(access_token: str, character_id: str, corporat
                     if response.status in [200]:
                         data = dict(await response.json())
                         for structure_id in data.get('structure', []):
-                            structure_set.add(str(structure_id))
+                            structure_id_set.add(str(structure_id))
 
             url = f"https://esi.evetech.net/latest/corporation/{corporation_id}/mining/extractions/"
             with contextlib.suppress(aiohttp.client_exceptions.ClientResponseError):
@@ -58,20 +62,23 @@ async def esi_structure_enumerate(access_token: str, character_id: str, corporat
 
 
 # Search for structures in a list of systems
-async def esi_structure_search(access_token: str, character_id: str, corporation_id: str, alliance_id: Optional[str] = None) -> None:
+async def esi_structure_search(session: quart.sessions.SessionMixin) -> None:
 
     session_headers = {
-        "Authorization": f"Bearer {access_token}"
+        "Authorization": f"Bearer {session.get(EveSSO.ESI_ACCESS_TOKEN, '')}"
     }
+
     common_params = {
         "datasource": "tranquility"
     }
 
-    structure_set: Final[MutableSet[str]] = set()
+    character_id: Final = session.get(EveSSO.ESI_CHARACTER_ID, '')
+
     system_list: Final = ["RF-GGF", "BMNV-P", "31-MLU", "LSC$-P", "9GYL-O", "A9D-R0"]
 
-    # Fallback to a search of systems
-    if len(structure_set) == 0 and len(system_list) > 0 and "esi-search.search_structures.v1" in quart.session.get(EveSSO.ESI_TOKEN_SCOPES, []):
+    structure_id_set: Final[MutableSet[str]] = set()
+
+    if len(system_list) and "esi-search.search_structures.v1" in session.get(EveSSO.ESI_TOKEN_SCOPES, []):
         system_list.sort()
         async with aiohttp.ClientSession(headers=session_headers) as client_session:
 
@@ -89,13 +96,13 @@ async def esi_structure_search(access_token: str, character_id: str, corporation
                         if response.status in [200]:
                             data = dict(await response.json())
                             for structure_id in data.get('structure', []):
-                                structure_set.add(str(structure_id))
+                                structure_id_set.add(str(structure_id))
 
-    if len(structure_set) and "esi-universe.read_structures.v1" in quart.session.get(EveSSO.ESI_TOKEN_SCOPES, []):
+    if len(structure_id_set) and "esi-universe.read_structures.v1" in session.get(EveSSO.ESI_TOKEN_SCOPES, []):
         async with aiohttp.ClientSession(headers=session_headers) as client_session:
 
-            print(f"structure_list: {structure_set}")
-            for structure_id in structure_set:
+            print(f"structure_list: {structure_id_set}")
+            for structure_id in structure_id_set:
                 url = f"https://esi.evetech.net/latest/universe/structures/{structure_id}/"
                 with contextlib.suppress(aiohttp.client_exceptions.ClientResponseError):
                     async with client_session.get(url, params=common_params) as response:
@@ -105,23 +112,28 @@ async def esi_structure_search(access_token: str, character_id: str, corporation
                             print(f"{structure_id}: {quart.json.dumps(data, ensure_ascii=True, indent=4)}")
 
 
-    quart.session["STRUCTURE_SEARCH_TASK"] = False
+    session["STRUCTURE_SEARCH_TASK"] = False
 
 
 # Get corporation (and/or alliance) info
-async def esi_collect_corporation_info(access_token: str, character_id: str, corporation_id: str, alliance_id: Optional[str] = None) -> None:
+async def esi_collect_corporation_info(session: quart.sessions.SessionMixin) -> None:
+
     session_headers = {
-        "Authorization": f"Bearer {access_token}"
+        "Authorization": f"Bearer {session.get(EveSSO.ESI_ACCESS_TOKEN, '')}"
     }
+
     common_params = {
         "datasource": "tranquility"
     }
 
-    corporation_set: Final[MutableSet[str]] = set()
+    corporation_id_set: Final[MutableSet[str]] = set()
+
     async with aiohttp.ClientSession(headers=session_headers) as client_session:
 
+        alliance_id: Final = session.get(EveSSO.ESI_ALLIANCE_ID, None)
         if alliance_id is None:
-            corporation_set.add(str(corporation_id))
+            corporation_id = session.get(EveSSO.ESI_CORPORATEION_ID, '')
+            corporation_id_set.add(str(corporation_id))
         else:
 
             url = f"https://esi.evetech.net/latest/alliances/{alliance_id}/corporations/"
@@ -130,13 +142,13 @@ async def esi_collect_corporation_info(access_token: str, character_id: str, cor
                     print(f"{response.url} -> {response.status}")
                     if response.status in [200]:
                         for corporation_id in list(await response.json()):
-                            corporation_set.add(str(corporation_id))
+                            corporation_id_set.add(str(corporation_id))
 
-    if len(corporation_set):
-        print(f"corporation_list: {corporation_set}")
+    if len(corporation_id_set):
+        print(f"corporation_list: {corporation_id_set}")
         async with aiohttp.ClientSession(headers=session_headers) as client_session:
 
-            for corporation_id in corporation_set:
+            for corporation_id in corporation_id_set:
 
                 url = f"https://esi.evetech.net/latest/corporations/{corporation_id}"
                 with contextlib.suppress(aiohttp.client_exceptions.ClientResponseError):
@@ -146,7 +158,7 @@ async def esi_collect_corporation_info(access_token: str, character_id: str, cor
                             results = dict(await response.json())
                             print(f"{corporation_id}: {quart.json.dumps(results, ensure_ascii=True, indent=4)}")
 
-                if "esi-corporations.read_structures.v1" in quart.session.get(EveSSO.ESI_ACCESS_TOKEN, []):
+                if "esi-corporations.read_structures.v1" in session.get(EveSSO.ESI_ACCESS_TOKEN, []):
                     url = f"https://esi.evetech.net/latest/corporations/{corporation_id}/structures"
                     with contextlib.suppress(aiohttp.client_exceptions.ClientResponseError):
                         async with client_session.get(url, params=common_params) as response:
@@ -155,7 +167,7 @@ async def esi_collect_corporation_info(access_token: str, character_id: str, cor
                                 results = await response.json()
                                 print(f"{corporation_id}: {quart.json.dumps(results, ensure_ascii=True, indent=4)}")
 
-    quart.session["CORPORATION_INFO_TASK"] = False
+    session["CORPORATION_INFO_TASK"] = False
 
 
 app: Final = quart.Quart(__name__)
@@ -185,21 +197,13 @@ async def root() -> quart.Response:
     print(dict(quart.session))
     if quart.session.get(EveSSO.ESI_CHARACTER_NAME):
 
-        # if not quart.session.get("CORPORATION_INFO_TASK", False):
-        #     quart.session["CORPORATION_INFO_TASK"] = True
-        #     asyncio.create_task(
-        #         esi_collect_corporation_info(quart.session.get(EveSSO.ESI_ACCESS_TOKEN),
-        #             quart.session.get(EveSSO.ESI_CHARACTER_ID),
-        #             quart.session.get(EveSSO.ESI_CORPORATEION_ID),
-        #             quart.session.get(EveSSO.ESI_ALLIANCE_ID)))
+        if not quart.session.get("CORPORATION_INFO_TASK", False):
+            quart.session["CORPORATION_INFO_TASK"] = True
+            asyncio.create_task(esi_collect_corporation_info(quart.session))
 
         if not quart.session.get("STRUCTURE_SEARCH_TASK", False):
             quart.session["STRUCTURE_SEARCH_TASK"] = True
-            asyncio.create_task(
-                esi_structure_search(quart.session.get(EveSSO.ESI_ACCESS_TOKEN),
-                    quart.session.get(EveSSO.ESI_CHARACTER_ID),
-                    quart.session.get(EveSSO.ESI_CORPORATEION_ID),
-                    quart.session.get(EveSSO.ESI_ALLIANCE_ID)))
+            asyncio.create_task(esi_structure_search(quart.session))
 
         return await quart.render_template("home.html",
             character_name=quart.session.get(EveSSO.ESI_CHARACTER_NAME),
