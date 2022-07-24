@@ -1,0 +1,156 @@
+:root {
+    --background-color: gray;
+    --foreground-color: black;
+    --input-background-color: lightgray;
+    --a-foreground-color: black;
+}
+
+@media (prefers-color-scheme: dark) {
+     :root {
+        --background-color: #121212;
+        --foreground-color: white;
+        --input-background-color: lightgray;
+        --a-foreground-color: white;
+    }
+}
+
+html {
+    text-rendering: optimizeLegibility;
+    font-family: sans-serif;
+}
+
+body {
+    background-color: var(--background-color);
+    color: var(--foreground-color);
+}
+
+h1 {
+    margin: 0;
+    font-size: 14vw;
+    position: fixed;
+    top: 0;
+    opacity: 0.25;
+    z-index: -1;
+}
+
+h3 {
+    font-size: 2vw;
+    font-weight: bold;
+}
+
+input {
+    background-color: var(--input-background-color);
+    width: 4vw;
+}
+
+table {
+    width: 100%;
+    font-size: 1vw;
+    text-align: right;
+}
+
+thead {
+    font-weight: bold;
+    width: min-content;
+}
+
+tbody {
+    font-weight: normal;
+    width: min-content;
+}
+
+tfoot {
+    font-weight: bold;
+    width: min-content;
+}
+
+thead .align_left,
+tbody .align_left,
+tfoot .align_left {
+    text-align: left;
+}
+
+.character {
+    font-size: 1vw;
+    position: fixed;
+    margin: 1vw;
+    top: 0.5vw;
+    opacity: 0.75;
+    z-index: -1;
+}
+
+.character img {
+    border: 1px solid var(--foreground-color);
+    border-radius: 99%;
+    max-width: 75%;
+    height: auto;
+}
+
+.version {
+    font-size: 0.75vw;
+    position: fixed;
+    margin: 0.75vw;
+    bottom: 0;
+    opacity: 0.5;
+    z-index: -1;
+}
+
+.copyright {
+    font-size: 0.75vw;
+    margin: 1vw;
+    float: right;
+    text-align: right;
+    bottom: 0;
+    opacity: 0.5;
+    z-index: -1;
+}
+
+.heading {
+    margin: 10vw auto;
+}
+
+.box {
+    padding-top: 1vw;
+    padding-bottom: 1vw;
+    padding-left: 2vw;
+    padding-right: 2vw;
+    width: 75vw auto;
+    margin: 2vw auto;
+    background-color: var(--background-color);
+    /* border: 1px solid var(--foreground-color); */
+    opacity: 0.7;
+    transition: 0.2s all;
+}
+
+.box:hover,
+.box:focus {
+    opacity: 1;
+}
+
+.box a {
+    color: var(--a-foreground-color);
+}
+
+.box ul,
+.box li {
+    font-size: 1.25vw;
+    text-align: left;
+}
+
+.messagebox {
+    font-size: 1vw;
+    border: 1px solid var(--foreground-color);
+}
+
+.message {
+    font-size: 1vw;
+    text-align: left;
+    margin: 0.01vw;
+}
+
+img {
+    max-width: 100%;
+    max-height: 100%;
+    height: auto;
+    width: auto;
+}

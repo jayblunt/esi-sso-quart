@@ -1,4 +1,5 @@
 # Byte-compiled / optimized / DLL files
+python3.10-env/
 __pycache__/
 *.py[cod]
 *$py.class
