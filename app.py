@@ -32,7 +32,24 @@ async def esi_structure_search(access_token: str, character_id: str, corporation
     structure_set: Final[MutableSet[str]] = set()
     system_list: Final = ["RF-GGF", "BMNV-P", "31-MLU", "LSC$-P", "9GYL-O", "A9D-R0"]
 
-    if len(system_list) and "esi-search.search_structures.v1" in quart.session.get(EveSSO.ESI_TOKEN_SCOPES, []):
+    # Start by trying to enumerate the structures in the corporation
+    if "esi-corporations.read_structures.v1" in quart.session.get(EveSSO.ESI_TOKEN_SCOPES, []):
+
+        async with aiohttp.ClientSession(headers=session_headers) as client_session:
+
+            url = f"https://esi.evetech.net/latest/corporations/{corporation_id}/structures/"
+            with contextlib.suppress(aiohttp.client_exceptions.ClientResponseError):
+                async with client_session.get(url, params=common_params) as response:
+                    print(f"{response.url} -> {response.status}")
+                    if response.status in [200]:
+                        data = dict(await response.json())
+                        print(data)
+                        for structure_id in data.get('structure', []):
+                            structure_set.add(str(structure_id))
+
+
+    # Fallback to a search of systems
+    if len(structure_set) == 0 and len(system_list) and "esi-search.search_structures.v1" in quart.session.get(EveSSO.ESI_TOKEN_SCOPES, []):
         system_list.sort()
         async with aiohttp.ClientSession(headers=session_headers) as client_session:
 
