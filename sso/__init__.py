@@ -214,7 +214,7 @@ class EveSSO:
                 print(f"{inspect.currentframe().f_code.co_name}: {ex}")
 
             if decoded_jwt:
-                print(f"decoded_jwt: {decoded_jwt}")
+                # print(f"decoded_jwt: {decoded_jwt}")
                 quart.session[self.ESI_CHARACTER_ID] = decoded_jwt.get('sub', '').split(':')[-1]
                 quart.session[self.ESI_CHARACTER_NAME] = decoded_jwt.get('name', '')
                 quart.session[self.ESI_ACCESS_TOKEN] = token_response["access_token"]
