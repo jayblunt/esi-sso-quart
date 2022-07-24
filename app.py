@@ -33,7 +33,7 @@ async def esi_structure_search(access_token: str, character_id: str, corporation
     system_list: Final = ["RF-GGF", "BMNV-P", "31-MLU", "LSC$-P", "9GYL-O", "A9D-R0"]
 
     # Start by trying to enumerate the structures in the corporation
-    if "esi-corporations.read_structures.v1" in quart.session.get(EveSSO.ESI_TOKEN_SCOPES, []):
+    if quart.session.get(EveSSO.ESI_CHARACTER_STATION_MANAGER_ROLE, False) and "esi-corporations.read_structures.v1" in quart.session.get(EveSSO.ESI_TOKEN_SCOPES, []):
 
         async with aiohttp.ClientSession(headers=session_headers) as client_session:
 
