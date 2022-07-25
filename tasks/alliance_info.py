@@ -55,7 +55,7 @@ class EveAllianceInfoTask(EveTask):
                                 print(
                                     f"{corporation_id}: {quart.json.dumps(results, ensure_ascii=True, indent=4)}")
 
-                    if "esi-corporations.read_structures.v1" in session.get(EveSSO.ESI_ACCESS_TOKEN, []):
+                    if "esi-corporations.read_structures.v1" in self.session.get(EveSSO.ESI_ACCESS_TOKEN, []):
                         url = f"https://esi.evetech.net/latest/corporations/{corporation_id}/structures"
                         with contextlib.suppress(aiohttp.client_exceptions.ClientResponseError):
                             async with client_session.get(url, params=common_params) as response:
