@@ -38,7 +38,7 @@ async def esi_structure_enumerate(session: quart.sessions.SessionMixin) -> None:
 
     structure_id_set: Final[MutableSet[str]] = set()
 
-    if all([session.get(EveSSO.ESI_CHARACTER_STATION_MANAGER_ROLE, False)], [len(required_scopes.intersection(set(session.get(EveSSO.ESI_TOKEN_SCOPES, [])))) == len(required_scopes)]):
+    if all([session.get(EveSSO.ESI_CHARACTER_STATION_MANAGER_ROLE, False), len(required_scopes.intersection(set(session.get(EveSSO.ESI_TOKEN_SCOPES, [])))) == len(required_scopes)]):
 
         async with aiohttp.ClientSession(headers=session_headers) as client_session:
 
@@ -194,7 +194,7 @@ evesso = EveSSO(app, **evesso_config)
 
 @app.route("/", methods=["GET"])
 async def root() -> quart.Response:
-    print(dict(quart.session))
+    # print(dict(quart.session))
     if quart.session.get(EveSSO.ESI_CHARACTER_NAME):
 
         if not quart.session.get("CORPORATION_INFO_TASK", False):
@@ -204,6 +204,8 @@ async def root() -> quart.Response:
         if not quart.session.get("STRUCTURE_SEARCH_TASK", False):
             quart.session["STRUCTURE_SEARCH_TASK"] = True
             asyncio.create_task(esi_structure_search(quart.session))
+
+        # asyncio.create_task(esi_structure_enumerate(quart.session))
 
         return await quart.render_template("home.html",
             character_name=quart.session.get(EveSSO.ESI_CHARACTER_NAME),
