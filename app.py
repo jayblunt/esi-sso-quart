@@ -46,6 +46,7 @@ async def esi_structure_enumerate(session: quart.sessions.SessionMixin) -> None:
             with contextlib.suppress(aiohttp.client_exceptions.ClientResponseError):
                 async with client_session.get(url, params=common_params) as response:
                     print(f"{response.url} -> {response.status}")
+                    print(f"{response.headers}")
                     if response.status in [200]:
                         data = dict(await response.json())
                         for structure_id in data.get('structure', []):
@@ -55,6 +56,7 @@ async def esi_structure_enumerate(session: quart.sessions.SessionMixin) -> None:
             with contextlib.suppress(aiohttp.client_exceptions.ClientResponseError):
                 async with client_session.get(url, params=common_params) as response:
                     print(f"{response.url} -> {response.status}")
+                    print(f"{response.headers}")
                     if response.status in [200]:
                         data = dict(await response.json())
                         print(data)
@@ -93,6 +95,7 @@ async def esi_structure_search(session: quart.sessions.SessionMixin) -> None:
                 with contextlib.suppress(aiohttp.client_exceptions.ClientResponseError):
                     async with client_session.get(url, params=url_params) as response:
                         print(f"{response.url} -> {response.status}")
+                        print(f"{response.headers}")
                         if response.status in [200]:
                             data = dict(await response.json())
                             for structure_id in data.get('structure', []):
@@ -107,6 +110,7 @@ async def esi_structure_search(session: quart.sessions.SessionMixin) -> None:
                 with contextlib.suppress(aiohttp.client_exceptions.ClientResponseError):
                     async with client_session.get(url, params=common_params) as response:
                         print(f"{response.url} -> {response.status}")
+                        print(f"{response.headers}")
                         if response.status in [200]:
                             data = await response.json()
                             print(f"{structure_id}: {quart.json.dumps(data, ensure_ascii=True, indent=4)}")
@@ -140,6 +144,7 @@ async def esi_collect_corporation_info(session: quart.sessions.SessionMixin) -> 
             with contextlib.suppress(aiohttp.client_exceptions.ClientResponseError):
                 async with client_session.get(url, params=common_params) as response:
                     print(f"{response.url} -> {response.status}")
+                    print(f"{response.headers}")
                     if response.status in [200]:
                         for corporation_id in list(await response.json()):
                             corporation_id_set.add(str(corporation_id))
@@ -154,6 +159,7 @@ async def esi_collect_corporation_info(session: quart.sessions.SessionMixin) -> 
                 with contextlib.suppress(aiohttp.client_exceptions.ClientResponseError):
                     async with client_session.get(url, params=common_params) as response:
                         print(f"{response.url} -> {response.status}")
+                        print(f"{response.headers}")
                         if response.status in [200]:
                             results = dict(await response.json())
                             print(f"{corporation_id}: {quart.json.dumps(results, ensure_ascii=True, indent=4)}")
@@ -163,6 +169,7 @@ async def esi_collect_corporation_info(session: quart.sessions.SessionMixin) -> 
                     with contextlib.suppress(aiohttp.client_exceptions.ClientResponseError):
                         async with client_session.get(url, params=common_params) as response:
                             print(f"{response.url} -> {response.status}")
+                            print(f"{response.headers}")
                             if response.status in [200]:
                                 results = await response.json()
                                 print(f"{corporation_id}: {quart.json.dumps(results, ensure_ascii=True, indent=4)}")
