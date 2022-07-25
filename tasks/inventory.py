@@ -22,7 +22,6 @@ class EveInventoryTask(EveTask):
             character_id: Final = self.session.get(EveSSO.ESI_CHARACTER_ID)
             inventory_list: Final = list()
 
-
             maxpageno: int = 1
 
             url = f"https://esi.evetech.net/latest/characters/{character_id}/assets/"
@@ -35,16 +34,25 @@ class EveInventoryTask(EveTask):
                         inventory_list.extend(await response.json())
 
             async with aiohttp.ClientSession(headers=session_headers) as client_session:
-                for pageno in range(2, 1 + maxpageno):
+                pages = list(range(2, 1 + int(maxpageno)))
+                errorcount = 0
+                while len(pages):
+                    if errorcount > 11:
+                        break
+
+                    pageno = pages[0]
 
                     request_params = {**common_params, **{
-                        "page": int(pageno)
+                        "page": pageno
                     }}
 
                     async with client_session.get(url, params=request_params) as response:
                         print(f"{response.url} -> {response.status}")
                         if response.status in [200]:
                             inventory_list.extend(await response.json())
+                            pages.remove(pageno)
+                        else:
+                            errorcount += 1
 
         print(len(inventory_list))
         await super().run()
