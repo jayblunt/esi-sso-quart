@@ -12,6 +12,7 @@ import quart.sessions
 import quart_session
 
 from sso import EveSSO
+from tasks import EveInventoryTask
 
 syslog.openlog(
     os.path.basename(__file__), logoption=syslog.LOG_PID, facility=syslog.LOG_AUTH
@@ -204,15 +205,17 @@ async def root() -> quart.Response:
     # print(dict(quart.session))
     if quart.session.get(EveSSO.ESI_CHARACTER_NAME):
 
-        if not quart.session.get("CORPORATION_INFO_TASK", False):
-            quart.session["CORPORATION_INFO_TASK"] = True
-            asyncio.create_task(esi_collect_corporation_info(quart.session))
+        # if not quart.session.get("CORPORATION_INFO_TASK", False):
+        #     quart.session["CORPORATION_INFO_TASK"] = True
+        #     asyncio.create_task(esi_collect_corporation_info(quart.session))
 
-        if not quart.session.get("STRUCTURE_SEARCH_TASK", False):
-            quart.session["STRUCTURE_SEARCH_TASK"] = True
-            asyncio.create_task(esi_structure_search(quart.session))
+        # if not quart.session.get("STRUCTURE_SEARCH_TASK", False):
+        #     quart.session["STRUCTURE_SEARCH_TASK"] = True
+        #     asyncio.create_task(esi_structure_search(quart.session))
 
         # asyncio.create_task(esi_structure_enumerate(quart.session))
+
+        EveInventoryTask(quart.session)
 
         return await quart.render_template("home.html",
             character_name=quart.session.get(EveSSO.ESI_CHARACTER_NAME),
