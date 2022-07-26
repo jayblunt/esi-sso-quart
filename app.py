@@ -50,10 +50,10 @@ async def root() -> quart.Response:
     print(dict(quart.session))
     if quart.session.get(EveSSO.ESI_CHARACTER_NAME):
 
-        EveInventoryTask(quart.session)
-        EveEnumerateStructureTask(quart.session)
-        EveAllianceInfoTask(quart.session)
-        EveStructureSearchTask(quart.session)
+        # EveInventoryTask(quart.session)
+        # EveEnumerateStructureTask(quart.session)
+        # EveAllianceInfoTask(quart.session)
+        # EveStructureSearchTask(quart.session)
 
         return await quart.render_template("home.html",
                                            character_name=quart.session.get(
