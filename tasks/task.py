@@ -1,3 +1,4 @@
+import abc
 import asyncio
 from typing import Final
 
@@ -14,7 +15,12 @@ class EveTask:
             self.task: asyncio.Task = None
         else:
             self.session[self.name] = True
-            self.task: asyncio.Task = asyncio.create_task(self.run())
+            self.task: asyncio.Task = asyncio.create_task(self.manage())
 
-    async def run(self):
+    async def manage(self):
+        await self.run()
         del self.session[self.name]
+
+    @abc.abstractmethod
+    async def run():
+        pass

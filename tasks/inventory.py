@@ -1,3 +1,4 @@
+import asyncio
 from typing import Final
 
 import aiohttp
@@ -53,6 +54,6 @@ class EveInventoryTask(EveTask):
                             pages.remove(pageno)
                         else:
                             errorcount += 1
+                            asyncio.sleep(30)
 
         print(len(inventory_list))
-        await super().run()

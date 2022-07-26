@@ -50,5 +50,3 @@ class EveEnumerateStructureTask(EveTask):
                         if response.status in [200]:
                             data = dict(await response.json())
                             print(data)
-
-        await super().run()

@@ -64,4 +64,3 @@ class EveStructureSearchTask(EveTask):
                                 print(
                                     f"{structure_id}: {quart.json.dumps(data, ensure_ascii=True, indent=4)}")
 
-        await super().run()
