@@ -135,7 +135,7 @@ class EveSSO:
         while True:
             await asyncio.sleep(300)
             try:
-                new_jwks = await self.get_json(self.jwks_uri)
+                new_jwks = await self.get_jwks(self.jwks_uri)
                 if new_jwks is not None:
                     self.jwks = new_jwks
             except Exception as ex:
@@ -201,11 +201,15 @@ class EveSSO:
         jwt_unverified_header: Final = jose.jwt.get_unverified_header(token_response["access_token"])
         jwt_key = None
         for jwk_candidate in self.jwks:
+            if not type(jwk_candidate) == dict:
+                continue
+
             jwt_key_match = True
             for header_key in set(jwt_unverified_header.keys()).intersection({"kid", "alg"}):
                 if jwt_unverified_header.get(header_key) != jwk_candidate.get(header_key):
                     jwt_key_match = False
                     break
+
             if jwt_key_match:
                 jwt_key = jwk_candidate
                 break
