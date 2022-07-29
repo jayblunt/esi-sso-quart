@@ -1,31 +1,9 @@
-<!DOCTYPE html>
-<html lang="en">
-
-<head>
-    <meta charset="utf-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
-    <meta name="viewport" content="width=device-width">
-
-    <title>ESI</title>
-
-    <link rel="stylesheet" href="static/style.css">
-    <!--[if lt IE 9]>
-      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
-    <![endif]-->
-</head>
-
-<body>
-    <h1>ESI</h1>
-    <div class="heading" id="heading"></div>
-    <div class="character" id="character" width="100%">
-        {% if character_id %}
-        <p>
-            <a href="/sso/logout"><img width=128 height=128 alt="{{character_name}}" src="https://images.evetech.net/characters/{{character_id}}/portrait?size=128"></a>
-        </p>
-        {% endif %}
-    </div>
-    <!-- <div class="version" id="version_string"></div>
-    <div class="copyright" id="copyright_string"></div> -->
-</body>
-
-</html>
+{% extends "base.html" %} {% block content %}
+<div class="character" id="character" width="100%">
+    {% if character_id %}
+    <p>
+        <a href="/sso/logout"><img width=128 height=128 alt="{{character_name}}" src="https://images.evetech.net/characters/{{character_id}}/portrait?size=128"></a>
+    </p>
+    {% endif %}
+</div>
+{% endblock %}

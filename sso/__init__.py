@@ -70,9 +70,9 @@ class EveSSO:
             self.jwks = await self.get_jwks(self.jwks_uri)
             self.jwks_task = asyncio.create_task(self.get_jwks_task())
 
-            app.add_url_rule(self.callback_route, self.callback_endpoint, view_func=self.esi_sso_callback)
-            app.add_url_rule(self.logout_route, self.logout_endpoint, view_func=self.esi_sso_logout)
-            app.add_url_rule(self.login_route, self.login_endpoint, view_func=self.esi_sso_login)
+            app.add_url_rule(self.callback_route, self.callback_endpoint, view_func=self.esi_sso_callback, methods=["GET"])
+            app.add_url_rule(self.logout_route, self.logout_endpoint, view_func=self.esi_sso_logout, methods=["GET"])
+            app.add_url_rule(self.login_route, self.login_endpoint, view_func=self.esi_sso_login, methods=["GET"])
 
 
         @app.after_serving
@@ -135,7 +135,7 @@ class EveSSO:
         while True:
             await asyncio.sleep(300)
             try:
-                new_jwks = await self.get_json(self.jwks_uri)
+                new_jwks = await self.get_jwks(self.jwks_uri)
                 if new_jwks is not None:
                     self.jwks = new_jwks
             except Exception as ex:
@@ -168,10 +168,12 @@ class EveSSO:
 
         required_callback_keys = ["code", "state"]
         if not all(map(lambda x: bool(quart.request.args.get(x)), required_callback_keys)):
-            raise Exception(f"{inspect.currentframe().f_code.co_name}: invalid call to {self.callback_route}")
+            # raise Exception(f"{inspect.currentframe().f_code.co_name}: invalid call to {self.callback_route}")
+            quart.abort(500, f"invalid call to {self.callback_route}")
 
         if quart.request.args['state'] != quart.session[self.ESI_STATE]:
-            raise Exception(f"{inspect.currentframe().f_code.co_name}: invalid session state in {self.callback_route}")
+            # raise Exception(f"{inspect.currentframe().f_code.co_name}: invalid session state in {self.callback_route}")
+            quart.abort(500, f"invalid session state in {self.callback_route}")
 
         post_character_url = f"{self.configuration['token_endpoint']}"
         basic_auth = f"{self.client_id}:{self.client_secret}"
@@ -192,16 +194,22 @@ class EveSSO:
 
         required_response_keys = ["access_token", "token_type", "expires_in", "refresh_token"]
         if not all(map(lambda x: bool(token_response.get(x)), required_response_keys)):
-            raise Exception(f"{inspect.currentframe().f_code.co_name}: invalid response to {post_character_url}")
+            # raise Exception(f"{inspect.currentframe().f_code.co_name}: invalid response to {post_character_url}")
+            quart.abort(500, f"invalid response to {post_character_url}")
+
 
         jwt_unverified_header: Final = jose.jwt.get_unverified_header(token_response["access_token"])
         jwt_key = None
         for jwk_candidate in self.jwks:
+            if not type(jwk_candidate) == dict:
+                continue
+
             jwt_key_match = True
             for header_key in set(jwt_unverified_header.keys()).intersection({"kid", "alg"}):
                 if jwt_unverified_header.get(header_key) != jwk_candidate.get(header_key):
                     jwt_key_match = False
                     break
+
             if jwt_key_match:
                 jwt_key = jwk_candidate
                 break
@@ -212,6 +220,7 @@ class EveSSO:
                 decoded_jwt = jose.jwt.decode(token_response["access_token"], key=jwt_key, issuer=self.JWT_ISSUERS, audience=self.JWT_AUDIENCE)
             except jose.exceptions.JWTError as ex:
                 print(f"{inspect.currentframe().f_code.co_name}: {ex}")
+                quart.abort(500, f"invalid jwt in {post_character_url}")
 
             if decoded_jwt:
                 # print(f"decoded_jwt: {decoded_jwt}")
@@ -253,6 +262,5 @@ class EveSSO:
             if character_roles_response is not None:
                 # print(quart.json.dumps(character_roles_response, ensure_ascii=True, indent=4))
                 quart.session[self.ESI_CHARACTER_STATION_MANAGER_ROLE] = 'Station_Manager' in character_roles_response.get('roles', [])
-
 
         return quart.redirect("/")
