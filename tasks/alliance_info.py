@@ -64,4 +64,3 @@ class EveAllianceInfoTask(EveTask):
                                     results = await response.json()
                                     print(
                                         f"{corporation_id}: {quart.json.dumps(results, ensure_ascii=True, indent=4)}")
-

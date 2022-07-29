@@ -168,11 +168,9 @@ class EveSSO:
 
         required_callback_keys = ["code", "state"]
         if not all(map(lambda x: bool(quart.request.args.get(x)), required_callback_keys)):
-            # raise Exception(f"{inspect.currentframe().f_code.co_name}: invalid call to {self.callback_route}")
             quart.abort(500, f"invalid call to {self.callback_route}")
 
         if quart.request.args['state'] != quart.session[self.ESI_STATE]:
-            # raise Exception(f"{inspect.currentframe().f_code.co_name}: invalid session state in {self.callback_route}")
             quart.abort(500, f"invalid session state in {self.callback_route}")
 
         post_character_url = f"{self.configuration['token_endpoint']}"
@@ -194,7 +192,6 @@ class EveSSO:
 
         required_response_keys = ["access_token", "token_type", "expires_in", "refresh_token"]
         if not all(map(lambda x: bool(token_response.get(x)), required_response_keys)):
-            # raise Exception(f"{inspect.currentframe().f_code.co_name}: invalid response to {post_character_url}")
             quart.abort(500, f"invalid response to {post_character_url}")
 
 
@@ -223,7 +220,6 @@ class EveSSO:
                 quart.abort(500, f"invalid jwt in {post_character_url}")
 
             if decoded_jwt:
-                # print(f"decoded_jwt: {decoded_jwt}")
                 quart.session[self.ESI_CHARACTER_ID] = decoded_jwt.get('sub', '').split(':')[-1]
                 quart.session[self.ESI_CHARACTER_NAME] = decoded_jwt.get('name', '')
                 quart.session[self.ESI_ACCESS_TOKEN] = token_response["access_token"]
@@ -260,7 +256,6 @@ class EveSSO:
                         quart.session[k] = v
 
             if character_roles_response is not None:
-                # print(quart.json.dumps(character_roles_response, ensure_ascii=True, indent=4))
                 quart.session[self.ESI_CHARACTER_STATION_MANAGER_ROLE] = 'Station_Manager' in character_roles_response.get('roles', [])
 
         return quart.redirect("/")

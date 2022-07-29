@@ -36,7 +36,6 @@ class EveEnumerateStructureTask(EveTask):
                 with contextlib.suppress(aiohttp.client_exceptions.ClientResponseError):
                     async with client_session.get(url, params=common_params) as response:
                         print(f"{response.url} -> {response.status}")
-                        # print(f"{response.headers}")
                         if response.status in [200]:
                             data = dict(await response.json())
                             for structure_id in data.get('structure', []):
@@ -46,7 +45,6 @@ class EveEnumerateStructureTask(EveTask):
                 with contextlib.suppress(aiohttp.client_exceptions.ClientResponseError):
                     async with client_session.get(url, params=common_params) as response:
                         print(f"{response.url} -> {response.status}")
-                        # print(f"{response.headers}")
                         if response.status in [200]:
                             data = dict(await response.json())
                             print(data)
