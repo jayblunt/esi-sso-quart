@@ -37,16 +37,6 @@ class EveEnumerateStructureTask(EveTask):
             structures: Final = await self.get_pages(url)
             print(json.dumps(structures, ensure_ascii=True, indent=4))
             
-            # async with aiohttp.ClientSession(headers=session_headers) as client_session:
-
-            #     url = f"https://esi.evetech.net/latest/corporation/{corporation_id}/mining/extractions/"
-            #     async with client_session.get(url, params=common_params) as response:
-            #         print(f"{response.url} -> {response.status}")
-            #         print(response.headers)
-            #         if response.status in [200]:
-            #             data = await response.json()
-            #             print(data)
-
             url = f"https://esi.evetech.net/latest/corporation/{corporation_id}/mining/extractions/"
             extractions: Final = await self.get_pages(url)
             print(json.dumps(extractions, ensure_ascii=True, indent=4))
