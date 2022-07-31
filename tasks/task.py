@@ -1,9 +1,12 @@
 import abc
 import asyncio
-from typing import Final
+from typing import Any, Final, List
 
+import aiohttp
+import aiohttp.client_exceptions
 import quart
 import quart.sessions
+from sso import EveSSO
 
 
 class EveTask:
@@ -24,3 +27,46 @@ class EveTask:
     @abc.abstractmethod
     async def run():
         pass
+
+    async def get_pages(self, url: str) -> List[Any]:
+
+        session_headers = {
+            "Authorization": f"Bearer {self.session.get(EveSSO.ESI_ACCESS_TOKEN, '')}"
+        }
+        common_params = {
+            "datasource": "tranquility"
+        }
+
+        maxpageno: int = 1
+        results: Final = list()
+
+        async with aiohttp.ClientSession(headers=session_headers) as client_session:
+            async with client_session.get(url, params=common_params) as response:
+                print(f"{response.url} -> {response.status}")
+                if response.status in [200]:
+                    maxpageno = int(response.headers.get('X-Pages', 1))
+                    results.extend(await response.json())
+
+        async with aiohttp.ClientSession(headers=session_headers) as client_session:
+            pages = list(range(2, 1 + int(maxpageno)))
+            errorcount = 0
+            while len(pages):
+                if errorcount > 11:
+                    break
+
+                pageno = pages[0]
+
+                request_params = {**common_params, **{
+                    "page": pageno
+                }}
+
+                async with client_session.get(url, params=request_params) as response:
+                    print(f"{response.url} -> {response.status}")
+                    if response.status in [200]:
+                        results.extend(await response.json())
+                        pages.remove(pageno)
+                    else:
+                        errorcount += 1
+                        asyncio.sleep(30)
+
+        return results

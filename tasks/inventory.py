@@ -1,5 +1,6 @@
 import asyncio
-from typing import Final
+from binhex import FInfo
+from typing import Any, Final, List
 
 import aiohttp
 import aiohttp.client_exceptions
@@ -10,50 +11,16 @@ from .task import EveTask
 
 class EveInventoryTask(EveTask):
 
+
+
     async def run(self):
 
         if "esi-assets.read_assets.v1" in self.session.get(EveSSO.ESI_TOKEN_SCOPES, []):
-            session_headers = {
-                "Authorization": f"Bearer {self.session.get(EveSSO.ESI_ACCESS_TOKEN, '')}"
-            }
-            common_params = {
-                "datasource": "tranquility"
-            }
 
             character_id: Final = self.session.get(EveSSO.ESI_CHARACTER_ID)
-            inventory_list: Final = list()
-
-            maxpageno: int = 1
 
             url = f"https://esi.evetech.net/latest/characters/{character_id}/assets/"
 
-            async with aiohttp.ClientSession(headers=session_headers) as client_session:
-                async with client_session.get(url, params=common_params) as response:
-                    print(f"{response.url} -> {response.status}")
-                    if response.status in [200]:
-                        maxpageno = int(response.headers.get('X-Pages', 1))
-                        inventory_list.extend(await response.json())
+            inventory_list: Final = await self.get_pages(url)
 
-            async with aiohttp.ClientSession(headers=session_headers) as client_session:
-                pages = list(range(2, 1 + int(maxpageno)))
-                errorcount = 0
-                while len(pages):
-                    if errorcount > 11:
-                        break
-
-                    pageno = pages[0]
-
-                    request_params = {**common_params, **{
-                        "page": pageno
-                    }}
-
-                    async with client_session.get(url, params=request_params) as response:
-                        print(f"{response.url} -> {response.status}")
-                        if response.status in [200]:
-                            inventory_list.extend(await response.json())
-                            pages.remove(pageno)
-                        else:
-                            errorcount += 1
-                            asyncio.sleep(30)
-
-        print(len(inventory_list))
+            print(len(inventory_list))
