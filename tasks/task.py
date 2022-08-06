@@ -1,18 +1,26 @@
 import abc
 import asyncio
-from typing import Any, Final, List
+from typing import Any, Final, List, Union
 
 import aiohttp
 import aiohttp.client_exceptions
-import quart
-import quart.sessions
 from db import EveDatabase
 from sso import EveSSO
 
 
-class EveTask:
+class EveSession(metaclass=abc.ABCMeta):
 
-    def __init__(self, session: quart.sessions.SessionMixin, db: EveDatabase):
+    def __init__(self) -> None:
+        pass
+
+    @abc.abstractmethod
+    def get(self, key, default=None) -> Union[str, int, bool, List[str], List[int]]:
+        return default
+
+
+class EveTask(metaclass=abc.ABCMeta):
+
+    def __init__(self, session: EveSession, db: EveDatabase):
         self.session: Final = session
         self.db: Final = db
         self.name: Final = self.__class__.__name__

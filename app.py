@@ -2,7 +2,7 @@ import asyncio
 import os
 import syslog
 import uuid
-from typing import Final, Optional
+from typing import Final
 
 import quart
 import quart.sessions
@@ -44,7 +44,6 @@ evesso_config = {
 quart_session.Session(app)
 evesso = EveSSO(app, **evesso_config)
 evedb = EveDatabase(app.config.get("SQLALCHEMY_DB_URL", "sqlite+pysqlite:///:memory:"))
-
 
 
 @app.errorhandler(404)

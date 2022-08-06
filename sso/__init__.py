@@ -30,16 +30,15 @@ class EveSSO:
     ESI_TOKEN_SCOPES: Final = "scopes"
     ESI_BIRTHDAY: Final = "birthday"
 
-
     def __init__(self,
-                app: quart.Quart,
-                client_id: str,
-                client_secret: str,
-                configuration_url: str = None,
-                scopes: List[str] = ['publicData'],
-                login_route: str = '/sso/login',
-                logout_route: str = '/sso/logout',
-                callback_route: str = '/sso/callback') -> None:
+                 app: quart.Quart,
+                 client_id: str,
+                 client_secret: str,
+                 configuration_url: str = None,
+                 scopes: List[str] = ['publicData'],
+                 login_route: str = '/sso/login',
+                 logout_route: str = '/sso/logout',
+                 callback_route: str = '/sso/callback') -> None:
 
         self.app: Final = app
 
@@ -74,13 +73,11 @@ class EveSSO:
             app.add_url_rule(self.logout_route, self.logout_endpoint, view_func=self.esi_sso_logout, methods=["GET"])
             app.add_url_rule(self.login_route, self.login_endpoint, view_func=self.esi_sso_login, methods=["GET"])
 
-
         @app.after_serving
         async def esi_sso_teardown():
             if self.jwks_task:
                 if not self.jwks_task.cancelled():
                     self.jwks_task.cancel()
-
 
     @property
     def base_url(self) -> str:
@@ -91,26 +88,21 @@ class EveSSO:
         port = f":{port}" if isinstance(port, int) else ""
         return f"{scheme}://{quart.request.host}{port}"
 
-
     @property
     def callback_url(self) -> str:
         return f"{self.base_url}{self.callback_route}"
-
 
     @property
     def login_endpoint(self) -> str:
         return f"login_{self.client_id}"
 
-
     @property
     def logout_endpoint(self) -> str:
         return f"logout_{self.client_id}"
 
-
     @property
     def callback_endpoint(self) -> str:
         return f"callback_{self.client_id}"
-
 
     async def get_json(self, url: str, token: Optional[str] = None) -> Dict:
         session_headers = dict()
@@ -125,11 +117,9 @@ class EveSSO:
                     json = dict(await response.json())
         return json
 
-
     async def get_jwks(self, url: str) -> List[Dict]:
         payload = await self.get_json(url)
         return payload.get("keys", [])
-
 
     async def get_jwks_task(self) -> None:
         while True:
@@ -140,7 +130,6 @@ class EveSSO:
                     self.jwks = new_jwks
             except Exception as ex:
                 self.app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
-
 
     def esi_sso_login(self) -> quart.redirect:
         quart.session[self.ESI_STATE] = uuid.uuid4().hex
@@ -157,12 +146,10 @@ class EveSSO:
 
         return quart.redirect(redirect_url)
 
-
     async def esi_sso_logout(self) -> quart.redirect:
         quart.session.clear()
 
         return quart.redirect("/")
-
 
     async def esi_sso_callback(self) -> quart.redirect:
 
@@ -194,7 +181,6 @@ class EveSSO:
         if not all(map(lambda x: bool(token_response.get(x)), required_response_keys)):
             quart.abort(500, f"invalid response to {post_character_url}")
 
-
         jwt_unverified_header: Final = jose.jwt.get_unverified_header(token_response["access_token"])
         jwt_key = None
         for jwk_candidate in self.jwks:
@@ -220,7 +206,7 @@ class EveSSO:
                 quart.abort(500, f"invalid jwt in {post_character_url}")
 
             if decoded_jwt:
-                quart.session[self.ESI_CHARACTER_ID] = decoded_jwt.get('sub', '').split(':')[-1]
+                quart.session[self.ESI_CHARACTER_ID] = int(decoded_jwt.get('sub', '').split(':')[-1])
                 quart.session[self.ESI_CHARACTER_NAME] = decoded_jwt.get('name', '')
                 quart.session[self.ESI_ACCESS_TOKEN] = token_response["access_token"]
                 quart.session[self.ESI_TOKEN_SCOPES] = decoded_jwt.get('scp', [])
@@ -247,7 +233,6 @@ class EveSSO:
                     async with client_session.get(post_character_roles_url, params=common_params) as response:
                         if response.status in [200]:
                             character_roles_response = dict(await response.json())
-
 
             if character_response is not None:
                 for k in [self.ESI_CORPORATEION_ID, self.ESI_ALLIANCE_ID, self.ESI_SECURITY_STATUS, self.ESI_BIRTHDAY]:
