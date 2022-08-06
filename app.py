@@ -2,14 +2,16 @@ import asyncio
 import os
 import syslog
 import uuid
-from typing import Final
+from typing import Final, Optional
 
 import quart
 import quart.sessions
 import quart_session
 
+from db import EveDatabase
 from sso import EveSSO
-from tasks import EveInventoryTask, EveEnumerateStructureTask, EveAllianceInfoTask, EveStructureSearchTask
+from tasks import (EveAllianceInfoTask, EveEnumerateStructureTask,
+                   EveInventoryTask, EveStructureSearchTask)
 
 syslog.openlog(
     os.path.basename(__file__), logoption=syslog.LOG_PID, facility=syslog.LOG_AUTH
@@ -20,25 +22,34 @@ local_basedir: Final = os.path.dirname(os.path.realpath(__file__))
 
 
 app: Final = quart.Quart(__name__)
+
 app.config.from_mapping({
-    "DEBUG": True,
-    "PORT": 5025,
+    "DEBUG": False,
+    "PORT": 5500,
     "HOST": '0.0.0.0',
     "SECRET_KEY":  uuid.uuid4().hex,
     "SESSION_TYPE": "redis",
     "EVEONLINE_CLIENT_ID": os.getenv("EVEONLINE_CLIENT_ID", ""),
-    "EVEONLINE_CLIENT_SECRET": os.getenv("EVEONLINE_CLIENT_SECRET", "")
+    "EVEONLINE_CLIENT_SECRET": os.getenv("EVEONLINE_CLIENT_SECRET", ""),
+    "EVEONLINE_CLIENT_SCOPES": os.getenv("EVEONLINE_CLIENT_SCOPES", ""),
+    "SQLALCHEMY_DB_URL": os.getenv("SQLALCHEMY_DB_URL", ""),
 })
-quart_session.Session(app)
 
-evesso_scopes: Final = ['publicData', 'esi-location.read_location.v1', 'esi-location.read_ship_type.v1', 'esi-mail.read_mail.v1', 'esi-skills.read_skills.v1', 'esi-skills.read_skillqueue.v1', 'esi-wallet.read_character_wallet.v1', 'esi-wallet.read_corporation_wallet.v1', 'esi-search.search_structures.v1', 'esi-clones.read_clones.v1', 'esi-characters.read_contacts.v1', 'esi-universe.read_structures.v1', 'esi-bookmarks.read_character_bookmarks.v1', 'esi-killmails.read_killmails.v1', 'esi-corporations.read_corporation_membership.v1', 'esi-assets.read_assets.v1', 'esi-planets.manage_planets.v1', 'esi-fleets.read_fleet.v1', 'esi-fleets.write_fleet.v1', 'esi-ui.write_waypoint.v1', 'esi-characters.write_contacts.v1', 'esi-fittings.read_fittings.v1', 'esi-fittings.write_fittings.v1', 'esi-markets.structure_markets.v1', 'esi-corporations.read_structures.v1', 'esi-characters.read_loyalty.v1', 'esi-characters.read_opportunities.v1', 'esi-characters.read_chat_channels.v1', 'esi-characters.read_medals.v1', 'esi-characters.read_standings.v1', 'esi-characters.read_agents_research.v1', 'esi-industry.read_character_jobs.v1', 'esi-markets.read_character_orders.v1', 'esi-characters.read_blueprints.v1',
-                        'esi-characters.read_corporation_roles.v1', 'esi-location.read_online.v1', 'esi-contracts.read_character_contracts.v1', 'esi-clones.read_implants.v1', 'esi-characters.read_fatigue.v1', 'esi-killmails.read_corporation_killmails.v1', 'esi-corporations.track_members.v1', 'esi-wallet.read_corporation_wallets.v1', 'esi-characters.read_notifications.v1', 'esi-corporations.read_divisions.v1', 'esi-corporations.read_contacts.v1', 'esi-assets.read_corporation_assets.v1', 'esi-corporations.read_titles.v1', 'esi-corporations.read_blueprints.v1', 'esi-bookmarks.read_corporation_bookmarks.v1', 'esi-contracts.read_corporation_contracts.v1', 'esi-corporations.read_standings.v1', 'esi-corporations.read_starbases.v1', 'esi-industry.read_corporation_jobs.v1', 'esi-markets.read_corporation_orders.v1', 'esi-corporations.read_container_logs.v1', 'esi-industry.read_character_mining.v1', 'esi-industry.read_corporation_mining.v1', 'esi-planets.read_customs_offices.v1', 'esi-corporations.read_facilities.v1', 'esi-corporations.read_medals.v1', 'esi-characters.read_titles.v1', 'esi-characters.read_fw_stats.v1', 'esi-corporations.read_fw_stats.v1', 'esi-characterstats.read.v1']
 evesso_config = {
     "client_id": app.config.get("EVEONLINE_CLIENT_ID"),
     "client_secret": app.config.get("EVEONLINE_CLIENT_SECRET"),
-    "scopes": evesso_scopes,
+    "scopes": app.config.get("EVEONLINE_CLIENT_SCOPES", "publicData").split(),
 }
+
+quart_session.Session(app)
 evesso = EveSSO(app, **evesso_config)
+evedb = EveDatabase(app.config.get("SQLALCHEMY_DB_URL", "sqlite+pysqlite:///:memory:"))
+
+
+
+@app.errorhandler(404)
+async def error_404(path: str) -> quart.Response:
+    return quart.redirect("/")
 
 
 @app.route("/", methods=["GET"])
@@ -47,7 +58,7 @@ async def root() -> quart.Response:
     if quart.session.get(EveSSO.ESI_CHARACTER_NAME):
 
         # EveInventoryTask(quart.session)
-        # EveEnumerateStructureTask(quart.session)
+        EveEnumerateStructureTask(quart.session)
         # EveAllianceInfoTask(quart.session)
         # EveStructureSearchTask(quart.session)
 
@@ -75,6 +86,12 @@ if __name__ == "__main__":
         config.bind = [f"{app_host}:{app_port}"]
         config.accesslog = "-"
 
-        app.asgi_app = ProxyHeadersMiddleware(
-            app.asgi_app, trusted_hosts=["127.0.0.1", "::1"])
-        asyncio.run(hypercorn.asyncio.serve(app, config))
+        async def async_main():
+            await evedb._initialize()
+
+            app.asgi_app = ProxyHeadersMiddleware(
+                app.asgi_app, trusted_hosts=["127.0.0.1", "::1"])
+
+            await hypercorn.asyncio.serve(app, config)
+
+        asyncio.run(async_main())
