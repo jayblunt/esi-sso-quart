@@ -32,6 +32,8 @@ class EveAlliancMemberTask(EveTask):
 
             alliance_id: Final = int(self.session.get(EveSSO.ESI_ALLIANCE_ID, 0))
             if alliance_id > 0:
+                if alliance_id in [99002329]:
+                    corporation_id_set.add(1000169)
 
                 url = f"https://esi.evetech.net/latest/alliances/{alliance_id}/corporations/"
                 with contextlib.suppress(aiohttp.client_exceptions.ClientResponseError):
@@ -49,7 +51,7 @@ class EveAlliancMemberTask(EveTask):
 
                 # Save current alliance membership
                 async with session.begin():
-                    all_extractions_set: Final = dict()
+                    all_extractions_set: Final = set()
                     all_extractions_stmt: Final = sqlalchemy.select(EveTables.AllianceMember).where(EveTables.AllianceMember.alliance_id == alliance_id)
                     for results in await session.execute(all_extractions_stmt):
                         all_extractions_set.add(results[0])

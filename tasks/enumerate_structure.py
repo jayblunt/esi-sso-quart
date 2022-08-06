@@ -52,7 +52,9 @@ class EveEnumerateStructureTask(EveTask):
                     current_insertions: Final = list()
                     current_deletions: Final = list(all_structures_set)
                     for x in structures:
-                        edict: Final = dict()
+                        edict: Final = dict({
+                            "character_id": int(self.session.get(EveSSO.ESI_CHARACTER_ID, 0)),
+                        })
                         for k, v in x.items():
                             if k in ["fuel_expires", "state_timer_end", "state_timer_start", "unanchors_at"]:
                                 v = dateutil.parser.parse(v).replace(tzinfo=zoneinfo.ZoneInfo("UTC"))

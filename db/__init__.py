@@ -11,6 +11,8 @@ class EveTables:
 
     class Structure(Base):
         __tablename__ = "structure"
+        timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), server_default=sqlalchemy.sql.func.now(), nullable=False)
+        character_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
         corporation_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         system_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
         structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
@@ -35,6 +37,9 @@ class EveTables:
 
     class Extraction(Base):
         __tablename__ = "extraction"
+        timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), server_default=sqlalchemy.sql.func.now(), nullable=False)
+        character_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+        corporation_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
         structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         moon_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         extraction_start_time = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
@@ -60,6 +65,14 @@ class EveTables:
         __tablename__ = "alliance_member"
         alliance_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         corporation_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+
+    class MoonYield(Base):
+        __tablename__ = "moon_yield"
+        system_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        planet_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=False, nullable=False)
+        moon_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        type_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        yield_percent = sqlalchemy.Column(sqlalchemy.Float, nullable=False)
 
 
 class EveDatabase:

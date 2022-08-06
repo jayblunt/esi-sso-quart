@@ -52,7 +52,10 @@ class EveEnumerateExtractionTask(EveTask):
                     current_insertions: Final = list()
                     current_deletions: Final = list(all_extractions_set)
                     for x in extractions:
-                        edict: Final = dict()
+                        edict: Final = dict({
+                            "character_id": int(self.session.get(EveSSO.ESI_CHARACTER_ID, 0)),
+                            "corporation_id": int(self.session.get(EveSSO.ESI_CORPORATION_ID, 0)),
+                        })
                         for k, v in x.items():
                             if k in ["chunk_arrival_time", "extraction_start_time", "natural_decay_time"]:
                                 v = dateutil.parser.parse(v).replace(tzinfo=zoneinfo.ZoneInfo("UTC"))
