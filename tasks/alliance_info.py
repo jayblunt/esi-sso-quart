@@ -3,8 +3,8 @@ from typing import Final, MutableSet
 
 import aiohttp
 import aiohttp.client_exceptions
-from sso import EveSSO
 import quart
+from sso import EveSSO
 
 from .task import EveTask
 

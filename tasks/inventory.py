@@ -11,8 +11,6 @@ from .task import EveTask
 
 class EveInventoryTask(EveTask):
 
-
-
     async def run(self):
 
         if "esi-assets.read_assets.v1" in self.session.get(EveSSO.ESI_TOKEN_SCOPES, []):
