@@ -1,18 +1,29 @@
 import abc
 import asyncio
-from typing import Any, Final, List
+import inspect
+from typing import Any, Final, List, Union
 
 import aiohttp
 import aiohttp.client_exceptions
-import quart
-import quart.sessions
+from db import EveDatabase
 from sso import EveSSO
 
 
-class EveTask:
+class EveSession(metaclass=abc.ABCMeta):
 
-    def __init__(self, session: quart.sessions.SessionMixin):
+    def __init__(self) -> None:
+        pass
+
+    @abc.abstractmethod
+    def get(self, key, default=None) -> Union[str, int, bool, List[str], List[int]]:
+        return default
+
+
+class EveTask(metaclass=abc.ABCMeta):
+
+    def __init__(self, session: EveSession, db: EveDatabase):
         self.session: Final = session
+        self.db: Final = db
         self.name: Final = self.__class__.__name__
         if self.session.get(self.name, False):
             self.task: asyncio.Task = None
@@ -21,8 +32,10 @@ class EveTask:
             self.task: asyncio.Task = asyncio.create_task(self.manage())
 
     async def manage(self):
+        print("> {}.{}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name))
         await self.run()
-        del self.session[self.name]
+        self.session[self.name] = False
+        print("< {}.{}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name))
 
     @abc.abstractmethod
     async def run():

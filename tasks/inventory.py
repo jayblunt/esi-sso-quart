@@ -1,17 +1,11 @@
-import asyncio
-from binhex import FInfo
-from typing import Any, Final, List
+from typing import Final
 
-import aiohttp
-import aiohttp.client_exceptions
 from sso import EveSSO
 
 from .task import EveTask
 
 
 class EveInventoryTask(EveTask):
-
-
 
     async def run(self):
 
