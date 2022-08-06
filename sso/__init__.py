@@ -22,8 +22,10 @@ class EveSSO:
     ESI_STATE: Final = "state"
     ESI_CHARACTER_NAME: Final = "character_name"
     ESI_CHARACTER_ID: Final = "character_id"
+    ESI_CHARACTER_ACCOUNTANT_ROLE: Final = "accountant_role"
+    ESI_CHARACTER_DIRECTOR_ROLE: Final = "director_role"
     ESI_CHARACTER_STATION_MANAGER_ROLE: Final = "station_manager_role"
-    ESI_CORPORATEION_ID: Final = "corporation_id"
+    ESI_CORPORATION_ID: Final = "corporation_id"
     ESI_ALLIANCE_ID: Final = "alliance_id"
     ESI_SECURITY_STATUS: Final = "security_status"
     ESI_ACCESS_TOKEN: Final = "access_token"
@@ -235,12 +237,14 @@ class EveSSO:
                             character_roles_response = dict(await response.json())
 
             if character_response is not None:
-                for k in [self.ESI_CORPORATEION_ID, self.ESI_ALLIANCE_ID, self.ESI_SECURITY_STATUS, self.ESI_BIRTHDAY]:
+                for k in [self.ESI_CORPORATION_ID, self.ESI_ALLIANCE_ID, self.ESI_SECURITY_STATUS, self.ESI_BIRTHDAY]:
                     v = character_response.get(k, None)
                     if v is not None:
                         quart.session[k] = v
 
             if character_roles_response is not None:
+                quart.session[self.ESI_CHARACTER_ACCOUNTANT_ROLE] = 'Accountant' in character_roles_response.get('roles', [])
+                quart.session[self.ESI_CHARACTER_DIRECTOR_ROLE] = 'Director' in character_roles_response.get('roles', [])
                 quart.session[self.ESI_CHARACTER_STATION_MANAGER_ROLE] = 'Station_Manager' in character_roles_response.get('roles', [])
 
         return quart.redirect("/")

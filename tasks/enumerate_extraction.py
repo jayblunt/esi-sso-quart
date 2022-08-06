@@ -18,7 +18,7 @@ class EveEnumerateExtractionTask(EveTask):
     async def run(self):
 
         corporation_id: Final = int(self.session.get(
-            EveSSO.ESI_CORPORATEION_ID, 0))
+            EveSSO.ESI_CORPORATION_ID, 0))
 
         required_scopes: Final = {
             "esi-industry.read_corporation_mining.v1"}

@@ -10,7 +10,7 @@ import quart_session
 
 from db import EveDatabase
 from sso import EveSSO
-from tasks import (EveAllianceInfoTask, EveEnumerateExtractionTask,
+from tasks import (EveAlliancMemberTask, EveEnumerateExtractionTask,
                    EveEnumerateStructureTask, EveInventoryTask,
                    EveStructureSearchTask)
 
@@ -57,11 +57,12 @@ async def root() -> quart.Response:
     print(dict(quart.session))
     if quart.session.get(EveSSO.ESI_CHARACTER_NAME):
 
-        # EveInventoryTask(quart.session, evedb)
-        EveEnumerateStructureTask(quart.session, evedb)
-        EveEnumerateExtractionTask(quart.session, evedb)
-        # EveAllianceInfoTask(quart.session, evedb)
-        # EveStructureSearchTask(quart.session, evedb)
+        # if bool(quart.session.get(EveSSO.ESI_CHARACTER_STATION_MANAGER_ROLE, False)):
+        #     EveEnumerateStructureTask(quart.session, evedb)
+        #     EveEnumerateExtractionTask(quart.session, evedb)
+
+        # if bool(quart.session.get(EveSSO.ESI_CHARACTER_DIRECTOR_ROLE, False)):
+        #     EveAlliancMemberTask(quart.session, evedb)
 
         return await quart.render_template("home.html",
                                            character_name=quart.session.get(

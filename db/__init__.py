@@ -51,6 +51,16 @@ class EveTables:
         structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
 
+    class CharacterAlt(Base):
+        __tablename__ = "character_alt"
+        alt_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+
+    class AllianceMember(Base):
+        __tablename__ = "alliance_member"
+        alliance_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        corporation_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+
 
 class EveDatabase:
 
@@ -65,6 +75,5 @@ class EveDatabase:
         return self._engine
 
     def __init__(self, db: str, echo: bool = True) -> None:
-        # future=True means use the 2.0 api
         self._engine = sqlalchemy.ext.asyncio.create_async_engine(db, echo=echo, future=False)
         self._initialized = False
