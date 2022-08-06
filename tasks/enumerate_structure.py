@@ -44,7 +44,7 @@ class EveEnumerateStructureTask(EveTask):
 
                 # Save current extractions
                 async with session.begin():
-                    all_structures_set: Final = dict()
+                    all_structures_set: Final = set()
                     all_structures_stmt: Final = sqlalchemy.select(EveTables.Structure).where(EveTables.Structure.corporation_id == corporation_id)
                     for results in await session.execute(all_structures_stmt):
                         all_structures_set.add(results[0])

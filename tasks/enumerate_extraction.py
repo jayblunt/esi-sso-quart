@@ -44,7 +44,7 @@ class EveEnumerateExtractionTask(EveTask):
 
                 # Save current extractions
                 async with session.begin():
-                    all_extractions_set: Final = dict()
+                    all_extractions_set: Final = set()
                     all_extractions_stmt: Final = sqlalchemy.select(EveTables.Extraction).where(EveTables.Extraction.corporation_id == corporation_id)
                     for results in await session.execute(all_extractions_stmt):
                         all_extractions_set.add(results[0])
