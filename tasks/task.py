@@ -1,5 +1,6 @@
 import abc
 import asyncio
+import inspect
 from typing import Any, Final, List, Union
 
 import aiohttp
@@ -31,8 +32,10 @@ class EveTask(metaclass=abc.ABCMeta):
             self.task: asyncio.Task = asyncio.create_task(self.manage())
 
     async def manage(self):
+        print("> {}.{}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name))
         await self.run()
-        del self.session[self.name]
+        self.session[self.name] = False
+        print("< {}.{}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name))
 
     @abc.abstractmethod
     async def run():

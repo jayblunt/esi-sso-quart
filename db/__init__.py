@@ -9,6 +9,23 @@ class EveTables:
 
     Base = sqlalchemy.orm.declarative_base()
 
+    class Structure(Base):
+        __tablename__ = "structure"
+        corporation_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        system_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+        structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        type_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+        name = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
+        state = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=True)
+        state_timer_start = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=True)
+        state_timer_end = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=True)
+        fuel_expires = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
+        unanchors_at = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=True)
+        has_moon_drill = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
+
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}(structure_id={self.structure_id}, system_id={self.system_id}, name={self.name})"
+
     class StructureHistory(Base):
         __tablename__ = "structure_history"
         timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), server_default=sqlalchemy.sql.func.now(), primary_key=True, nullable=False)
@@ -25,7 +42,7 @@ class EveTables:
         natural_decay_time = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
 
         def __repr__(self) -> str:
-            return f"{self.__class__.__name__}(structure_id={self.structure_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time}"
+            return f"{self.__class__.__name__}(structure_id={self.structure_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time})"
 
     class ExtractionHistory(Base):
         __tablename__ = "extraction_history"

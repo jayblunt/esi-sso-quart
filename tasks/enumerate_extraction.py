@@ -13,7 +13,7 @@ from sso import EveSSO
 from .task import EveTask
 
 
-class EveEnumerateStructureTask(EveTask):
+class EveEnumerateExtractionTask(EveTask):
 
     async def run(self):
 
@@ -21,51 +21,47 @@ class EveEnumerateStructureTask(EveTask):
             EveSSO.ESI_CORPORATEION_ID, 0))
 
         required_scopes: Final = {
-            "esi-corporations.read_structures.v1"}
+            "esi-industry.read_corporation_mining.v1"}
 
         if all([self.session.get(EveSSO.ESI_CHARACTER_STATION_MANAGER_ROLE, False), len(required_scopes.intersection(set(self.session.get(EveSSO.ESI_TOKEN_SCOPES, [])))) == len(required_scopes)]):
 
             async_session = sqlalchemy.orm.sessionmaker(await self.db.engine, expire_on_commit=False, class_=sqlalchemy.ext.asyncio.AsyncSession)
 
-            url = f"https://esi.evetech.net/latest/corporations/{corporation_id}/structures/"
-            structures: Final = await self.get_pages(url)
-            # print(json.dumps(structures, ensure_ascii=True, indent=4))
-            if len(structures) == 0:
+            url = f"https://esi.evetech.net/latest/corporation/{corporation_id}/mining/extractions/"
+            extractions: Final = await self.get_pages(url)
+            # print(json.dumps(extractions, ensure_ascii=True, indent=4))
+            if len(extractions) == 0:
                 return
 
             async with async_session() as session:
 
                 # Save history
                 async with session.begin():
-                    history_insertions: Final = [EveTables.StructureHistory(character_id=int(self.session.get(
-                        EveSSO.ESI_CHARACTER_ID, 0)), structure_id=int(x.get("structure_id", 0)), json=x) for x in structures]
+                    history_insertions: Final = [EveTables.ExtractionHistory(character_id=int(self.session.get(
+                        EveSSO.ESI_CHARACTER_ID, 0)), structure_id=int(x.get("structure_id", 0)), json=x) for x in extractions]
                     session.add_all(history_insertions)
                     await session.commit()
 
                 # Save current extractions
                 async with session.begin():
-                    all_structures_set: Final = dict()
-                    all_structures_stmt: Final = sqlalchemy.select(EveTables.Structure).where(EveTables.Structure.corporation_id == corporation_id)
-                    for results in await session.execute(all_structures_stmt):
-                        all_structures_set.add(results[0])
+                    all_extractions_set: Final = dict()
+                    all_extractions_stmt: Final = sqlalchemy.select(EveTables.Extraction).where(EveTables.Extraction.corporation_id == corporation_id)
+                    for results in await session.execute(all_extractions_stmt):
+                        all_extractions_set.add(results[0])
 
                     current_insertions: Final = list()
-                    current_deletions: Final = list(all_structures_set)
-                    for x in structures:
+                    current_deletions: Final = list(all_extractions_set)
+                    for x in extractions:
                         edict: Final = dict()
                         for k, v in x.items():
-                            if k in ["fuel_expires", "state_timer_end", "state_timer_start", "unanchors_at"]:
+                            if k in ["chunk_arrival_time", "extraction_start_time", "natural_decay_time"]:
                                 v = dateutil.parser.parse(v).replace(tzinfo=zoneinfo.ZoneInfo("UTC"))
-                            elif k in ["corporation_id", "structure_id", "system_id", "type_id"]:
+                            elif k in ["structure_id", "moon_id"]:
                                 v = int(v)
-                            elif k in ["services"]:
-                                v = list(filter(lambda x: x.get('name', '') == "Moon Drilling", v))
-                                edict["has_moon_drill"] = bool(len(v) > 0)
-                                continue
-                            elif k not in ["name", "state"]:
+                            else:
                                 continue
                             edict[k] = v
-                        ie: Final = EveTables.Structure(**edict)
+                        ie: Final = EveTables.Extraction(**edict)
                         current_insertions.append(ie)
 
                     if len(current_deletions):

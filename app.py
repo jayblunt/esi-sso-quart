@@ -10,8 +10,9 @@ import quart_session
 
 from db import EveDatabase
 from sso import EveSSO
-from tasks import (EveAllianceInfoTask, EveEnumerateStructureTask,
-                   EveInventoryTask, EveStructureSearchTask)
+from tasks import (EveAllianceInfoTask, EveEnumerateExtractionTask,
+                   EveEnumerateStructureTask, EveInventoryTask,
+                   EveStructureSearchTask)
 
 syslog.openlog(
     os.path.basename(__file__), logoption=syslog.LOG_PID, facility=syslog.LOG_AUTH
@@ -58,6 +59,7 @@ async def root() -> quart.Response:
 
         # EveInventoryTask(quart.session, evedb)
         EveEnumerateStructureTask(quart.session, evedb)
+        EveEnumerateExtractionTask(quart.session, evedb)
         # EveAllianceInfoTask(quart.session, evedb)
         # EveStructureSearchTask(quart.session, evedb)
 
