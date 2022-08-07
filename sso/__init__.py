@@ -10,6 +10,12 @@ import aiohttp.client_exceptions
 import jose.exceptions
 import jose.jwt
 import quart
+import sqlalchemy
+import sqlalchemy.ext.asyncio
+import sqlalchemy.ext.asyncio.engine
+import sqlalchemy.orm
+import sqlalchemy.sql
+from db import EveDatabase, EveTables
 
 
 class EveSSO:
@@ -34,6 +40,7 @@ class EveSSO:
 
     def __init__(self,
                  app: quart.Quart,
+                 db: EveDatabase,
                  client_id: str,
                  client_secret: str,
                  configuration_url: str = None,
@@ -43,6 +50,7 @@ class EveSSO:
                  callback_route: str = '/sso/callback') -> None:
 
         self.app: Final = app
+        self.db: Final = db
 
         self.client_id: Final = client_id
         self.client_secret: Final = client_secret
@@ -213,6 +221,20 @@ class EveSSO:
                 quart.session[self.ESI_ACCESS_TOKEN] = token_response["access_token"]
                 quart.session[self.ESI_TOKEN_SCOPES] = decoded_jwt.get('scp', [])
 
+            if decoded_jwt:
+                async_session = sqlalchemy.orm.sessionmaker(await self.db.engine, expire_on_commit=False, class_=sqlalchemy.ext.asyncio.AsyncSession)
+                async with async_session() as session:
+                    credential_query = sqlalchemy.select(EveTables.Credentials).where(
+                        EveTables.Credentials.character_id == quart.session[self.ESI_CHARACTER_ID])
+                    for item in await session.execute(credential_query):
+                        await session.delete(item[0])
+                edict: Final = dict({
+                    "character_id": quart.session[self.ESI_CHARACTER_ID],
+                    "json": token_response
+                })
+                session.add(EveTables.Credentials(**edict))
+                await session.commit()
+
         if bool(quart.session.get(self.ESI_CHARACTER_ID, False)):
             character_id: Final = quart.session[self.ESI_CHARACTER_ID]
             common_params: Final = {"datasource": "tranquility"}
@@ -246,5 +268,9 @@ class EveSSO:
                 quart.session[self.ESI_CHARACTER_ACCOUNTANT_ROLE] = 'Accountant' in character_roles_response.get('roles', [])
                 quart.session[self.ESI_CHARACTER_DIRECTOR_ROLE] = 'Director' in character_roles_response.get('roles', [])
                 quart.session[self.ESI_CHARACTER_STATION_MANAGER_ROLE] = 'Station_Manager' in character_roles_response.get('roles', [])
+
+        is_ok = any([quart.session.get(self.ESI_ALLIANCE_ID, 0) == 99002329, quart.session.get(self.ESI_CORPORATION_ID, 0) == 1000169])
+        if not is_ok:
+            quart.session.clear()
 
         return quart.redirect("/")

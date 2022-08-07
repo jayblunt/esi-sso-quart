@@ -6,4 +6,69 @@
     </p>
     {% endif %}
 </div>
-{% endblock %}
+<div class="box">
+    <p>Moon Drill Extractions</p>
+    <table>
+        <thead>
+            <tr>
+                <th>corporation_id</th>
+                <th>moon_id</th>
+                <th>structure_id</th>
+                <th>chunk_arrival_time</th>
+                <th>natural_decay_time</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for e in extractions %}
+            <tr>
+                <td>{{ e.corporation_id }}</td>
+                <td>{{ e.moon_id }}</td>
+                <td>{{ e.structure_id }}</td>
+                <td>{{ e.chunk_arrival_time|datetime }}</td>
+                <td>{{ e.natural_decay_time|datetime }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+<div class="box">
+    <p>Structure Fuel Information</p>
+    <table>
+        <thead>
+            <tr>
+                <th>corporation_id</th>
+                <th>system_id</th>
+                <th>structure_id</th>
+                <th>name</th>
+                <th>fuel_expires</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in structures %}
+            <tr>
+                <td>{{ s.corporation_id }}</td>
+                <td>{{ s.system_id }}</td>
+                <td>{{ s.structure_id }}</td>
+                <td>{{ s.name }}</td>
+                <td>{{ s.fuel_expires|datetime }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+</div> {% endblock %}

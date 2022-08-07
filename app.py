@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import os
 import syslog
 import uuid
@@ -7,19 +8,21 @@ from typing import Final
 import quart
 import quart.sessions
 import quart_session
+import sqlalchemy
+import sqlalchemy.ext.asyncio
+import sqlalchemy.ext.asyncio.engine
+import sqlalchemy.orm
+import sqlalchemy.sql
 
-from db import EveDatabase
+from db import EveDatabase, EveTables
 from sso import EveSSO
 from tasks import (EveAlliancMemberTask, EveEnumerateExtractionTask,
                    EveEnumerateStructureTask, EveInventoryTask,
-                   EveStructureSearchTask)
+                   EveMoonYieldTask, EveStructureSearchTask)
 
 syslog.openlog(
     os.path.basename(__file__), logoption=syslog.LOG_PID, facility=syslog.LOG_AUTH
 )
-
-
-local_basedir: Final = os.path.dirname(os.path.realpath(__file__))
 
 
 app: Final = quart.Quart(__name__)
@@ -30,6 +33,7 @@ app.config.from_mapping({
     "HOST": '0.0.0.0',
     "SECRET_KEY":  uuid.uuid4().hex,
     "SESSION_TYPE": "redis",
+    "BASEDIR": os.path.dirname(os.path.realpath(__file__)),
     "EVEONLINE_CLIENT_ID": os.getenv("EVEONLINE_CLIENT_ID", ""),
     "EVEONLINE_CLIENT_SECRET": os.getenv("EVEONLINE_CLIENT_SECRET", ""),
     "EVEONLINE_CLIENT_SCOPES": os.getenv("EVEONLINE_CLIENT_SCOPES", ""),
@@ -42,32 +46,57 @@ evesso_config = {
     "scopes": app.config.get("EVEONLINE_CLIENT_SCOPES", "publicData").split(),
 }
 
-quart_session.Session(app)
-evesso = EveSSO(app, **evesso_config)
 evedb = EveDatabase(app.config.get("SQLALCHEMY_DB_URL", "sqlite+pysqlite:///:memory:"))
+quart_session.Session(app)
+evesso = EveSSO(app, evedb, **evesso_config)
 
 
 @app.errorhandler(404)
 async def error_404(path: str) -> quart.Response:
     return quart.redirect("/")
 
+@app.template_filter("datetime")
+def _datetime(dt: datetime.datetime):
+    return dt.replace(tzinfo=None).isoformat(sep=' ', timespec='minutes')
 
 @app.route("/", methods=["GET"])
 async def root() -> quart.Response:
     print(dict(quart.session))
     if quart.session.get(EveSSO.ESI_CHARACTER_NAME):
 
-        # if bool(quart.session.get(EveSSO.ESI_CHARACTER_STATION_MANAGER_ROLE, False)):
-        #     EveEnumerateStructureTask(quart.session, evedb)
-        #     EveEnumerateExtractionTask(quart.session, evedb)
+        if not bool(quart.session.get("tasks_started", False)):
+            quart.session["tasks_started"] = True
 
-        # if bool(quart.session.get(EveSSO.ESI_CHARACTER_DIRECTOR_ROLE, False)):
-        #     EveAlliancMemberTask(quart.session, evedb)
+            if bool(quart.session.get(EveSSO.ESI_CHARACTER_STATION_MANAGER_ROLE, False)):
+                EveEnumerateStructureTask(quart.session, evedb)
+                EveEnumerateExtractionTask(quart.session, evedb)
+
+            # if bool(quart.session.get(EveSSO.ESI_CHARACTER_DIRECTOR_ROLE, False)):
+            #     EveAlliancMemberTask(quart.session, evedb)
+            #     EveMoonYieldTask(quart.session, evedb)
+
+        async_session = sqlalchemy.orm.sessionmaker(await evedb.engine, expire_on_commit=False, class_=sqlalchemy.ext.asyncio.AsyncSession)
+        async with async_session() as session:
+
+            now = datetime.datetime.utcnow()
+
+            extraction_results: Final = list()
+            extraction_query: Final = sqlalchemy.select(EveTables.Extraction).where(
+                EveTables.Extraction.natural_decay_time >= now, EveTables.Extraction.extraction_start_time < now).order_by(EveTables.Extraction.chunk_arrival_time)
+            for item in await session.execute(extraction_query):
+                extraction_results.append(item[0])
+
+            structure_results: Final = list()
+            structure_query: Final = sqlalchemy.select(EveTables.Structure).order_by(EveTables.Structure.fuel_expires)
+            for item in await session.execute(structure_query):
+                structure_results.append(item[0])
 
         return await quart.render_template("home.html",
                                            character_name=quart.session.get(
                                                EveSSO.ESI_CHARACTER_NAME),
-                                           character_id=quart.session.get(EveSSO.ESI_CHARACTER_ID))
+                                           character_id=quart.session.get(EveSSO.ESI_CHARACTER_ID),
+                                           extractions=extraction_results,
+                                           structures=structure_results)
     else:
         return await quart.render_template("login.html")
 

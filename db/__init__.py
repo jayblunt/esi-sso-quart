@@ -9,6 +9,63 @@ class EveTables:
 
     Base = sqlalchemy.orm.declarative_base()
 
+    class UniverseMoon(Base):
+        __tablename__ = "esi_universe_moon"
+        moon_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        system_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+        name = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
+
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}(system_id={self.system_id}, moon_id={self.moon_id}, name={self.name})"
+
+    class UniversePlanet(Base):
+        __tablename__ = "esi_universe_planet"
+        planet_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        system_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+        type_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+        name = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
+
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}(system_id={self.system_id}, planet_id={self.planet_id}, name={self.name})"
+
+    class UniverseSystem(Base):
+        __tablename__ = "esi_universe_system"
+        system_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        constellation_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+        name = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
+
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}(constellation_id={self.constellation_id}, system_id={self.system_id}, name={self.name})"
+
+    class UniverseConstellation(Base):
+        __tablename__ = "esi_universe_constellation"
+        constellation_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        region_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+        name = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
+
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}(region_id={self.region_id}, constellation_id={self.constellation_id}, name={self.name})"
+
+    class UniverseRegion(Base):
+        __tablename__ = "esi_universe_region"
+        region_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        name = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
+
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}(region_id={self.region_id}, name={self.name})"
+
+    class UniverseType(Base):
+        __tablename__ = "esi_universe_type"
+        type_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        group_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+        market_group_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+        graphic_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+        icon_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+        name = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
+
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}(type_id={self.type_id}, name={self.name})"
+
     class Structure(Base):
         __tablename__ = "structure"
         timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), server_default=sqlalchemy.sql.func.now(), nullable=False)
@@ -73,6 +130,12 @@ class EveTables:
         moon_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         type_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         yield_percent = sqlalchemy.Column(sqlalchemy.Float, nullable=False)
+
+    class Credentials(Base):
+        __tablename__ = "credentials"
+        timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), server_default=sqlalchemy.sql.func.now(), nullable=False)
+        character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
 
 
 class EveDatabase:
