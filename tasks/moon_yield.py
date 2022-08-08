@@ -31,30 +31,28 @@ class EveMoonYieldTask(EveTask):
         moon_data_filename: Final = os.path.abspath(os.path.join(self.session.get("BASEDIR", "."), "static", "moon_data.json"))
         if os.path.exists(moon_data_filename):
             with open(moon_data_filename) as ifp:
-                [moon_data_list.append(MoonYieldData(**x)) for x in json.load(ifp)]
-        print(moon_data_list)
+                [moon_data_list.append(MoonYieldData(**edict)) for edict in json.load(ifp)]
 
         if len(moon_data_list) > 0:
 
-            async_session = sqlalchemy.orm.sessionmaker(await self.db.engine, expire_on_commit=False, class_=sqlalchemy.ext.asyncio.AsyncSession)
-
-            async with async_session() as session:
+            async with await self.db.sessionmaker() as session:
 
                 async with session.begin():
-                    all_deletions: Final = set()
-                    all_additions: Final = set()
+                    existing_obj_set: Final = set()
+                    moon_yield_query: Final = sqlalchemy.select(EveTables.MoonYield)
+                    moon_yield_query_result = await session.execute(moon_yield_query)
+                    existing_obj_set |= {result for result in moon_yield_query_result.scalars()}
 
+                    obj_set: Final = set()
                     for md in moon_data_list:
-                        all_moons_stmt: Final = sqlalchemy.select(EveTables.MoonYield).where(EveTables.MoonYield.moon_id == md.moon_id)
-                        for results in await session.execute(all_moons_stmt):
-                            all_deletions.add(results[0])
+                        obj = EveTables.MoonYield(type_id=md.type_id, system_id=md.system_id, planet_id=md.planet_id, moon_id=md.moon_id, yield_percent=md.yield_percent)
+                        obj_set.add(obj)
 
-                        all_additions.add(EveTables.MoonYield(type_id=md.type_id, system_id=md.system_id, planet_id=md.planet_id, moon_id=md.moon_id, yield_percent=md.yield_percent))
+                    if len(existing_obj_set) > 0:
+                        [await session.delete(x) for x in existing_obj_set]
 
-                    if len(all_deletions):
-                        [await session.delete(x) for x in all_deletions]
+                    if len(obj_set) > 0:
+                        session.add_all(obj_set)
 
-                    if len(all_additions):
-                        session.add_all(all_additions)
-
-                    await session.commit()
+                    if any([len(existing_obj_set) > 0, len(obj_set) > 0]):
+                        await session.commit()
