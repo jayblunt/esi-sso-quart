@@ -10,7 +10,7 @@ class EveTables:
     Base = sqlalchemy.orm.declarative_base()
 
     class UniverseMoon(Base):
-        __tablename__ = "esi_universe_moon"
+        __tablename__ = "esi_universe_moons"
         moon_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         system_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
         name = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
@@ -19,7 +19,7 @@ class EveTables:
             return f"{self.__class__.__name__}(system_id={self.system_id}, moon_id={self.moon_id}, name={self.name})"
 
     class UniversePlanet(Base):
-        __tablename__ = "esi_universe_planet"
+        __tablename__ = "esi_universe_planets"
         planet_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         system_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
         type_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
@@ -29,7 +29,7 @@ class EveTables:
             return f"{self.__class__.__name__}(system_id={self.system_id}, planet_id={self.planet_id}, name={self.name})"
 
     class UniverseSystem(Base):
-        __tablename__ = "esi_universe_system"
+        __tablename__ = "esi_universe_systems"
         system_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         constellation_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
         name = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
@@ -38,7 +38,7 @@ class EveTables:
             return f"{self.__class__.__name__}(constellation_id={self.constellation_id}, system_id={self.system_id}, name={self.name})"
 
     class UniverseConstellation(Base):
-        __tablename__ = "esi_universe_constellation"
+        __tablename__ = "esi_universe_constellations"
         constellation_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         region_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
         name = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
@@ -47,7 +47,7 @@ class EveTables:
             return f"{self.__class__.__name__}(region_id={self.region_id}, constellation_id={self.constellation_id}, name={self.name})"
 
     class UniverseRegion(Base):
-        __tablename__ = "esi_universe_region"
+        __tablename__ = "esi_universe_regions"
         region_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         name = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
 
@@ -55,7 +55,7 @@ class EveTables:
             return f"{self.__class__.__name__}(region_id={self.region_id}, name={self.name})"
 
     class UniverseType(Base):
-        __tablename__ = "esi_universe_type"
+        __tablename__ = "esi_universe_types"
         type_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         group_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
         market_group_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
@@ -113,18 +113,18 @@ class EveTables:
         structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
 
-    class CharacterAlt(Base):
-        __tablename__ = "character_alt"
-        alt_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
-        character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+    # class CharacterAlt(Base):
+    #     __tablename__ = "app_character_alts"
+    #     character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+    #     alt_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
 
     class AllianceMember(Base):
-        __tablename__ = "alliance_member"
+        __tablename__ = "esi_alliances_corporations"
         alliance_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         corporation_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
 
     class MoonYield(Base):
-        __tablename__ = "moon_yield"
+        __tablename__ = "app_moon_yields"
         system_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         planet_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=False, nullable=False)
         moon_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
@@ -132,7 +132,7 @@ class EveTables:
         yield_percent = sqlalchemy.Column(sqlalchemy.Float, nullable=False)
 
     class Credentials(Base):
-        __tablename__ = "credentials"
+        __tablename__ = "app_credentials"
         timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), server_default=sqlalchemy.sql.func.now(), nullable=False)
         character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)

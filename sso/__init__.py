@@ -222,12 +222,15 @@ class EveSSO:
                 quart.session[self.ESI_TOKEN_SCOPES] = decoded_jwt.get('scp', [])
 
             if decoded_jwt:
+                credential_set: Final = set()
                 async_session = sqlalchemy.orm.sessionmaker(await self.db.engine, expire_on_commit=False, class_=sqlalchemy.ext.asyncio.AsyncSession)
                 async with async_session() as session:
                     credential_query = sqlalchemy.select(EveTables.Credentials).where(
                         EveTables.Credentials.character_id == quart.session[self.ESI_CHARACTER_ID])
                     for item in await session.execute(credential_query):
-                        await session.delete(item[0])
+                        credential_set.add(item[0])
+
+                [await session.delete(x) for x in credential_set]
                 edict: Final = dict({
                     "character_id": quart.session[self.ESI_CHARACTER_ID],
                     "json": token_response
