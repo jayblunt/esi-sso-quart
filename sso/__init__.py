@@ -171,7 +171,7 @@ class EveSSO:
         if not all(map(lambda x: bool(quart.request.args.get(x)), required_callback_keys)):
             quart.abort(500, f"invalid call to {self.callback_route}")
 
-        if quart.request.args['state'] != quart.session[self.ESI_STATE]:
+        if quart.request.args["state"] != quart.session.get(self.ESI_STATE):
             quart.abort(500, f"invalid session state in {self.callback_route}")
 
         post_character_url = f"{self.configuration['token_endpoint']}"
@@ -308,7 +308,7 @@ class EveSSO:
                 quart.session[self.ESI_CHARACTER_DIRECTOR_ROLE] = 'Director' in character_roles_response.get('roles', [])
                 quart.session[self.ESI_CHARACTER_STATION_MANAGER_ROLE] = 'Station_Manager' in character_roles_response.get('roles', [])
 
-        is_ok = any([quart.session.get(self.ESI_ALLIANCE_ID, 0) == 99002329, quart.session.get(self.ESI_CORPORATION_ID, 0) == 1000169])
+        is_ok = any([quart.session.get(self.ESI_ALLIANCE_ID, 0) == 99002329, quart.session.get(self.ESI_CORPORATION_ID, 0) in [1000169, 98629865]])
         if not is_ok:
             quart.session.clear()
 

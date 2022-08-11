@@ -85,9 +85,9 @@ async def root() -> quart.Response:
         evesession["tasks_started"] = True
         # EveMoonYieldTask(evesession, evedb, app.logger)
         # EsiAllianceTask(evesession, evedb, app.logger)
-        # EveUniverseRegionsTask(evesession, evedb, app.logger)
-        # EveUniverseConstellationsTask(evesession, evedb, app.logger)
-        # EveUniverseSystemsTask(evesession, evedb, app.logger)
+        EveUniverseRegionsTask(evesession, evedb, app.logger)
+        EveUniverseConstellationsTask(evesession, evedb, app.logger)
+        EveUniverseSystemsTask(evesession, evedb, app.logger)
 
     # print(f"session: {dict(quart.session)}")
     if quart.session.get(EveSSO.ESI_CHARACTER_NAME):
@@ -96,11 +96,10 @@ async def root() -> quart.Response:
             quart.session["tasks_started"] = True
 
             if bool(quart.session.get(EveSSO.ESI_CHARACTER_STATION_MANAGER_ROLE, False)):
-                # EveEnumerateStructureTask(quart.session, evedb, app.logger)
                 EveStructureTask(quart.session, evedb, app.logger)
 
-            # if bool(quart.session.get(EveSSO.ESI_CHARACTER_DIRECTOR_ROLE, False)):
-            #     EveEsiAlliancMemberTask(quart.session, evedb, app.logger)
+            if bool(quart.session.get(EveSSO.ESI_CHARACTER_DIRECTOR_ROLE, False)):
+                EveEsiAlliancMemberTask(quart.session, evedb, app.logger)
 
         extraction_results: Final = list()
         structure_results: Final = list()

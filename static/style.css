@@ -44,7 +44,7 @@ input {
 }
 
 table {
-    width: 75%;
+    width: 99%;
     font-size: 1vw;
     text-align: right;
 }
@@ -111,11 +111,11 @@ tfoot .align_left {
 
 .box {
     padding-top: 1vw;
-    padding-bottom: 1vw;
+    padding-bottom: 2vw;
     padding-left: 2vw;
     padding-right: 2vw;
-    width: 75vw auto;
-    margin: 2vw auto;
+    /* width: 75vw auto;
+    margin: 2vw auto; */
     background-color: var(--background-color);
     /* border: 1px solid var(--foreground-color); */
     opacity: 0.7;

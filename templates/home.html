@@ -7,26 +7,28 @@
     {% endif %}
 </div>
 <div class="box">
-    <p>Moon Drill Extractions</p>
+    <h3>Moon Drill Extractions</h3>
     <table>
         <thead>
             <tr>
-                <th>Corporation</th>
-                <th>Moon</th>
-                <th>Structure</th>
+                <th align="left">Corporation</th>
+                <th align="left">Moon</th>
+                <th align="left">Structure</th>
+                <th>Fuel Expiry Time</th>
+                <th>Chunk Ready Time</th>
                 <th>Chunk Fragmentation Time</th>
-                <th>Chunk Decay Time</th>
             </tr>
         </thead>
         <tbody>
             {% for e in extractions %}
             <tr>
-                <td>
+                <td align="left">
                     <a href="https://evewho.com/corporation/{{e.corporation_id}}">
                         {{ e.corporation.name }}
                     </a></td>
-                <td>{{ e.moon.name }}</td>
-                <td>{{ e.structure.name }}</td>
+                <td align="left">{{ e.moon.name }}</td>
+                <td align="left">{{ e.structure.name }}</td>
+                <td>{{ e.structure.fuel_expires|datetime }}</td>
                 <td>{{ e.chunk_arrival_time|datetime }}</td>
                 <td>{{ e.natural_decay_time|datetime }}</td>
             </tr>
@@ -38,34 +40,36 @@
                 <td></td>
                 <td></td>
                 <td></td>
+                <td></td>
+                <td></td>
             </tr>
         </tfoot>
     </table>
 </div>
 <div class="box">
-    <p>Structure Fuel Information</p>
+    <h3>Structure Fuel Information</h3>
     <table>
         <thead>
             <tr>
-                <th>System</th>
-                <th>Corporation</th>
-                <th>Structure</th>
+                <th align="left">System</th>
+                <th align="left">Corporation</th>
+                <th align="left">Structure</th>
                 <th>Fuel Expiry Time</th>
             </tr>
         </thead>
         <tbody>
             {% for s in structures %}
             <tr>
-                <td>
+                <td align="left">
                     <a href="https://evemaps.dotlan.net/system/{{s.system.name}}">
                         {{ s.system.name }}
                     </a>
                 </td>
-                <td>
+                <td align="left">
                     <a href="https://evewho.com/corporation/{{s.corporation_id}}">
                         {{ s.corporation.name }}
                     </a></td>
-                <td>{{ s.name }}</td>
+                <td align="left">{{ s.name }}</td>
                 <td>{{ s.fuel_expires|datetime }}</td>
             </tr>
             {% endfor %}
