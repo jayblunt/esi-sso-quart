@@ -64,7 +64,7 @@ evedb: Final = EveDatabase(
 quart_session.Session(app)
 evesso: Final = EveSSO(app, evedb, **evesso_config)
 evesession: Final = app.session_interface.session_class(sid="global", permanent=False)
-evesession[EveTask.CONFIGDIR] = os.path.abspath(os.path.join(app.config.get("BASEDIR", "."), "static"))
+evesession[EveTask.CONFIGDIR] = os.path.abspath(os.path.join(app.config.get("BASEDIR", "."), "data"))
 
 
 @app.errorhandler(404)

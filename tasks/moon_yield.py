@@ -28,7 +28,7 @@ class EveMoonYieldTask(EveTask):
     async def run(self):
 
         moon_data_list: Final = list()
-        moon_data_filename: Final = os.path.abspath(os.path.join(self.session.get("BASEDIR", "."), "static", "moon_data.json"))
+        moon_data_filename: Final = os.path.abspath(os.path.join(self.configdir, "moon_data.json"))
         if os.path.exists(moon_data_filename):
             with open(moon_data_filename) as ifp:
                 [moon_data_list.append(MoonYieldData(**edict)) for edict in json.load(ifp)]
