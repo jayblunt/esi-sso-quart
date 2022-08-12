@@ -103,6 +103,7 @@ async def root() -> quart.Response:
 
         extraction_results: Final = list()
         structure_results: Final = list()
+        last_update_results: Final = list()
         async with await evedb.sessionmaker() as session:
 
             utcnow = datetime.datetime.utcnow()
@@ -123,14 +124,12 @@ async def root() -> quart.Response:
             extraction_results += [
                 result for result in extraction_query_result.scalars()
             ]
-            print(extraction_results)
+            logging.getLogger().debug(extraction_results)
 
             structure_query: Final = (
                 sqlalchemy.select(
                     (
                         EveTables.Structure,
-                        EveTables.UniverseSystem.name.label("system_name"),
-                        EveTables.Corporation.name.label("corporation_name"),
                     )
                 )
                 .join(EveTables.Structure.system)
@@ -143,12 +142,24 @@ async def root() -> quart.Response:
             structure_results += [result for result in structure_query_result.scalars()]
             logging.getLogger().debug(structure_results)
 
+            last_update_dict: Final = dict()
+            for s in structure_results:
+                if s.corporation_id not in last_update_dict.keys():
+                    last_update_dict[s.corporation_id] = s
+                elif s.timestamp > last_update_dict[s.corporation_id].timestamp:
+                    last_update_dict[s.corporation_id] = s
+
+            last_update_results += sorted(last_update_dict.values(), reverse=True, key=lambda x: x.timestamp)
+            logging.getLogger().debug(last_update_results)
+
+
         return await quart.render_template(
             "home.html",
             character_name=quart.session.get(EveSSO.ESI_CHARACTER_NAME),
             character_id=quart.session.get(EveSSO.ESI_CHARACTER_ID),
             extractions=extraction_results,
             structures=structure_results,
+            last_update=last_update_results,
         )
     else:
         return await quart.render_template("login.html")

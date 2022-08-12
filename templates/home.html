@@ -83,4 +83,36 @@
             </tr>
         </tfoot>
     </table>
-</div> {% endblock %}
+</div>
+<div class="box">
+    <h3>Last Structure Update</h3>
+    <table>
+        <thead>
+            <tr>
+                <th align="left">Corporation</th>
+                <th>Last Update</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for lu in last_update %}
+            <tr>
+                <td align="left">
+                    <a href="https://evewho.com/corporation/{{lu.corporation_id}}">
+                        {{ lu.corporation.name }}
+                    </a></td>
+                <td>{{ lu.timestamp|datetime }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td></td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+<div class="copyright" id="copyright_string">
+    <p>© 2022 Jay Blunt. All rights reserved.<br>All EVE related materials © 2014 CCP hf. All rights reserved.<br>"EVE", "EVE Online", "CCP", and all related logos and images are trademarks or registered trademarks of CCP hf.</p>
+</div>
+{% endblock %}
