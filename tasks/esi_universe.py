@@ -83,8 +83,9 @@ class EveUniverseRegionsTask(EveTask):
             existing_query = sqlalchemy.select(EveTables.UniverseRegion)
             existing_query_result = await session.execute(existing_query)
             existing_obj_list: Final = [{x: getattr(result, x) for x in result.__table__.columns.keys()} for result in existing_query_result.scalars()]
-            with open(cache_filename, "w") as ofp:
-                quart.json.dump(existing_obj_list, ofp, indent=4)
+            if len(existing_obj_list) > 0:
+                with open(cache_filename, "w") as ofp:
+                    quart.json.dump(existing_obj_list, ofp, indent=4)
 
         self.logger.info("< {}.{}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name))
 
@@ -157,8 +158,9 @@ class EveUniverseConstellationsTask(EveTask):
             existing_query = sqlalchemy.select(EveTables.UniverseConstellation)
             existing_query_result = await session.execute(existing_query)
             existing_obj_list: Final = [{x: getattr(result, x) for x in result.__table__.columns.keys()} for result in existing_query_result.scalars()]
-            with open(cache_filename, "w") as ofp:
-                quart.json.dump(existing_obj_list, ofp, indent=4)
+            if len(existing_obj_list) > 0:
+                with open(cache_filename, "w") as ofp:
+                    quart.json.dump(existing_obj_list, ofp, indent=4)
 
         self.logger.info("< {}.{}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name))
 
@@ -231,7 +233,8 @@ class EveUniverseSystemsTask(EveTask):
             existing_query = sqlalchemy.select(EveTables.UniverseSystem)
             existing_query_result = await session.execute(existing_query)
             existing_obj_list: Final = [{x: getattr(result, x) for x in result.__table__.columns.keys()} for result in existing_query_result.scalars()]
-            with open(cache_filename, "w") as ofp:
-                quart.json.dump(existing_obj_list, ofp, indent=4)
+            if len(existing_obj_list) > 0:
+                with open(cache_filename, "w") as ofp:
+                    quart.json.dump(existing_obj_list, ofp, indent=4)
 
         self.logger.info("< {}.{}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name))
