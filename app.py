@@ -38,8 +38,8 @@ app: Final = quart.Quart(__name__)
 app.config.from_mapping(
     {
         "DEBUG": False,
-        "PORT": 5500,
-        "HOST": "0.0.0.0",
+        "PORT": 5050,
+        "HOST": "127.0.0.1",
         "SECRET_KEY": uuid.uuid4().hex,
         "SESSION_TYPE": "redis",
         "SESSION_PROTECTION": True,
