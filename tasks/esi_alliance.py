@@ -43,17 +43,18 @@ class EsiAllianceTask(EveTask):
                 existing_obj_set: Final = {result for result in existing_query_result.scalars()}
                 existing_alliance_id_set: Final = {x.alliance_id for x in existing_obj_set}
 
-                if len(alliance_id_set - existing_alliance_id_set) > 0:
-                    load_id_set: Final = alliance_id_set - existing_alliance_id_set
-                    load_obj_set: Final = set()
-                    for x in cache_obj_set:
-                        obj_id = x.alliance_id
-                        if obj_id in load_id_set:
-                            load_obj_set.add(x)
-                            existing_alliance_id_set.add(obj_id)
+                # if len(alliance_id_set - existing_alliance_id_set) > 0:
+                #     load_id_set: Final = alliance_id_set - existing_alliance_id_set
+                #     load_obj_set: Final = set()
+                #     for x in cache_obj_set:
+                #         obj_id = x.alliance_id
+                #         if obj_id in load_id_set:
+                #             load_obj_set.add(x)
+                #             existing_alliance_id_set.add(obj_id)
 
-                    if len(load_obj_set) > 0:
-                        session.add_all(load_obj_set)
+                #     if len(load_obj_set) > 0:
+                #         session.add_all(load_obj_set)
+                #         await session.flush()
 
                 obj_set: Final = set()
                 async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as client_session:

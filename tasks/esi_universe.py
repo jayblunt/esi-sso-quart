@@ -44,17 +44,18 @@ class EveUniverseRegionsTask(EveTask):
                 existing_obj_set |= {result for result in existing_query_result.scalars()}
             existing_region_id_set: Final = {x.region_id for x in existing_obj_set}
 
-            if len(region_id_set - existing_region_id_set) > 0:
-                load_id_set: Final = region_id_set - existing_region_id_set
-                load_obj_set: Final = set()
-                for x in cache_obj_set:
-                    obj_id = x.region_id
-                    if obj_id in load_id_set:
-                        load_obj_set.add(x)
-                        existing_region_id_set.add(obj_id)
+            # if len(region_id_set - existing_region_id_set) > 0:
+            #     load_id_set: Final = region_id_set - existing_region_id_set
+            #     load_obj_set: Final = set()
+            #     for x in cache_obj_set:
+            #         obj_id = x.region_id
+            #         if obj_id in load_id_set:
+            #             load_obj_set.add(x)
+            #             existing_region_id_set.add(obj_id)
 
-                if len(load_obj_set) > 0:
-                    session.add_all(load_obj_set)
+            #     if len(load_obj_set) > 0:
+            #         session.add_all(load_obj_set)
+            #         await session.flush()
 
             obj_set: Final = set()
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as client_session:
@@ -119,17 +120,18 @@ class EveUniverseConstellationsTask(EveTask):
                 existing_obj_set |= {result for result in existing_query_result.scalars()}
             existing_constellation_id_set: Final = {x.constellation_id for x in existing_obj_set}
 
-            if len(constellation_id_set - existing_constellation_id_set) > 0:
-                load_id_set: Final = constellation_id_set - existing_constellation_id_set
-                load_obj_set: Final = set()
-                for x in cache_obj_set:
-                    obj_id = x.constellation_id
-                    if obj_id in load_id_set:
-                        load_obj_set.add(x)
-                        existing_constellation_id_set.add(obj_id)
+            # if len(constellation_id_set - existing_constellation_id_set) > 0:
+            #     load_id_set: Final = constellation_id_set - existing_constellation_id_set
+            #     load_obj_set: Final = set()
+            #     for x in cache_obj_set:
+            #         obj_id = x.constellation_id
+            #         if obj_id in load_id_set:
+            #             load_obj_set.add(x)
+            #             existing_constellation_id_set.add(obj_id)
 
-                if len(load_obj_set) > 0:
-                    session.add_all(load_obj_set)
+            #     if len(load_obj_set) > 0:
+            #         session.add_all(load_obj_set)
+            #         await session.flush()
 
             obj_set: Final = set()
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as client_session:
@@ -194,17 +196,18 @@ class EveUniverseSystemsTask(EveTask):
                 existing_obj_set |= {result for result in existing_query_result.scalars()}
             existing_system_id_set: Final = {x.system_id for x in existing_obj_set}
 
-            if len(system_id_set - existing_system_id_set) > 0:
-                load_id_set: Final = system_id_set - existing_system_id_set
-                load_obj_set: Final = set()
-                for x in cache_obj_set:
-                    obj_id = x.system_id
-                    if obj_id in load_id_set:
-                        load_obj_set.add(x)
-                        existing_system_id_set.add(obj_id)
+            # if len(system_id_set - existing_system_id_set) > 0:
+            #     load_id_set: Final = system_id_set - existing_system_id_set
+            #     load_obj_set: Final = set()
+            #     for x in cache_obj_set:
+            #         obj_id = x.system_id
+            #         if obj_id in load_id_set:
+            #             load_obj_set.add(x)
+            #             existing_system_id_set.add(obj_id)
 
-                if len(load_obj_set) > 0:
-                    session.add_all(load_obj_set)
+            #     if len(load_obj_set) > 0:
+            #         session.add_all(load_obj_set)
+            #         await session.flush()
 
             obj_set: Final = set()
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as client_session:
