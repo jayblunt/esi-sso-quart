@@ -149,7 +149,7 @@ async def root() -> quart.Response:
                 elif s.timestamp > last_update_dict[s.corporation_id].timestamp:
                     last_update_dict[s.corporation_id] = s
 
-            last_update_results += sorted(last_update_dict.values(), reverse=True, key=lambda x: x.timestamp)
+            last_update_results += sorted(last_update_dict.values(), reverse=False, key=lambda x: x.timestamp)
             logging.getLogger().debug(last_update_results)
 
 
