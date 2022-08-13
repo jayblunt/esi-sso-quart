@@ -15,14 +15,9 @@ from db import EveTables
 from .task import EveTask
 
 
-class EsiAllianceTask(EveTask):
+class EveAllianceTask(EveTask):
 
     async def run(self):
-
-        common_params: Final = {
-            "datasource": "tranquility",
-            "language": "en"
-        }
 
         self.logger.info("> {}.{}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name))
 
@@ -60,7 +55,7 @@ class EsiAllianceTask(EveTask):
                 async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as client_session:
                     for alliance_id in alliance_id_set - existing_alliance_id_set:
                         url = f"https://esi.evetech.net/latest/alliances/{alliance_id}/"
-                        async with client_session.get(url, params=common_params) as response:
+                        async with client_session.get(url, params=self.common_params) as response:
                             self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
                             print(f"{response.url} -> {response.status}")
                             if response.status in [200]:

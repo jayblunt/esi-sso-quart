@@ -1,8 +1,15 @@
+import enum
 import sqlalchemy
 import sqlalchemy.ext.asyncio
 import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
+
+
+class EveAccessType(enum.Enum):
+    CHARACTER = 0
+    CORPORATION = 1
+    ALLIANCE = 2
 
 
 class EveTables:
@@ -176,6 +183,14 @@ class EveTables:
         character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
 
+    class AccessControls(Base):
+        __tablename__ = "app_access"
+        id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        type = sqlalchemy.Column(sqlalchemy.Enum(EveAccessType), primary_key=True, nullable=False)
+        permit = sqlalchemy.Column(sqlalchemy.Boolean, primary_key=True, nullable=False)
+
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}(id={self.id}, type={self.type}, permit={self.permit})"
 
 class EveDatabase:
 

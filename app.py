@@ -1,4 +1,5 @@
 import asyncio
+import cgi
 import datetime
 import logging
 import os
@@ -17,16 +18,10 @@ import sqlalchemy.sql
 
 from db import EveDatabase, EveTables
 from sso import EveSSO
-from tasks import (
-    EveStructureTask,
-    EsiAllianceTask,
-    EveEsiAlliancMemberTask,
-    EveUniverseRegionsTask,
-    EveUniverseConstellationsTask,
-    EveUniverseSystemsTask,
-    EveMoonYieldTask,
-    EveTask,
-)
+from tasks import (EveAccessControlTask, EveAllianceTask,
+                   EveEsiAlliancMemberTask, EveMoonYieldTask, EveStructureTask,
+                   EveTask, EveUniverseConstellationsTask,
+                   EveUniverseRegionsTask, EveUniverseSystemsTask)
 
 syslog.openlog(
     os.path.basename(__file__), logoption=syslog.LOG_PID, facility=syslog.LOG_AUTH
@@ -67,6 +62,18 @@ evesession: Final = app.session_interface.session_class(sid="global", permanent=
 evesession[EveTask.CONFIGDIR] = os.path.abspath(os.path.join(app.config.get("BASEDIR", "."), "data"))
 
 
+@app.before_serving
+async def _before_serving():
+    if not bool(evesession.get("tasks_started", False)):
+        evesession["tasks_started"] = True
+        EveMoonYieldTask(evesession, evedb, app.logger)
+        EveAccessControlTask(evesession, evedb, app.logger)
+        EveAllianceTask(evesession, evedb, app.logger)
+        EveUniverseRegionsTask(evesession, evedb, app.logger)
+        EveUniverseConstellationsTask(evesession, evedb, app.logger)
+        EveUniverseSystemsTask(evesession, evedb, app.logger)
+
+
 @app.errorhandler(404)
 async def error_404(path: str) -> quart.Response:
     return quart.redirect("/")
@@ -75,7 +82,7 @@ async def error_404(path: str) -> quart.Response:
 @app.template_filter("timestamp_age")
 def _timestamp_age(dt: datetime.datetime):
     age_days: Final = (datetime.datetime.now(datetime.timezone.utc) - dt.replace(tzinfo=datetime.timezone.utc)).days
-    if age_days > 1:
+    if age_days >= 7:
         return "stale"
     return "fresh"
 
@@ -88,17 +95,11 @@ def _datetime(dt: datetime.datetime):
 @app.route("/", methods=["GET"])
 async def root() -> quart.Response:
 
-    # print(f"evesession: {dict(evesession)}")
-    if not bool(evesession.get("tasks_started", False)):
-        evesession["tasks_started"] = True
-        # EveMoonYieldTask(evesession, evedb, app.logger)
-        # EsiAllianceTask(evesession, evedb, app.logger)
-        EveUniverseRegionsTask(evesession, evedb, app.logger)
-        EveUniverseConstellationsTask(evesession, evedb, app.logger)
-        EveUniverseSystemsTask(evesession, evedb, app.logger)
-
     # print(f"session: {dict(quart.session)}")
-    if quart.session.get(EveSSO.ESI_CHARACTER_NAME):
+    character_id: Final = quart.session.get(EveSSO.ESI_CHARACTER_ID, 0)
+    character_permitted: Final = quart.session.get(EveSSO.APP_PERMITTED, False)
+
+    if character_id > 0 and character_permitted:
 
         if not bool(quart.session.get("tasks_started", False)):
             quart.session["tasks_started"] = True
@@ -160,7 +161,6 @@ async def root() -> quart.Response:
             last_update_results += sorted(last_update_dict.values(), reverse=False, key=lambda x: x.timestamp)
             logging.getLogger().debug(last_update_results)
 
-
         return await quart.render_template(
             "home.html",
             character_name=quart.session.get(EveSSO.ESI_CHARACTER_NAME),
@@ -169,6 +169,14 @@ async def root() -> quart.Response:
             structures=structure_results,
             last_update=last_update_results,
         )
+
+    elif character_id > 0 and not character_permitted:
+        return await quart.render_template(
+            "permission.html",
+            character_id=character_id,
+            character_name=quart.session.get(EveSSO.ESI_CHARACTER_NAME),
+        )
+
     else:
         return await quart.render_template("login.html")
 

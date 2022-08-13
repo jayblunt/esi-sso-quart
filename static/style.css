@@ -27,7 +27,7 @@ body {
 h1 {
     margin: 0;
     font-size: 14vw;
-    position: fixed;
+    position: absolute;
     top: 0;
     opacity: 0.25;
     z-index: -1;
@@ -71,16 +71,15 @@ tfoot .align_left {
 }
 
 tr .stale {
-    opacity: 0.25;
+    opacity: 0.50;
 }
 
 tr .fresh {}
 
 .character {
-    font-size: 1vw;
-    position: fixed;
-    margin: 1vw;
-    top: 0.5vw;
+    position: absolute;
+    margin: 0.75vw;
+    top: 0.25vw;
     opacity: 0.75;
     z-index: -1;
 }
@@ -103,12 +102,14 @@ tr .fresh {}
 
 .copyright {
     font-size: 0.75vw;
-    margin: 1vw;
-    float: right;
-    text-align: right;
+    position: fixed;
+    margin: 0.75vw;
     bottom: 0;
+    right: 0;
     opacity: 0.5;
     z-index: -1;
+    float: right;
+    text-align: right;
 }
 
 .heading {

@@ -18,7 +18,7 @@ import sqlalchemy.ext.asyncio
 import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
-from db import EveDatabase, EveTables
+from db import EveDatabase, EveTables, EveAccessType
 
 
 class EveSSO:
@@ -28,6 +28,7 @@ class EveSSO:
     JWT_ISSUERS: Final = ["login.eveonline.com", "https://login.eveonline.com"]
     JWT_AUDIENCE: Final = "EVE Online"
 
+    APP_PERMITTED: Final = "permitted"
     ESI_STATE: Final = "state"
     ESI_CHARACTER_NAME: Final = "character_name"
     ESI_CHARACTER_ID: Final = "character_id"
@@ -308,8 +309,28 @@ class EveSSO:
                 quart.session[self.ESI_CHARACTER_DIRECTOR_ROLE] = 'Director' in character_roles_response.get('roles', [])
                 quart.session[self.ESI_CHARACTER_STATION_MANAGER_ROLE] = 'Station_Manager' in character_roles_response.get('roles', [])
 
-        is_ok = any([quart.session.get(self.ESI_ALLIANCE_ID, 0) == 99002329, quart.session.get(self.ESI_CORPORATION_ID, 0) in [1000169, 98629865]])
-        if not is_ok:
-            quart.session.clear()
+        acl_set: Final = set()
+        async with await self.db.sessionmaker() as session:
+            async with session.begin():
+                acl_query = sqlalchemy.select(EveTables.AccessControls)
+                acl_query_result = await session.execute(acl_query)
+                acl_set |= {result for result in acl_query_result.scalars()}
+
+        acl_pass = False
+        acl_evaluations = [
+            (EveAccessType.ALLIANCE, quart.session.get(self.ESI_ALLIANCE_ID, 0)),
+            (EveAccessType.CORPORATION, quart.session.get(self.ESI_CORPORATION_ID, 0)),
+            (EveAccessType.CHARACTER, quart.session.get(self.ESI_CHARACTER_ID, 0)),
+        ]
+
+        for acl_type, acl_id in acl_evaluations:
+            for acl in filter(lambda x: x.type == acl_type, acl_set):
+                if acl_id == acl.id:
+                    acl_pass = acl.permit
+                    self.logger.info(f"{inspect.currentframe().f_code.co_name}: {acl}: {acl_pass}")
+
+        quart.session[EveSSO.APP_PERMITTED] = acl_pass
+        # if not acl_pass:
+        #     quart.session.clear()
 
         return quart.redirect("/")
