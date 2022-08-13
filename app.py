@@ -112,6 +112,7 @@ async def root() -> quart.Response:
 
         extraction_results: Final = list()
         structure_results: Final = list()
+        timer_results: Final = list()
         last_update_results: Final = list()
         async with await evedb.sessionmaker() as session:
 
@@ -133,7 +134,6 @@ async def root() -> quart.Response:
             extraction_results += [
                 result for result in extraction_query_result.scalars()
             ]
-            logging.getLogger().debug(extraction_results)
 
             structure_query: Final = (
                 sqlalchemy.select(
@@ -141,15 +141,35 @@ async def root() -> quart.Response:
                         EveTables.Structure,
                     )
                 )
+                .where(
+                    EveTables.Structure.state_timer_end >= utcnow,
+                )
                 .join(EveTables.Structure.system)
                 .join(EveTables.Structure.corporation)
-                .order_by(EveTables.Structure.fuel_expires)
+                .order_by(EveTables.Structure.state_timer_end)
                 .options(sqlalchemy.orm.selectinload(EveTables.Structure.system))
                 .options(sqlalchemy.orm.selectinload(EveTables.Structure.corporation))
             )
             structure_query_result = await session.execute(structure_query)
             structure_results += [result for result in structure_query_result.scalars()]
-            logging.getLogger().debug(structure_results)
+
+            timer_query: Final = (
+                sqlalchemy.select(
+                    (
+                        EveTables.Structure,
+                    )
+                )
+                .where(
+                    EveTables.Structure.state_timer_end >= utcnow,
+                )
+                .join(EveTables.Structure.system)
+                .join(EveTables.Structure.corporation)
+                .order_by(EveTables.Structure.state_timer_end)
+                .options(sqlalchemy.orm.selectinload(EveTables.Structure.system))
+                .options(sqlalchemy.orm.selectinload(EveTables.Structure.corporation))
+            )
+            timer_query_result = await session.execute(timer_query)
+            timer_results += [result for result in timer_query_result.scalars()]
 
             last_update_dict: Final = dict()
             for s in structure_results:
@@ -165,6 +185,7 @@ async def root() -> quart.Response:
             "home.html",
             character_name=quart.session.get(EveSSO.ESI_CHARACTER_NAME),
             character_id=quart.session.get(EveSSO.ESI_CHARACTER_ID),
+            timers=timer_results,
             extractions=extraction_results,
             structures=structure_results,
             last_update=last_update_results,
