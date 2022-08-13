@@ -60,17 +60,10 @@
         <tbody>
             {% for s in structures %}
             <tr class="{{s.timestamp|timestamp_age}}">
-                <td align="left">
-                    <a href="https://evemaps.dotlan.net/system/{{s.system.name}}">
-                        {{ s.system.name }}
-                    </a>
-                </td>
-                <td align="left">
-                    <a href="https://evewho.com/corporation/{{s.corporation_id}}">
-                        {{ s.corporation.name }}
-                    </a></td>
-                <td align="left">{{ s.name }}</td>
-                <td>{{ s.fuel_expires|datetime }}</td>
+                <td align="left" class="{{s.timestamp|timestamp_age}}"><a href="https://evemaps.dotlan.net/system/{{s.system.name}}">{{ s.system.name }}</a></td>
+                <td align="left" class="{{s.timestamp|timestamp_age}}"><a href="https://evewho.com/corporation/{{s.corporation_id}}">{{ s.corporation.name }}</a></td>
+                <td align="left" class="{{s.timestamp|timestamp_age}}">{{ s.name }}</td>
+                <td class="{{s.timestamp|timestamp_age}}">{{ s.fuel_expires|datetime }}</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -95,12 +88,9 @@
         </thead>
         <tbody>
             {% for lu in last_update %}
-            <tr>
-                <td align="left">
-                    <a href="https://evewho.com/corporation/{{lu.corporation_id}}">
-                        {{ lu.corporation.name }}
-                    </a></td>
-                <td>{{ lu.timestamp|datetime }}</td>
+            <tr class="{{lu.timestamp|timestamp_age}}">
+                <td align="left" class="{{lu.timestamp|timestamp_age}}"><a href="https://evewho.com/corporation/{{lu.corporation_id}}">{{ lu.corporation.name }}</a></td>
+                <td class="{{lu.timestamp|timestamp_age}}">{{ lu.timestamp|datetime }}</td>
             </tr>
             {% endfor %}
         </tbody>

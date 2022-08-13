@@ -71,7 +71,7 @@ tfoot .align_left {
 }
 
 tr .stale {
-    opacity: 0.25;
+    opacity: 0.50;
 }
 
 tr .fresh {}
