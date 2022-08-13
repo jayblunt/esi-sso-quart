@@ -91,8 +91,8 @@ async def root() -> quart.Response:
     # print(f"evesession: {dict(evesession)}")
     if not bool(evesession.get("tasks_started", False)):
         evesession["tasks_started"] = True
-        # EveMoonYieldTask(evesession, evedb, app.logger)
-        # EsiAllianceTask(evesession, evedb, app.logger)
+        EveMoonYieldTask(evesession, evedb, app.logger)
+        EsiAllianceTask(evesession, evedb, app.logger)
         EveUniverseRegionsTask(evesession, evedb, app.logger)
         EveUniverseConstellationsTask(evesession, evedb, app.logger)
         EveUniverseSystemsTask(evesession, evedb, app.logger)
