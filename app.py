@@ -17,16 +17,10 @@ import sqlalchemy.sql
 
 from db import EveDatabase, EveTables
 from sso import EveSSO
-from tasks import (
-    EveStructureTask,
-    EveAllianceTask,
-    EveEsiAlliancMemberTask,
-    EveUniverseRegionsTask,
-    EveUniverseConstellationsTask,
-    EveUniverseSystemsTask,
-    EveMoonYieldTask,
-    EveTask,
-)
+from tasks import (EveAccessControlTask, EveAllianceTask,
+                   EveEsiAlliancMemberTask, EveMoonYieldTask, EveStructureTask,
+                   EveTask, EveUniverseConstellationsTask,
+                   EveUniverseRegionsTask, EveUniverseSystemsTask)
 
 syslog.openlog(
     os.path.basename(__file__), logoption=syslog.LOG_PID, facility=syslog.LOG_AUTH
@@ -67,6 +61,18 @@ evesession: Final = app.session_interface.session_class(sid="global", permanent=
 evesession[EveTask.CONFIGDIR] = os.path.abspath(os.path.join(app.config.get("BASEDIR", "."), "data"))
 
 
+@app.before_serving
+async def _before_serving():
+    if not bool(evesession.get("tasks_started", False)):
+        evesession["tasks_started"] = True
+        EveMoonYieldTask(evesession, evedb, app.logger)
+        EveAccessControlTask(evesession, evedb, app.logger)
+        EveAllianceTask(evesession, evedb, app.logger)
+        EveUniverseRegionsTask(evesession, evedb, app.logger)
+        EveUniverseConstellationsTask(evesession, evedb, app.logger)
+        EveUniverseSystemsTask(evesession, evedb, app.logger)
+
+
 @app.errorhandler(404)
 async def error_404(path: str) -> quart.Response:
     return quart.redirect("/")
@@ -87,15 +93,6 @@ def _datetime(dt: datetime.datetime):
 
 @app.route("/", methods=["GET"])
 async def root() -> quart.Response:
-
-    # print(f"evesession: {dict(evesession)}")
-    if not bool(evesession.get("tasks_started", False)):
-        evesession["tasks_started"] = True
-        EveMoonYieldTask(evesession, evedb, app.logger)
-        EveAllianceTask(evesession, evedb, app.logger)
-        EveUniverseRegionsTask(evesession, evedb, app.logger)
-        EveUniverseConstellationsTask(evesession, evedb, app.logger)
-        EveUniverseSystemsTask(evesession, evedb, app.logger)
 
     # print(f"session: {dict(quart.session)}")
     if quart.session.get(EveSSO.ESI_CHARACTER_NAME):
