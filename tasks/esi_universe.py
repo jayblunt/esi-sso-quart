@@ -19,11 +19,6 @@ class EveUniverseRegionsTask(EveTask):
 
     async def run(self):
 
-        common_params: Final = {
-            "datasource": "tranquility",
-            "language": "en"
-        }
-
         self.logger.info("> {}.{}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name))
 
         url = "https://esi.evetech.net/latest/universe/regions/"
@@ -61,7 +56,7 @@ class EveUniverseRegionsTask(EveTask):
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as client_session:
                 for region_id in region_id_set - existing_region_id_set:
                     url = f"https://esi.evetech.net/latest/universe/regions/{region_id}/"
-                    async with client_session.get(url, params=common_params) as response:
+                    async with client_session.get(url, params=self.common_params) as response:
                         self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
                         # print(f"{response.url} -> {response.status}")
                         if response.status in [200]:
@@ -94,11 +89,6 @@ class EveUniverseRegionsTask(EveTask):
 class EveUniverseConstellationsTask(EveTask):
 
     async def run(self):
-
-        common_params: Final = {
-            "datasource": "tranquility",
-            "language": "en"
-        }
 
         self.logger.info("> {}.{}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name))
 
@@ -137,7 +127,7 @@ class EveUniverseConstellationsTask(EveTask):
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as client_session:
                 for constellation_id in constellation_id_set - existing_constellation_id_set:
                     url = f"https://esi.evetech.net/latest/universe/constellations/{constellation_id}/"
-                    async with client_session.get(url, params=common_params) as response:
+                    async with client_session.get(url, params=self.common_params) as response:
                         self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
                         # print(f"{response.url} -> {response.status}")
                         if response.status in [200]:
@@ -170,11 +160,6 @@ class EveUniverseConstellationsTask(EveTask):
 class EveUniverseSystemsTask(EveTask):
 
     async def run(self):
-
-        common_params: Final = {
-            "datasource": "tranquility",
-            "language": "en"
-        }
 
         self.logger.info("> {}.{}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name))
 
@@ -213,7 +198,7 @@ class EveUniverseSystemsTask(EveTask):
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as client_session:
                 for system_id in system_id_set - existing_system_id_set:
                     url = f"https://esi.evetech.net/latest/universe/systems/{system_id}/"
-                    async with client_session.get(url, params=common_params) as response:
+                    async with client_session.get(url, params=self.common_params) as response:
                         self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
                         # print(f"{response.url} -> {response.status}")
                         if response.status in [200]:

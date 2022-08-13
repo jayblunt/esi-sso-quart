@@ -144,16 +144,11 @@ class EveStructureTask(EveTask):
 
                 existing_moon_id_set: Final = {x.moon_id for x in existing_moons_set}
 
-                common_params: Final = {
-                    "datasource": "tranquility",
-                    "language": "en"
-                }
-
                 moon_obj_set = set()
                 async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as client_session:
                     for moon_id in moon_id_set - existing_moon_id_set:
                         url = f"https://esi.evetech.net/latest/universe/moons/{moon_id}/"
-                        async with client_session.get(url, params=common_params) as response:
+                        async with client_session.get(url, params=self.common_params) as response:
                             print(f"{response.url} -> {response.status}")
                             if response.status in [200]:
                                 edict = dict()

@@ -17,11 +17,6 @@ class EveStructureSearchTask(EveTask):
             "Authorization": f"Bearer {self.session.get(EveSSO.ESI_ACCESS_TOKEN, '')}"
         }
 
-        common_params = {
-            "datasource": "tranquility",
-            "language": "en",
-        }
-
         character_id: Final = self.session.get(EveSSO.ESI_CHARACTER_ID, '')
 
         system_list: Final = ["RF-GGF", "BMNV-P", "31-MLU", "LSC$-P", "9GYL-O", "A9D-R0"]
@@ -33,7 +28,7 @@ class EveStructureSearchTask(EveTask):
             async with aiohttp.ClientSession(headers=session_headers) as client_session:
                 for system_name in system_list:
                     url = f"https://esi.evetech.net/latest/characters/{character_id}/search/"
-                    url_params = {**common_params, **{
+                    url_params = {**self.common_params, **{
                         "categories": "structure",
                         "language": "en",
                         "strict": "false",
@@ -51,7 +46,7 @@ class EveStructureSearchTask(EveTask):
                 for structure_id in structure_id_set:
                     url = f"https://esi.evetech.net/latest/universe/structures/{structure_id}/"
                     with contextlib.suppress(aiohttp.client_exceptions.ClientResponseError):
-                        async with client_session.get(url, params=common_params) as response:
+                        async with client_session.get(url, params=self.common_params) as response:
                             # print(f"{response.url} -> {response.status}")
                             if response.status in [200]:
                                 data = await response.json()

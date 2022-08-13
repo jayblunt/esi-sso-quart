@@ -18,10 +18,6 @@ class EveEsiAlliancMemberTask(EveTask):
 
     async def run(self):
 
-        common_params = {
-            "datasource": "tranquility"
-        }
-
         corporation_id_set: Final = set()
 
         alliance_id: Final = int(self.session.get(EveSSO.ESI_ALLIANCE_ID, 0))
@@ -31,7 +27,7 @@ class EveEsiAlliancMemberTask(EveTask):
         if alliance_id > 0:
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as client_session:
                 url = f"https://esi.evetech.net/latest/alliances/{alliance_id}/corporations/"
-                async with client_session.get(url, params=common_params) as response:
+                async with client_session.get(url, params=self.common_params) as response:
                     # print(f"{response.url} -> {response.status}")
                     if response.status in [200]:
                         for corporation_id in list(await response.json()):
@@ -80,7 +76,7 @@ class EveEsiAlliancMemberTask(EveTask):
                             # print(f"corporation_id: {corporation_id}")
 
                             url = f"https://esi.evetech.net/latest/corporations/{corporation_id}/"
-                            async with client_session.get(url, params=common_params) as response:
+                            async with client_session.get(url, params=self.common_params) as response:
                                 # print(f"{response.url} -> {response.status}")
                                 if response.status in [200]:
                                     edict: Final = dict({

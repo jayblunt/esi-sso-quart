@@ -19,7 +19,7 @@ from db import EveDatabase, EveTables
 from sso import EveSSO
 from tasks import (
     EveStructureTask,
-    EsiAllianceTask,
+    EveAllianceTask,
     EveEsiAlliancMemberTask,
     EveUniverseRegionsTask,
     EveUniverseConstellationsTask,
@@ -92,7 +92,7 @@ async def root() -> quart.Response:
     if not bool(evesession.get("tasks_started", False)):
         evesession["tasks_started"] = True
         EveMoonYieldTask(evesession, evedb, app.logger)
-        EsiAllianceTask(evesession, evedb, app.logger)
+        EveAllianceTask(evesession, evedb, app.logger)
         EveUniverseRegionsTask(evesession, evedb, app.logger)
         EveUniverseConstellationsTask(evesession, evedb, app.logger)
         EveUniverseSystemsTask(evesession, evedb, app.logger)

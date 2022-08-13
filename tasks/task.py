@@ -49,6 +49,13 @@ class EveTask(metaclass=abc.ABCMeta):
     async def run():
         pass
 
+    @property
+    def common_params(self) -> dict:
+        return {
+            "datasource": "tranquility",
+            "language": "en",
+        }
+
     async def get_pages(self, url: str) -> List[Any]:
 
         session_headers: Final = dict()
@@ -56,16 +63,11 @@ class EveTask(metaclass=abc.ABCMeta):
         if len(esi_access_token) > 0:
             session_headers["Authorization"] = f"Bearer {esi_access_token}"
 
-        common_params: Final = {
-            "datasource": "tranquility",
-            "language": "en"
-        }
-
         maxpageno: int = 1
         results: Final = list()
 
         async with aiohttp.ClientSession(headers=session_headers) as client_session:
-            async with client_session.get(url, params=common_params) as response:
+            async with client_session.get(url, params=self.common_params) as response:
                 # print(f"{response.url} -> {response.status}")
                 self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
 
@@ -83,13 +85,14 @@ class EveTask(metaclass=abc.ABCMeta):
 
                 pageno = pages[0]
 
-                request_params = {**common_params, **{
+                request_params = {**self.common_params, **{
                     "page": pageno
                 }}
 
                 async with client_session.get(url, params=request_params) as response:
                     # print(f"{response.url} -> {response.status}")
-                    self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
+                    self.logger.info("- {}.{}: {}".format(self.__class__.__name__,
+                                     inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
                     if response.status in [200]:
                         data = await response.json()
                         if len(data) > 0:
