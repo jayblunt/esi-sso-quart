@@ -103,12 +103,12 @@ tr .fresh {}
 
 .copyright {
     font-size: 0.75vw;
-    margin: 1vw;
-    float: right;
-    text-align: right;
+    margin: 0.75vw;
     bottom: 0;
     opacity: 0.5;
     z-index: -1;
+    float: right;
+    text-align: right;
 }
 
 .heading {
