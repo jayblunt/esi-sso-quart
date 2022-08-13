@@ -74,7 +74,7 @@ async def error_404(path: str) -> quart.Response:
 
 @app.template_filter("timestamp_age")
 def _timestamp_age(dt: datetime.datetime):
-    age_days: Final = (datetime.datetime.utcnow() - dt).days
+    age_days: Final = (datetime.datetime.now(datetime.timezone.utc) - dt.replace(tzinfo=datetime.timezone.utc)).days
     if age_days > 1:
         return "stale"
     return "fresh"
