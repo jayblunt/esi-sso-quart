@@ -1,15 +1,24 @@
 import asyncio
 import base64
 import inspect
+import logging
 import urllib.parse
 import uuid
-from typing import Dict, Final, List, Optional
+import zoneinfo
+from typing import Dict, Final, List
 
 import aiohttp
 import aiohttp.client_exceptions
+import dateutil.parser
 import jose.exceptions
 import jose.jwt
 import quart
+import sqlalchemy
+import sqlalchemy.ext.asyncio
+import sqlalchemy.ext.asyncio.engine
+import sqlalchemy.orm
+import sqlalchemy.sql
+from db import EveDatabase, EveTables
 
 
 class EveSSO:
@@ -34,15 +43,19 @@ class EveSSO:
 
     def __init__(self,
                  app: quart.Quart,
+                 db: EveDatabase,
                  client_id: str,
                  client_secret: str,
                  configuration_url: str = None,
                  scopes: List[str] = ['publicData'],
                  login_route: str = '/sso/login',
                  logout_route: str = '/sso/logout',
-                 callback_route: str = '/sso/callback') -> None:
+                 callback_route: str = '/sso/callback',
+                 logger: logging.Logger = logging.getLogger()) -> None:
 
         self.app: Final = app
+        self.db: Final = db
+        self.logger: Final = logger
 
         self.client_id: Final = client_id
         self.client_secret: Final = client_secret
@@ -86,8 +99,7 @@ class EveSSO:
         headers = {k.lower(): v for k, v in dict(quart.request.headers).items()}
         parsed_url = urllib.parse.urlparse(quart.request.base_url)
         scheme = headers["x-forwarded-proto"] if "x-forwarded-proto" in headers else parsed_url[0]
-        port = int(headers['x-forwarded-port']) if "x-forwarded-port" in headers else None
-        port = f":{port}" if isinstance(port, int) else ""
+        port = f":{int(headers['x-forwarded-port'])}" if "x-forwarded-port" in headers else ""
         return f"{scheme}://{quart.request.host}{port}"
 
     @property
@@ -106,28 +118,28 @@ class EveSSO:
     def callback_endpoint(self) -> str:
         return f"callback_{self.client_id}"
 
-    async def get_json(self, url: str, token: Optional[str] = None) -> Dict:
-        session_headers = dict()
-        if token:
-            session_headers["Authorization"] = f"Bearer {token}"
+    async def get_json(self, url: str, esi_access_token: str = '') -> Dict:
+        session_headers: Final = dict()
+        if len(esi_access_token) > 0:
+            session_headers["Authorization"] = f"Bearer {esi_access_token}"
 
         json = None
         async with aiohttp.ClientSession(headers=session_headers) as client_session:
             async with client_session.get(url) as response:
-                response.raise_for_status()
+                # response.raise_for_status()
                 if response.status in [200]:
                     json = dict(await response.json())
         return json
 
     async def get_jwks(self, url: str) -> List[Dict]:
-        payload = await self.get_json(url)
+        payload: Final = await self.get_json(url)
         return payload.get("keys", [])
 
     async def get_jwks_task(self) -> None:
         while True:
             await asyncio.sleep(300)
             try:
-                new_jwks = await self.get_jwks(self.jwks_uri)
+                new_jwks: Final = await self.get_jwks(self.jwks_uri)
                 if new_jwks is not None:
                     self.jwks = new_jwks
             except Exception as ex:
@@ -136,7 +148,7 @@ class EveSSO:
     def esi_sso_login(self) -> quart.redirect:
         quart.session[self.ESI_STATE] = uuid.uuid4().hex
 
-        redirect_params = [
+        redirect_params: Final = [
             'response_type=code',
             f'redirect_uri={self.callback_url}',
             f'client_id={self.client_id}',
@@ -144,7 +156,7 @@ class EveSSO:
             f'state={quart.session[self.ESI_STATE]}'
         ]
 
-        redirect_url = f"{self.configuration['authorization_endpoint']}?{'&'.join(redirect_params)}"
+        redirect_url: Final = f"{self.configuration['authorization_endpoint']}?{'&'.join(redirect_params)}"
 
         return quart.redirect(redirect_url)
 
@@ -155,20 +167,20 @@ class EveSSO:
 
     async def esi_sso_callback(self) -> quart.redirect:
 
-        required_callback_keys = ["code", "state"]
+        required_callback_keys: Final = ["code", "state"]
         if not all(map(lambda x: bool(quart.request.args.get(x)), required_callback_keys)):
             quart.abort(500, f"invalid call to {self.callback_route}")
 
-        if quart.request.args['state'] != quart.session[self.ESI_STATE]:
+        if quart.request.args["state"] != quart.session.get(self.ESI_STATE):
             quart.abort(500, f"invalid session state in {self.callback_route}")
 
         post_character_url = f"{self.configuration['token_endpoint']}"
-        basic_auth = f"{self.client_id}:{self.client_secret}"
-        post_session_headers = {
+        basic_auth: Final = f"{self.client_id}:{self.client_secret}"
+        post_session_headers: Final = {
             "Authorization": f"Basic {base64.urlsafe_b64encode(basic_auth.encode('utf-8')).decode()}",
             "Host": self.configuration["issuer"],
         }
-        post_body = {
+        post_body: Final = {
             "grant_type": "authorization_code",
             "code": quart.request.args['code'],
         }
@@ -179,7 +191,7 @@ class EveSSO:
                 if response.status in [200]:
                     token_response = dict(await response.json())
 
-        required_response_keys = ["access_token", "token_type", "expires_in", "refresh_token"]
+        required_response_keys: Final = ["access_token", "token_type", "expires_in", "refresh_token"]
         if not all(map(lambda x: bool(token_response.get(x)), required_response_keys)):
             quart.abort(500, f"invalid response to {post_character_url}")
 
@@ -204,19 +216,40 @@ class EveSSO:
             try:
                 decoded_jwt = jose.jwt.decode(token_response["access_token"], key=jwt_key, issuer=self.JWT_ISSUERS, audience=self.JWT_AUDIENCE)
             except jose.exceptions.JWTError as ex:
-                print(f"{inspect.currentframe().f_code.co_name}: {ex}")
+                self.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
                 quart.abort(500, f"invalid jwt in {post_character_url}")
 
-            if decoded_jwt:
+            if decoded_jwt is not None:
                 quart.session[self.ESI_CHARACTER_ID] = int(decoded_jwt.get('sub', '').split(':')[-1])
                 quart.session[self.ESI_CHARACTER_NAME] = decoded_jwt.get('name', '')
                 quart.session[self.ESI_ACCESS_TOKEN] = token_response["access_token"]
                 quart.session[self.ESI_TOKEN_SCOPES] = decoded_jwt.get('scp', [])
 
+            if self.db is not None and decoded_jwt is not None:
+
+                async with await self.db.sessionmaker() as session:
+                    async with session.begin():
+                        character_query = sqlalchemy.select(EveTables.Credentials).where(
+                            EveTables.Credentials.character_id == quart.session[self.ESI_CHARACTER_ID])
+                        character_query_results = await session.execute(character_query)
+                        character_set = {result for result in character_query_results.scalars()}
+
+                        if len(character_set) > 0:
+                            [await session.delete(x) for x in character_set]
+
+                        edict = dict({
+                            "character_id": quart.session[self.ESI_CHARACTER_ID],
+                            "json": token_response
+                        })
+
+                        obj = EveTables.Credentials(**edict)
+                        session.add(obj)
+                        await session.commit()
+
         if bool(quart.session.get(self.ESI_CHARACTER_ID, False)):
-            character_id: Final = quart.session[self.ESI_CHARACTER_ID]
+            character_id: Final = quart.session.get(self.ESI_CHARACTER_ID, 0)
             common_params: Final = {"datasource": "tranquility"}
-            session_headers = {
+            session_headers: Final = {
                 "Authorization": f"Bearer {quart.session.get(self.ESI_ACCESS_TOKEN)}"
             }
 
@@ -236,6 +269,34 @@ class EveSSO:
                         if response.status in [200]:
                             character_roles_response = dict(await response.json())
 
+            if self.db is not None and character_response is not None:
+
+                async with await self.db.sessionmaker() as session:
+                    async with session.begin():
+                        character_query = sqlalchemy.select(EveTables.Character).where(
+                            EveTables.Character.character_id == character_id)
+                        character_query_results = await session.execute(character_query)
+                        character_set = {result for result in character_query_results.scalars()}
+
+                        if len(character_set) > 0:
+                            [await session.delete(x) for x in character_set]
+
+                        edict = dict({
+                            "character_id": int(character_id)
+                        })
+                        for k, v in character_response.items():
+                            if k in ["corporation_id", "alliance_id"]:
+                                v = int(v)
+                            elif k in ["birthday"]:
+                                v = dateutil.parser.parse(v).replace(tzinfo=zoneinfo.ZoneInfo("UTC"))
+                            elif k not in ["name"]:
+                                continue
+                            edict[k] = v
+
+                        obj = EveTables.Character(**edict)
+                        session.add(obj)
+                        await session.commit()
+
             if character_response is not None:
                 for k in [self.ESI_CORPORATION_ID, self.ESI_ALLIANCE_ID, self.ESI_SECURITY_STATUS, self.ESI_BIRTHDAY]:
                     v = character_response.get(k, None)
@@ -246,5 +307,9 @@ class EveSSO:
                 quart.session[self.ESI_CHARACTER_ACCOUNTANT_ROLE] = 'Accountant' in character_roles_response.get('roles', [])
                 quart.session[self.ESI_CHARACTER_DIRECTOR_ROLE] = 'Director' in character_roles_response.get('roles', [])
                 quart.session[self.ESI_CHARACTER_STATION_MANAGER_ROLE] = 'Station_Manager' in character_roles_response.get('roles', [])
+
+        is_ok = any([quart.session.get(self.ESI_ALLIANCE_ID, 0) == 99002329, quart.session.get(self.ESI_CORPORATION_ID, 0) in [1000169, 98629865]])
+        if not is_ok:
+            quart.session.clear()
 
         return quart.redirect("/")

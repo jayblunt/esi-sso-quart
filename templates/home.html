@@ -6,4 +6,113 @@
     </p>
     {% endif %}
 </div>
+<div class="box">
+    <h3>Moon Drill Extractions</h3>
+    <table>
+        <thead>
+            <tr>
+                <th align="left">Corporation</th>
+                <th align="left">Moon</th>
+                <th align="left">Structure</th>
+                <th>Fuel Expiry</th>
+                <th>Chunk Ready</th>
+                <th>Chunk Fragmentation</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for e in extractions %}
+            <tr>
+                <td align="left">
+                    <a href="https://evewho.com/corporation/{{e.corporation_id}}">
+                        {{ e.corporation.name }}
+                    </a></td>
+                <td align="left">{{ e.moon.name }}</td>
+                <td align="left">{{ e.structure.name }}</td>
+                <td>{{ e.structure.fuel_expires|datetime }}</td>
+                <td>{{ e.chunk_arrival_time|datetime }}</td>
+                <td>{{ e.natural_decay_time|datetime }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+<div class="box">
+    <h3>Structure Fuel Information</h3>
+    <table>
+        <thead>
+            <tr>
+                <th align="left">System</th>
+                <th align="left">Corporation</th>
+                <th align="left">Structure</th>
+                <th>Fuel Expiry</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in structures %}
+            <tr class="{{s.timestamp|timestamp_age}}">
+                <td align="left">
+                    <a href="https://evemaps.dotlan.net/system/{{s.system.name}}">
+                        {{ s.system.name }}
+                    </a>
+                </td>
+                <td align="left">
+                    <a href="https://evewho.com/corporation/{{s.corporation_id}}">
+                        {{ s.corporation.name }}
+                    </a></td>
+                <td align="left">{{ s.name }}</td>
+                <td>{{ s.fuel_expires|datetime }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+<div class="box">
+    <h3>Last Corporation Update</h3>
+    <table>
+        <thead>
+            <tr>
+                <th align="left">Corporation</th>
+                <th>Last Update</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for lu in last_update %}
+            <tr>
+                <td align="left">
+                    <a href="https://evewho.com/corporation/{{lu.corporation_id}}">
+                        {{ lu.corporation.name }}
+                    </a></td>
+                <td>{{ lu.timestamp|datetime }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td></td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+<div class="copyright" id="copyright_string">
+    <p>© 2022 Jay Blunt. All rights reserved.<br>All EVE related materials © 2014 CCP hf. All rights reserved.<br>"EVE", "EVE Online", "CCP", and all related logos and images are trademarks or registered trademarks of CCP hf.</p>
+</div>
 {% endblock %}
