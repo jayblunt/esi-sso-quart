@@ -77,10 +77,9 @@ tr .stale {
 tr .fresh {}
 
 .character {
-    font-size: 1vw;
     position: fixed;
-    margin: 1vw;
-    top: 0.5vw;
+    margin: 0.75vw;
+    top: 0.25vw;
     opacity: 0.75;
     z-index: -1;
 }
