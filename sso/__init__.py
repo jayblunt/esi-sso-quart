@@ -28,6 +28,7 @@ class EveSSO:
     JWT_ISSUERS: Final = ["login.eveonline.com", "https://login.eveonline.com"]
     JWT_AUDIENCE: Final = "EVE Online"
 
+    APP_PERMITTED: Final = "permitted"
     ESI_STATE: Final = "state"
     ESI_CHARACTER_NAME: Final = "character_name"
     ESI_CHARACTER_ID: Final = "character_id"
@@ -328,7 +329,8 @@ class EveSSO:
                     acl_pass = acl.permit
                     self.logger.info(f"{inspect.currentframe().f_code.co_name}: {acl}: {acl_pass}")
 
-        if not acl_pass:
-            quart.session.clear()
+        quart.session[EveSSO.APP_PERMITTED] = acl_pass
+        # if not acl_pass:
+        #     quart.session.clear()
 
         return quart.redirect("/")

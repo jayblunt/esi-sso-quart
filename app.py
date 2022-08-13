@@ -1,4 +1,5 @@
 import asyncio
+import cgi
 import datetime
 import logging
 import os
@@ -95,7 +96,10 @@ def _datetime(dt: datetime.datetime):
 async def root() -> quart.Response:
 
     # print(f"session: {dict(quart.session)}")
-    if quart.session.get(EveSSO.ESI_CHARACTER_NAME):
+    character_id: Final = quart.session.get(EveSSO.ESI_CHARACTER_ID, 0)
+    character_permitted: Final = quart.session.get(EveSSO.APP_PERMITTED, False)
+
+    if character_id > 0 and character_permitted:
 
         if not bool(quart.session.get("tasks_started", False)):
             quart.session["tasks_started"] = True
@@ -157,7 +161,6 @@ async def root() -> quart.Response:
             last_update_results += sorted(last_update_dict.values(), reverse=False, key=lambda x: x.timestamp)
             logging.getLogger().debug(last_update_results)
 
-
         return await quart.render_template(
             "home.html",
             character_name=quart.session.get(EveSSO.ESI_CHARACTER_NAME),
@@ -166,6 +169,14 @@ async def root() -> quart.Response:
             structures=structure_results,
             last_update=last_update_results,
         )
+
+    elif character_id > 0 and not character_permitted:
+        return await quart.render_template(
+            "permission.html",
+            character_id=character_id,
+            character_name=quart.session.get(EveSSO.ESI_CHARACTER_NAME),
+        )
+
     else:
         return await quart.render_template("login.html")
 
