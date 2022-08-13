@@ -308,7 +308,7 @@ class EveSSO:
                 quart.session[self.ESI_CHARACTER_DIRECTOR_ROLE] = 'Director' in character_roles_response.get('roles', [])
                 quart.session[self.ESI_CHARACTER_STATION_MANAGER_ROLE] = 'Station_Manager' in character_roles_response.get('roles', [])
 
-        is_ok = any([quart.session.get(self.ESI_ALLIANCE_ID, 0) == 99002329, quart.session.get(self.ESI_CORPORATION_ID, 0) in [1000169, 98629865]])
+        is_ok = any([quart.session.get(self.ESI_ALLIANCE_ID, 0) == 99002329, quart.session.get(self.ESI_CORPORATION_ID, 0) in [1000169, 98508146, 98629865]])
         if not is_ok:
             quart.session.clear()
 
