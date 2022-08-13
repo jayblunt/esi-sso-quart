@@ -59,7 +59,7 @@
         </thead>
         <tbody>
             {% for s in structures %}
-            <tr>
+            <tr class="{{s.timestamp|timestamp_age}}">
                 <td align="left">
                     <a href="https://evemaps.dotlan.net/system/{{s.system.name}}">
                         {{ s.system.name }}

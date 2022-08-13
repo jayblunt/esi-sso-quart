@@ -70,6 +70,12 @@ tfoot .align_left {
     text-align: left;
 }
 
+tr .stale {
+    opacity: 0.25;
+}
+
+tr .fresh {}
+
 .character {
     font-size: 1vw;
     position: fixed;

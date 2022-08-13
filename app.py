@@ -72,6 +72,14 @@ async def error_404(path: str) -> quart.Response:
     return quart.redirect("/")
 
 
+@app.template_filter("timestamp_age")
+def _timestamp_age(dt: datetime.datetime):
+    age_days: Final = (datetime.datetime.utcnow() - dt).days
+    if age_days > 1:
+        return "stale"
+    return "fresh"
+
+
 @app.template_filter("datetime")
 def _datetime(dt: datetime.datetime):
     return dt.replace(tzinfo=None).isoformat(sep=" ", timespec="minutes")
