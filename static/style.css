@@ -93,7 +93,7 @@ tr .fresh {}
 
 .version {
     font-size: 0.75vw;
-    position: absolute;
+    position: fixed;
     margin: 0.75vw;
     bottom: 0;
     opacity: 0.5;
@@ -102,7 +102,7 @@ tr .fresh {}
 
 .copyright {
     font-size: 0.75vw;
-    position: absolute;
+    position: fixed;
     margin: 0.75vw;
     bottom: 0;
     right: 0;
