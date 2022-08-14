@@ -15,6 +15,7 @@
                 <th align="left">System</th>
                 <th align="left">Corporation</th>
                 <th align="left">Structure</th>
+                <th align="left">State</th>
                 <th>Timer Expiry</th>
             </tr>
         </thead>
@@ -27,6 +28,7 @@
                         {{ t.corporation.name }}
                     </a></td>
                 <td align="left">{{ t.name }}</td>
+                <td align="left">{{ t.state|structure_state }}</td>
                 <td>{{ t.state_timer_end|datetime }}</td>
             </tr>
             {% endfor %}

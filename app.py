@@ -79,6 +79,22 @@ async def error_404(path: str) -> quart.Response:
     return quart.redirect("/")
 
 
+@app.template_filter("structure_state")
+def _structure_state(state: str):
+    map: Final = {
+        "deploy_vulnerable": "Deploy / Vulnerable",
+        "anchoring": "Anchoring",
+        "anchor_vulnerable": "Anchoring / Vulnerable",
+        "onlining_vulnerable": "Onlining / Vulnerable",
+        "shield_vulnerable": "Shield / Vulnerable",
+        "hull_reinforce": "Hull Reinforced",
+        "hull_vulnerable": "Hull / Vulnerable",
+        "armor_reinforce": "Armor Reinforced",
+        "armor_vulnerable": "Armor / Vulnerable",
+    }
+    return map.get(state, "Unknown")
+
+
 @app.template_filter("timestamp_age")
 def _timestamp_age(dt: datetime.datetime):
     age_days: Final = (datetime.datetime.now(datetime.timezone.utc) - dt.replace(tzinfo=datetime.timezone.utc)).days
