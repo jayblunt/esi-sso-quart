@@ -164,7 +164,7 @@ async def root() -> quart.Response:
                     )
                     .join(EveTables.Structure.system)
                     .join(EveTables.Structure.corporation)
-                    .order_by(EveTables.Structure.state_timer_end)
+                    .order_by(EveTables.Structure.fuel_expires)
                     .options(sqlalchemy.orm.selectinload(EveTables.Structure.system))
                     .options(sqlalchemy.orm.selectinload(EveTables.Structure.corporation))
                 )
