@@ -79,6 +79,22 @@ async def error_404(path: str) -> quart.Response:
     return quart.redirect("/")
 
 
+@app.template_filter("structure_state")
+def _structure_state(state: str):
+    map: Final = {
+        "deploy_vulnerable": "Deploy / Vulnerable",
+        "anchoring": "Anchoring",
+        "anchor_vulnerable": "Anchoring / Vulnerable",
+        "onlining_vulnerable": "Onlining / Vulnerable",
+        "shield_vulnerable": "Shield / Vulnerable",
+        "hull_reinforce": "Hull Reinforced",
+        "hull_vulnerable": "Hull / Vulnerable",
+        "armor_reinforce": "Armor Reinforced",
+        "armor_vulnerable": "Armor / Vulnerable",
+    }
+    return map.get(state, "Unknown")
+
+
 @app.template_filter("timestamp_age")
 def _timestamp_age(dt: datetime.datetime):
     age_days: Final = (datetime.datetime.now(datetime.timezone.utc) - dt.replace(tzinfo=datetime.timezone.utc)).days
@@ -112,44 +128,64 @@ async def root() -> quart.Response:
 
         extraction_results: Final = list()
         structure_results: Final = list()
+        timer_results: Final = list()
         last_update_results: Final = list()
         async with await evedb.sessionmaker() as session:
 
             utcnow = datetime.datetime.utcnow()
 
-            extraction_query: Final = (
-                sqlalchemy.select(EveTables.Extraction)
-                .where(
-                    EveTables.Extraction.natural_decay_time >= utcnow,
-                    EveTables.Extraction.extraction_start_time < utcnow,
-                )
-                .order_by(EveTables.Extraction.chunk_arrival_time)
-                .options(sqlalchemy.orm.selectinload(EveTables.Extraction.structure))
-                .options(sqlalchemy.orm.selectinload(EveTables.Extraction.corporation))
-                .options(sqlalchemy.orm.selectinload(EveTables.Extraction.moon))
-            )
-
-            extraction_query_result = await session.execute(extraction_query)
-            extraction_results += [
-                result for result in extraction_query_result.scalars()
-            ]
-            logging.getLogger().debug(extraction_results)
-
-            structure_query: Final = (
-                sqlalchemy.select(
-                    (
-                        EveTables.Structure,
+            async with session.begin():
+                timer_query: Final = (
+                    sqlalchemy.select(
+                        (
+                            EveTables.Structure,
+                        )
                     )
+                    .where(
+                        EveTables.Structure.state_timer_end >= utcnow,
+                    )
+                    .join(EveTables.Structure.system)
+                    .join(EveTables.Structure.corporation)
+                    .order_by(EveTables.Structure.state_timer_end)
+                    .options(sqlalchemy.orm.selectinload(EveTables.Structure.system))
+                    .options(sqlalchemy.orm.selectinload(EveTables.Structure.corporation))
                 )
-                .join(EveTables.Structure.system)
-                .join(EveTables.Structure.corporation)
-                .order_by(EveTables.Structure.fuel_expires)
-                .options(sqlalchemy.orm.selectinload(EveTables.Structure.system))
-                .options(sqlalchemy.orm.selectinload(EveTables.Structure.corporation))
-            )
-            structure_query_result = await session.execute(structure_query)
-            structure_results += [result for result in structure_query_result.scalars()]
-            logging.getLogger().debug(structure_results)
+                timer_query_result = await session.execute(timer_query)
+                timer_results += [result for result in timer_query_result.scalars()]
+
+            async with session.begin():
+                extraction_query: Final = (
+                    sqlalchemy.select(EveTables.Extraction)
+                    .where(
+                        EveTables.Extraction.natural_decay_time >= utcnow,
+                        EveTables.Extraction.extraction_start_time < utcnow,
+                    )
+                    .order_by(EveTables.Extraction.chunk_arrival_time)
+                    .options(sqlalchemy.orm.selectinload(EveTables.Extraction.structure))
+                    .options(sqlalchemy.orm.selectinload(EveTables.Extraction.corporation))
+                    .options(sqlalchemy.orm.selectinload(EveTables.Extraction.moon))
+                )
+
+                extraction_query_result = await session.execute(extraction_query)
+                extraction_results += [
+                    result for result in extraction_query_result.scalars()
+                ]
+
+            async with session.begin():
+                structure_query: Final = (
+                    sqlalchemy.select(
+                        (
+                            EveTables.Structure,
+                        )
+                    )
+                    .join(EveTables.Structure.system)
+                    .join(EveTables.Structure.corporation)
+                    .order_by(EveTables.Structure.fuel_expires)
+                    .options(sqlalchemy.orm.selectinload(EveTables.Structure.system))
+                    .options(sqlalchemy.orm.selectinload(EveTables.Structure.corporation))
+                )
+                structure_query_result = await session.execute(structure_query)
+                structure_results += [result for result in structure_query_result.scalars()]
 
             last_update_dict: Final = dict()
             for s in structure_results:
@@ -159,13 +195,13 @@ async def root() -> quart.Response:
                     last_update_dict[s.corporation_id] = s
 
             last_update_results += sorted(last_update_dict.values(), reverse=False, key=lambda x: x.timestamp)
-            logging.getLogger().debug(last_update_results)
 
         return await quart.render_template(
             "home.html",
             character_name=quart.session.get(EveSSO.ESI_CHARACTER_NAME),
             character_id=quart.session.get(EveSSO.ESI_CHARACTER_ID),
             extractions=extraction_results,
+            timers=timer_results,
             structures=structure_results,
             last_update=last_update_results,
         )

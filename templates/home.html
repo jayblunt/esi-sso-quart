@@ -6,6 +6,44 @@
     </p>
     {% endif %}
 </div>
+{% if timers %}
+<div class="box">
+    <h3>Structure Timers</h3>
+    <table>
+        <thead>
+            <tr>
+                <th align="left">System</th>
+                <th align="left">Corporation</th>
+                <th align="left">Structure</th>
+                <th align="left">State</th>
+                <th>Timer Expiry</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for t in timers %}
+            <tr>
+                <td align="left"><a href="https://evemaps.dotlan.net/system/{{t.system.name}}">{{ t.system.name }}</a></td>
+                <td align="left">
+                    <a href="https://evewho.com/corporation/{{t.corporation_id}}">
+                        {{ t.corporation.name }}
+                    </a></td>
+                <td align="left">{{ t.name }}</td>
+                <td align="left">{{ t.state|structure_state }}</td>
+                <td>{{ t.state_timer_end|datetime }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+{% endif %} {% if extractions %}
 <div class="box">
     <h3>Moon Drill Extractions</h3>
     <table>
@@ -46,6 +84,7 @@
         </tfoot>
     </table>
 </div>
+{% endif %} {% if structures %}
 <div class="box">
     <h3>Structure Fuel Information</h3>
     <table>
@@ -77,6 +116,7 @@
         </tfoot>
     </table>
 </div>
+{% endif %}
 <div class="box">
     <h3>Last Corporation Update</h3>
     <table>
