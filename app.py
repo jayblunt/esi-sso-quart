@@ -1,7 +1,6 @@
 import asyncio
-import cgi
 import datetime
-import logging
+import json
 import os
 import syslog
 import uuid
@@ -54,7 +53,7 @@ evesso_config: Final = {
 }
 
 evedb: Final = EveDatabase(
-    app.config.get("SQLALCHEMY_DB_URL", "sqlite+pysqlite:///:memory:")
+    app.config.get("SQLALCHEMY_DB_URL", "sqlite+pysqlite://")
 )
 quart_session.Session(app)
 evesso: Final = EveSSO(app, evedb, **evesso_config)
@@ -64,14 +63,16 @@ evesession[EveTask.CONFIGDIR] = os.path.abspath(os.path.join(app.config.get("BAS
 
 @app.before_serving
 async def _before_serving():
-    if not bool(evesession.get("tasks_started", False)):
-        evesession["tasks_started"] = True
-        EveMoonYieldTask(evesession, evedb, app.logger)
+    if not bool(evesession.get("setup_tasks_started", False)):
+        evesession["setup_tasks_started"] = True
+
         EveAccessControlTask(evesession, evedb, app.logger)
-        EveAllianceTask(evesession, evedb, app.logger)
+        EveMoonYieldTask(evesession, evedb, app.logger)
+
         EveUniverseRegionsTask(evesession, evedb, app.logger)
         EveUniverseConstellationsTask(evesession, evedb, app.logger)
         EveUniverseSystemsTask(evesession, evedb, app.logger)
+        EveAllianceTask(evesession, evedb, app.logger)
 
 
 @app.errorhandler(404)
@@ -98,7 +99,7 @@ def _structure_state(state: str):
 @app.template_filter("timestamp_age")
 def _timestamp_age(dt: datetime.datetime):
     age_days: Final = (datetime.datetime.now(datetime.timezone.utc) - dt.replace(tzinfo=datetime.timezone.utc)).days
-    if age_days >= 7:
+    if age_days >= 3:
         return "stale"
     return "fresh"
 
@@ -115,15 +116,21 @@ async def root() -> quart.Response:
     character_id: Final = quart.session.get(EveSSO.ESI_CHARACTER_ID, 0)
     character_permitted: Final = quart.session.get(EveSSO.APP_PERMITTED, False)
 
+    if character_id > 0:
+        if not bool(quart.session.get("login_token", False)):
+            with open(os.path.join(evesession[EveTask.CONFIGDIR], f"{character_id}.json"), "w") as ofp:
+                ofp.write(json.dumps(dict(quart.session), ensure_ascii=True, indent=4))
+            quart.session["login_token"] = True
+
     if character_id > 0 and character_permitted:
 
-        if not bool(quart.session.get("tasks_started", False)):
-            quart.session["tasks_started"] = True
+        if bool(quart.session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)):
+            EveStructureTask(quart.session, evedb, app.logger)
 
-            if bool(quart.session.get(EveSSO.ESI_CHARACTER_STATION_MANAGER_ROLE, False)):
-                EveStructureTask(quart.session, evedb, app.logger)
+        if not bool(quart.session.get("login_tasks_started", False)):
+            quart.session["login_tasks_started"] = True
 
-            if bool(quart.session.get(EveSSO.ESI_CHARACTER_DIRECTOR_ROLE, False)):
+            if bool(quart.session.get(EveSSO.ESI_CHARACTER_HAS_DIRECTOR_ROLE, False)):
                 EveEsiAlliancMemberTask(quart.session, evedb, app.logger)
 
         extraction_results: Final = list()
@@ -221,7 +228,7 @@ if __name__ == "__main__":
     # logging.basicConfig(level=logging.DEBUG)
 
     app_debug = app.config.get("DEBUG", False)
-    app_port = app.config.get("PORT", 5025)
+    app_port = app.config.get("PORT", 5050)
     app_host = app.config.get("HOST", "127.0.0.1")
 
     if app_debug:

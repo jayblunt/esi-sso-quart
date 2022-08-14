@@ -23,7 +23,10 @@ class EveSession(metaclass=abc.ABCMeta):
 
 class EveTask(metaclass=abc.ABCMeta):
 
-    LIMIT_PER_HOST: Final = 17
+    LIMIT_PER_HOST: Final = 37
+    ERROR_SLEEP_TIME: Final = 7
+    ERROR_RETRY_COUNT: Final = 11
+
     CONFIGDIR: Final = "CONFIGDIR"
 
     def __init__(self, session: EveSession, db: EveDatabase, logger: logging.Logger = logging.getLogger()):
@@ -37,13 +40,13 @@ class EveTask(metaclass=abc.ABCMeta):
             self.task: asyncio.Task = None
         else:
             self.session[self.name] = True
-            self.task: asyncio.Task = asyncio.create_task(self.manage())
+            self.task: asyncio.Task = asyncio.create_task(self.manage_task())
 
-    async def manage(self):
-        self.logger.info("> {}.{}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name))
+    async def manage_task(self):
+        self.logger.info(f"> {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
         await self.run()
         self.session[self.name] = False
-        self.logger.info("< {}.{}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name))
+        self.logger.info(f"< {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
 
     @abc.abstractmethod
     async def run():
@@ -68,7 +71,6 @@ class EveTask(metaclass=abc.ABCMeta):
 
         async with aiohttp.ClientSession(headers=session_headers) as client_session:
             async with client_session.get(url, params=self.common_params) as response:
-                # print(f"{response.url} -> {response.status}")
                 self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
 
                 if response.status in [200]:
@@ -76,30 +78,29 @@ class EveTask(metaclass=abc.ABCMeta):
                     results.extend(await response.json())
 
         pages = list(range(2, 1 + int(maxpageno)))
-        errorcount = 0
 
         async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST), headers=session_headers) as client_session:
-            while len(pages):
-                if errorcount > 11:
-                    break
+            task_list: Final = list()
+            for page in pages:
+                task_list.append(asyncio.ensure_future(self._get_page(url, page, client_session)))
+            result_list = asyncio.gather(*task_list)
+            await result_list
+            results += sum(result_list, [])
 
-                pageno = pages[0]
-
-                request_params = {**self.common_params, **{
-                    "page": pageno
-                }}
-
-                async with client_session.get(url, params=request_params) as response:
-                    # print(f"{response.url} -> {response.status}")
-                    self.logger.info("- {}.{}: {}".format(self.__class__.__name__,
-                                     inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
-                    if response.status in [200]:
-                        data = await response.json()
-                        if len(data) > 0:
-                            results.extend(data)
-                        pages.remove(pageno)
-                    else:
-                        errorcount += 1
-                        asyncio.sleep(17)
-
+        self.logger.info("- {}.{}: {}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  url, results))
         return results
+
+    async def _get_page(self, url: str, page: int, client_session: aiohttp.ClientSession) -> List:
+        request_params = {**self.common_params, **{
+            "page": page
+        }}
+        attempts_remaining = self.ERROR_RETRY_COUNT
+        while attempts_remaining > 0:
+            async with client_session.get(url, params=request_params) as response:
+                if response.status in [200]:
+                    return await response.json()
+                else:
+                    attempts_remaining -= 1
+                    self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
+                    asyncio.sleep(self.ERROR_SLEEP_TIME)
+        return []

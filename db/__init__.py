@@ -1,4 +1,5 @@
 import enum
+
 import sqlalchemy
 import sqlalchemy.ext.asyncio
 import sqlalchemy.ext.asyncio.engine
@@ -191,6 +192,7 @@ class EveTables:
 
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(id={self.id}, type={self.type}, permit={self.permit})"
+
 
 class EveDatabase:
 

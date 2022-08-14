@@ -1,4 +1,3 @@
-from binhex import FInfo
 import dataclasses
 import json
 import os

@@ -1,148 +1,142 @@
 {% extends "base.html" %} {% block content %}
 <div class="character" id="character" width="100%">
-    {% if character_id %}
-    <p>
-        <a href="/sso/logout"><img width=128 height=128 alt="{{character_name}}" src="https://images.evetech.net/characters/{{character_id}}/portrait?size=128"></a>
-    </p>
-    {% endif %}
+  {% if character_id %}
+  <p>
+    <a href="/sso/logout"><img width="128" height="128" alt="{{character_name}}" src="https://images.evetech.net/characters/{{character_id}}/portrait?size=128" /></a>
+  </p>
+  {% endif %}
 </div>
 {% if timers %}
 <div class="box">
-    <h3>Structure Timers</h3>
-    <table>
-        <thead>
-            <tr>
-                <th align="left">System</th>
-                <th align="left">Corporation</th>
-                <th align="left">Structure</th>
-                <th align="left">State</th>
-                <th>Timer Expiry</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for t in timers %}
-            <tr>
-                <td align="left"><a href="https://evemaps.dotlan.net/system/{{t.system.name}}">{{ t.system.name }}</a></td>
-                <td align="left">
-                    <a href="https://evewho.com/corporation/{{t.corporation_id}}">
-                        {{ t.corporation.name }}
-                    </a></td>
-                <td align="left">{{ t.name }}</td>
-                <td align="left">{{ t.state|structure_state }}</td>
-                <td>{{ t.state_timer_end|datetime }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-        <tfoot>
-            <tr>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-            </tr>
-        </tfoot>
-    </table>
+  <h3>Structure Timers</h3>
+  <table>
+    <thead>
+      <tr>
+        <th align="left">System</th>
+        <th align="left">Corporation</th>
+        <th align="left">Structure</th>
+        <th align="left">State</th>
+        <th>Timer Expiry</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in timers %}
+      <tr>
+        <td align="left"><a href="https://evemaps.dotlan.net/system/{{t.system.name}}" target="_blank">{{ t.system.name }}</a></td>
+        <td align="left"><a href="https://evewho.com/corporation/{{t.corporation_id}}" target="_blank"> {{ t.corporation.name }} </a></td>
+        <td align="left">{{ t.name }}</td>
+        <td align="left">{{ t.state|structure_state }}</td>
+        <td>{{ t.state_timer_end|datetime }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>
 </div>
 {% endif %} {% if extractions %}
 <div class="box">
-    <h3>Moon Drill Extractions</h3>
-    <table>
-        <thead>
-            <tr>
-                <th align="left">Corporation</th>
-                <th align="left">Moon</th>
-                <th align="left">Structure</th>
-                <th>Fuel Expiry</th>
-                <th>Chunk Ready</th>
-                <th>Chunk Fragmentation</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for e in extractions %}
-            <tr>
-                <td align="left">
-                    <a href="https://evewho.com/corporation/{{e.corporation_id}}">
-                        {{ e.corporation.name }}
-                    </a></td>
-                <td align="left">{{ e.moon.name }}</td>
-                <td align="left">{{ e.structure.name }}</td>
-                <td>{{ e.structure.fuel_expires|datetime }}</td>
-                <td>{{ e.chunk_arrival_time|datetime }}</td>
-                <td>{{ e.natural_decay_time|datetime }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-        <tfoot>
-            <tr>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-            </tr>
-        </tfoot>
-    </table>
+  <h3>Moon Drill Extractions</h3>
+  <table>
+    <thead>
+      <tr>
+        <th align="left">Corporation</th>
+        <th align="left">Moon</th>
+        <th align="left">Structure</th>
+        <th>Fuel Expiry</th>
+        <th>Chunk Ready</th>
+        <th>Chunk Fragmentation</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in extractions %}
+      <tr class="{{e.timestamp|timestamp_age}}">
+        <td align="left" class="{{e.timestamp|timestamp_age}}"><a href="https://evewho.com/corporation/{{e.corporation_id}}" target="_blank"> {{ e.corporation.name }} </a></td>
+        <td align="left" class="{{e.timestamp|timestamp_age}}">{{ e.moon.name }}</td>
+        <td align="left" class="{{e.timestamp|timestamp_age}}">{{ e.structure.name }}</td>
+        <td class="{{e.timestamp|timestamp_age}}">{{ e.structure.fuel_expires|datetime }}</td>
+        <td class="{{e.timestamp|timestamp_age}}">{{ e.chunk_arrival_time|datetime }}</td>
+        <td class="{{e.timestamp|timestamp_age}}">{{ e.natural_decay_time|datetime }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>
 </div>
 {% endif %} {% if structures %}
 <div class="box">
-    <h3>Structure Fuel Information</h3>
-    <table>
-        <thead>
-            <tr>
-                <th align="left">System</th>
-                <th align="left">Corporation</th>
-                <th align="left">Structure</th>
-                <th>Fuel Expiry</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for s in structures %}
-            <tr class="{{s.timestamp|timestamp_age}}">
-                <td align="left" class="{{s.timestamp|timestamp_age}}"><a href="https://evemaps.dotlan.net/system/{{s.system.name}}">{{ s.system.name }}</a></td>
-                <td align="left" class="{{s.timestamp|timestamp_age}}"><a href="https://evewho.com/corporation/{{s.corporation_id}}">{{ s.corporation.name }}</a></td>
-                <td align="left" class="{{s.timestamp|timestamp_age}}">{{ s.name }}</td>
-                <td class="{{s.timestamp|timestamp_age}}">{{ s.fuel_expires|datetime }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-        <tfoot>
-            <tr>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-            </tr>
-        </tfoot>
-    </table>
+  <h3>Structure Fuel Information</h3>
+  <table>
+    <thead>
+      <tr>
+        <th align="left">System</th>
+        <th align="left">Corporation</th>
+        <th align="left">Structure</th>
+        <th>Fuel Expiry</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in structures %}
+      <tr class="{{s.timestamp|timestamp_age}}">
+        <td align="left" class="{{s.timestamp|timestamp_age}}"><a href="https://evemaps.dotlan.net/system/{{s.system.name}}" target="_blank">{{ s.system.name }}</a></td>
+        <td align="left" class="{{s.timestamp|timestamp_age}}"><a href="https://evewho.com/corporation/{{s.corporation_id}}" target="_blank">{{ s.corporation.name }}</a></td>
+        <td align="left" class="{{s.timestamp|timestamp_age}}">{{ s.name }}</td>
+        <td class="{{s.timestamp|timestamp_age}}">{{ s.fuel_expires|datetime }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>
 </div>
 {% endif %}
 <div class="box">
-    <h3>Last Corporation Update</h3>
-    <table>
-        <thead>
-            <tr>
-                <th align="left">Corporation</th>
-                <th>Last Update</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for lu in last_update %}
-            <tr class="{{lu.timestamp|timestamp_age}}">
-                <td align="left" class="{{lu.timestamp|timestamp_age}}"><a href="https://evewho.com/corporation/{{lu.corporation_id}}">{{ lu.corporation.name }}</a></td>
-                <td class="{{lu.timestamp|timestamp_age}}">{{ lu.timestamp|datetime }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-        <tfoot>
-            <tr>
-                <td></td>
-                <td></td>
-            </tr>
-        </tfoot>
-    </table>
+  <h3>Last Update by Corporation</h3>
+  <table>
+    <thead>
+      <tr>
+        <th align="left">Corporation</th>
+        <th>Last Update</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for lu in last_update %}
+      <tr class="{{lu.timestamp|timestamp_age}}">
+        <td align="left" class="{{lu.timestamp|timestamp_age}}"><a href="https://evewho.com/corporation/{{lu.corporation_id}}" target="_blank">{{ lu.corporation.name }}</a></td>
+        <td class="{{lu.timestamp|timestamp_age}}">{{ lu.timestamp|datetime }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td></td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>
 </div>
 <div class="copyright" id="copyright_string">
-    <p>© 2022 Jay Blunt. All rights reserved.<br>All EVE related materials © 2014 CCP hf. All rights reserved.<br>"EVE", "EVE Online", "CCP", and all related logos and images are trademarks or registered trademarks of CCP hf.</p>
+  <p>© 2022 Jay Blunt. All rights reserved.<br />All EVE related materials © 2014 CCP hf. All rights reserved.<br />"EVE", "EVE Online", "CCP", and all related logos and images are trademarks or registered trademarks of CCP hf.</p>
 </div>
 {% endblock %}

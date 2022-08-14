@@ -25,7 +25,7 @@ class EveStructureTask(EveTask):
         required_scopes: Final = {
             "esi-corporations.read_structures.v1"}
 
-        if not all([self.session.get(EveSSO.ESI_CHARACTER_STATION_MANAGER_ROLE, False), len(required_scopes.intersection(set(self.session.get(EveSSO.ESI_TOKEN_SCOPES, [])))) == len(required_scopes)]):
+        if not all([self.session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False), len(required_scopes.intersection(set(self.session.get(EveSSO.ESI_ACCESS_TOKEN_SCOPES, [])))) == len(required_scopes)]):
             return
 
         url = f"https://esi.evetech.net/latest/corporations/{corporation_id}/structures/"
@@ -92,7 +92,7 @@ class EveStructureTask(EveTask):
         required_scopes: Final = {
             "esi-industry.read_corporation_mining.v1"}
 
-        if not all([self.session.get(EveSSO.ESI_CHARACTER_STATION_MANAGER_ROLE, False), len(required_scopes.intersection(set(self.session.get(EveSSO.ESI_TOKEN_SCOPES, [])))) == len(required_scopes)]):
+        if not all([self.session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False), len(required_scopes.intersection(set(self.session.get(EveSSO.ESI_ACCESS_TOKEN_SCOPES, [])))) == len(required_scopes)]):
             return
 
         url = f"https://esi.evetech.net/latest/corporation/{corporation_id}/mining/extractions/"

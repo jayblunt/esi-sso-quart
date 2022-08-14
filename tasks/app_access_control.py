@@ -1,16 +1,12 @@
 import inspect
-import os
 from typing import Final
 
-import aiohttp
-import aiohttp.client_exceptions
-import quart.json
 import sqlalchemy
 import sqlalchemy.ext.asyncio
 import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
-from db import EveTables, EveAccessType
+from db import EveAccessType, EveTables
 
 from .task import EveTask
 
@@ -19,7 +15,7 @@ class EveAccessControlTask(EveTask):
 
     async def run(self):
 
-        self.logger.info("> {}.{}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name))
+        self.logger.info(f"> {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
 
         acl_bootstrap_set: Final = {
             EveTables.AccessControls(type=EveAccessType.ALLIANCE, id=99002329, permit=True),
@@ -41,4 +37,4 @@ class EveAccessControlTask(EveTask):
                         session.add(acl)
                         await session.commit()
 
-        self.logger.info("< {}.{}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name))
+        self.logger.info(f"< {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
