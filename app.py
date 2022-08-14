@@ -118,58 +118,58 @@ async def root() -> quart.Response:
 
             utcnow = datetime.datetime.utcnow()
 
-            extraction_query: Final = (
-                sqlalchemy.select(EveTables.Extraction)
-                .where(
-                    EveTables.Extraction.natural_decay_time >= utcnow,
-                    EveTables.Extraction.extraction_start_time < utcnow,
-                )
-                .order_by(EveTables.Extraction.chunk_arrival_time)
-                .options(sqlalchemy.orm.selectinload(EveTables.Extraction.structure))
-                .options(sqlalchemy.orm.selectinload(EveTables.Extraction.corporation))
-                .options(sqlalchemy.orm.selectinload(EveTables.Extraction.moon))
-            )
-
-            extraction_query_result = await session.execute(extraction_query)
-            extraction_results += [
-                result for result in extraction_query_result.scalars()
-            ]
-
-            structure_query: Final = (
-                sqlalchemy.select(
-                    (
-                        EveTables.Structure,
+            async with session.begin():
+                timer_query: Final = (
+                    sqlalchemy.select(
+                        (
+                            EveTables.Structure,
+                        )
                     )
-                )
-                .where(
-                    EveTables.Structure.state_timer_end >= utcnow,
-                )
-                .join(EveTables.Structure.system)
-                .join(EveTables.Structure.corporation)
-                .order_by(EveTables.Structure.state_timer_end)
-                .options(sqlalchemy.orm.selectinload(EveTables.Structure.system))
-                .options(sqlalchemy.orm.selectinload(EveTables.Structure.corporation))
-            )
-            structure_query_result = await session.execute(structure_query)
-            structure_results += [result for result in structure_query_result.scalars()]
-
-            timer_query: Final = (
-                sqlalchemy.select(
-                    (
-                        EveTables.Structure,
+                    .where(
+                        EveTables.Structure.state_timer_end >= utcnow,
                     )
+                    .join(EveTables.Structure.system)
+                    .join(EveTables.Structure.corporation)
+                    .order_by(EveTables.Structure.state_timer_end)
+                    .options(sqlalchemy.orm.selectinload(EveTables.Structure.system))
+                    .options(sqlalchemy.orm.selectinload(EveTables.Structure.corporation))
                 )
-                .where(
-                    EveTables.Structure.state_timer_end >= utcnow,
+                timer_query_result = await session.execute(timer_query)
+                timer_results += [result for result in timer_query_result.scalars()]
+
+            async with session.begin():
+                extraction_query: Final = (
+                    sqlalchemy.select(EveTables.Extraction)
+                    .where(
+                        EveTables.Extraction.natural_decay_time >= utcnow,
+                        EveTables.Extraction.extraction_start_time < utcnow,
+                    )
+                    .order_by(EveTables.Extraction.chunk_arrival_time)
+                    .options(sqlalchemy.orm.selectinload(EveTables.Extraction.structure))
+                    .options(sqlalchemy.orm.selectinload(EveTables.Extraction.corporation))
+                    .options(sqlalchemy.orm.selectinload(EveTables.Extraction.moon))
                 )
-                .join(EveTables.Structure.system)
-                .join(EveTables.Structure.corporation)
-                .order_by(EveTables.Structure.state_timer_end)
-                .options(sqlalchemy.orm.selectinload(EveTables.Structure.system))
-                .options(sqlalchemy.orm.selectinload(EveTables.Structure.corporation))
-            )
-            timer_query_result = await session.execute(timer_query)
-            timer_results += [result for result in timer_query_result.scalars()]
+
+                extraction_query_result = await session.execute(extraction_query)
+                extraction_results += [
+                    result for result in extraction_query_result.scalars()
+                ]
+
+            async with session.begin():
+                structure_query: Final = (
+                    sqlalchemy.select(
+                        (
+                            EveTables.Structure,
+                        )
+                    )
+                    .join(EveTables.Structure.system)
+                    .join(EveTables.Structure.corporation)
+                    .order_by(EveTables.Structure.state_timer_end)
+                    .options(sqlalchemy.orm.selectinload(EveTables.Structure.system))
+                    .options(sqlalchemy.orm.selectinload(EveTables.Structure.corporation))
+                )
+                structure_query_result = await session.execute(structure_query)
+                structure_results += [result for result in structure_query_result.scalars()]
 
             last_update_dict: Final = dict()
             for s in structure_results:
@@ -179,14 +179,13 @@ async def root() -> quart.Response:
                     last_update_dict[s.corporation_id] = s
 
             last_update_results += sorted(last_update_dict.values(), reverse=False, key=lambda x: x.timestamp)
-            logging.getLogger().debug(last_update_results)
 
         return await quart.render_template(
             "home.html",
             character_name=quart.session.get(EveSSO.ESI_CHARACTER_NAME),
             character_id=quart.session.get(EveSSO.ESI_CHARACTER_ID),
-            timers=timer_results,
             extractions=extraction_results,
+            timers=timer_results,
             structures=structure_results,
             last_update=last_update_results,
         )
