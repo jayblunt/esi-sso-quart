@@ -19,6 +19,28 @@ from .task import EveTask
 
 class EveStructureTask(EveTask):
 
+    async def _get_type(self, type_id: int, client_session: aiohttp.ClientSession) -> Union[None, EveTables.UniverseType]:
+        url: Final = f"https://esi.evetech.net/latest/universe/types/{type_id}/"
+        attempts_remaining = self.ERROR_RETRY_COUNT
+        while attempts_remaining > 0:
+            async with client_session.get(url, params=self.common_params) as response:
+                if response.status in [200]:
+                    edict = dict()
+                    for k, v in dict(await response.json()).items():
+                        if k in ["name"]:
+                            edict[k] = v
+                        elif k in ["type_id", "group_id", "market_group_id"]:
+                            edict[k] = int(v)
+                        else:
+                            continue
+                    return EveTables.UniverseType(**edict)
+                else:
+                    attempts_remaining -= 1
+                    self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
+                    asyncio.sleep(self.ERROR_SLEEP_TIME)
+        self.logger.error("- {}.{}: {} -> {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  id, None))
+        return None
+
     async def run_structures(self):
 
         corporation_id: Final = int(self.session.get(
@@ -36,8 +58,9 @@ class EveStructureTask(EveTask):
         if len(structures) == 0:
             return
 
-        obj_set: Final = set()
-        history_obj_set: Final = set()
+        type_id_set: Final = set()
+        structure_obj_set: Final = set()
+        structure_history_obj_set: Final = set()
 
         for x in structures:
             edict: Final = dict({
@@ -55,19 +78,47 @@ class EveStructureTask(EveTask):
                 elif k not in ["name", "state"]:
                     continue
                 edict[k] = v
-            obj: Final = EveTables.Structure(**edict)
-            obj_set.add(obj)
+            obj = EveTables.Structure(**edict)
+            structure_obj_set.add(obj)
+            type_id_set.add(obj.type_id)
 
             history_obj = EveTables.StructureHistory(character_id=int(self.session.get(
                 EveSSO.ESI_CHARACTER_ID, 0)), structure_id=int(x.get("structure_id", 0)), json=x)
-            history_obj_set.add(history_obj)
+            structure_history_obj_set.add(history_obj)
 
+        # Add missing types
+        async with await self.db.sessionmaker() as session:
+
+            async with session.begin():
+                existing_type_query = sqlalchemy.select(EveTables.UniverseType)
+                existing_type_query_result = await session.execute(existing_type_query)
+                existing_type_id_set: Final = {x.type_id for x in existing_type_query_result.scalars()}
+
+                type_obj_set: Final = set()
+                async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as client_session:
+                    task_list: Final = list()
+                    for id in type_id_set - existing_type_id_set:
+                        task_list.append(asyncio.ensure_future(self._get_type(id, client_session)))
+
+                    if len(task_list) > 0:
+                        result_list = await asyncio.gather(*task_list)
+                        self.logger.info("- {}.{}: {} = {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  "len(result_list)", len(result_list)))
+                        for obj in result_list:
+                            if obj is None:
+                                continue
+                            type_obj_set.add(obj)
+
+                if len(type_obj_set) > 0:
+                    session.add_all(type_obj_set)
+                    await session.commit()
+
+        # Add structures and history
         async with await self.db.sessionmaker() as session:
 
             # Save history
-            if len(history_obj_set) > 0:
+            if len(structure_history_obj_set) > 0:
                 async with session.begin():
-                    session.add_all(history_obj_set)
+                    session.add_all(structure_history_obj_set)
                     await session.commit()
 
             # Save current extractions
@@ -79,10 +130,10 @@ class EveStructureTask(EveTask):
                 if len(existing_obj_set) > 0:
                     [await session.delete(x) for x in existing_obj_set]
 
-                if len(obj_set) > 0:
-                    session.add_all(obj_set)
+                if len(structure_obj_set) > 0:
+                    session.add_all(structure_obj_set)
 
-                if any([len(existing_obj_set) > 0, len(obj_set) > 0]):
+                if any([len(existing_obj_set) > 0, len(structure_obj_set) > 0]):
                     await session.commit()
 
 
@@ -158,7 +209,7 @@ class EveStructureTask(EveTask):
             async with session.begin():
                 existing_moon_query = sqlalchemy.select(EveTables.UniverseMoon)
                 existing_moon_query_result = await session.execute(existing_moon_query)
-                existing_moon_id_set: Final = {self.object_id(x) for x in existing_moon_query_result.scalars()}
+                existing_moon_id_set: Final = {x.moon_id for x in existing_moon_query_result.scalars()}
 
                 moon_obj_set: Final = set()
                 async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as client_session:
@@ -178,7 +229,7 @@ class EveStructureTask(EveTask):
                     session.add_all(moon_obj_set)
                     await session.commit()
 
-        # Add extractions and structures
+        # Add extractions and history
         async with await self.db.sessionmaker() as session:
 
             # Save history

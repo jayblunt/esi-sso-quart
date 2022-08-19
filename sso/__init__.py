@@ -106,7 +106,6 @@ class EveSSO:
                 if not self.jwks_task.cancelled():
                     self.jwks_task.cancel()
 
-
     @property
     def base_url(self) -> str:
         headers = {k.lower(): v for k, v in dict(quart.request.headers).items()}
@@ -115,26 +114,21 @@ class EveSSO:
         port = f":{int(headers['x-forwarded-port'])}" if "x-forwarded-port" in headers else ""
         return f"{scheme}://{quart.request.host}{port}"
 
-
     @property
     def callback_url(self) -> str:
         return f"{self.base_url}{self.callback_route}"
-
 
     @property
     def login_endpoint(self) -> str:
         return f"login_{self.client_id}"
 
-
     @property
     def logout_endpoint(self) -> str:
         return f"logout_{self.client_id}"
 
-
     @property
     def callback_endpoint(self) -> str:
         return f"callback_{self.client_id}"
-
 
     async def get_json(self, url: str, esi_access_token: str = '') -> dict:
         session_headers: Final = dict()
@@ -149,11 +143,9 @@ class EveSSO:
                     json = dict(await response.json())
         return json
 
-
     async def get_jwks(self, url: str) -> list[dict]:
         payload: Final = await self.get_json(url)
         return payload.get("keys", [])
-
 
     async def get_jwks_task(self) -> None:
         while True:
@@ -164,7 +156,6 @@ class EveSSO:
                     self.jwks = new_jwks
             except Exception as ex:
                 self.app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
-
 
     async def process_token(self, token_response: dict) -> bool:
 
@@ -239,7 +230,6 @@ class EveSSO:
 
         return decoded_acess_token is not None
 
-
     def esi_sso_login(self) -> quart.redirect:
         quart.session[self.APP_SESSION_STATE] = uuid.uuid4().hex
 
@@ -255,12 +245,10 @@ class EveSSO:
 
         return quart.redirect(redirect_url)
 
-
     async def esi_sso_logout(self) -> quart.redirect:
         quart.session.clear()
 
         return quart.redirect("/")
-
 
     async def esi_sso_callback(self) -> quart.redirect:
 
@@ -358,7 +346,6 @@ class EveSSO:
                 quart.session[self.ESI_CHARACTER_HAS_DIRECTOR_ROLE] = 'Director' in character_roles_response.get('roles', [])
                 quart.session[self.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE] = 'Station_Manager' in character_roles_response.get('roles', [])
 
-
         acl_set: Final = set()
         async with await self.db.sessionmaker() as session:
             async with session.begin():
@@ -382,7 +369,6 @@ class EveSSO:
         quart.session[EveSSO.APP_PERMITTED] = acl_pass
 
         return quart.redirect("/")
-
 
     async def esi_sso_refresh(self) -> quart.redirect:
 

@@ -103,9 +103,7 @@ class EveTables:
         __tablename__ = "esi_universe_types"
         type_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         group_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
-        market_group_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
-        graphic_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
-        icon_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+        market_group_id = sqlalchemy.Column(sqlalchemy.BigInteger)
         name = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
 
         def __repr__(self) -> str:
@@ -133,6 +131,13 @@ class EveTables:
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(structure_id={self.structure_id}, system_id={self.system_id}, name={self.name})"
 
+    class StructureHistory(Base):
+        __tablename__ = "app_structure_history"
+        timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), primary_key=True, server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
+        character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+
     class Extraction(Base):
         __tablename__ = "app_extraction"
         timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
@@ -150,13 +155,6 @@ class EveTables:
 
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(structure_id={self.structure_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time})"
-
-    class StructureHistory(Base):
-        __tablename__ = "app_structure_history"
-        timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), primary_key=True, server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
-        character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
-        structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
-        json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
 
     class ExtractionHistory(Base):
         __tablename__ = "app_extraction_history"
@@ -185,7 +183,7 @@ class EveTables:
         json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
 
     class AccessControls(Base):
-        __tablename__ = "app_access"
+        __tablename__ = "app_access_control"
         id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         type = sqlalchemy.Column(sqlalchemy.Enum(EveAccessType), primary_key=True, nullable=False)
         permit = sqlalchemy.Column(sqlalchemy.Boolean, primary_key=True, nullable=False)

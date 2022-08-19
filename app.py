@@ -2,7 +2,6 @@ import asyncio
 import datetime
 import json
 import os
-import syslog
 import uuid
 from typing import Final
 
@@ -21,10 +20,6 @@ from tasks import (EveAccessControlTask, EveAllianceTask,
                    EveEsiAlliancMemberTask, EveMoonYieldTask, EveStructureTask,
                    EveTask, EveUniverseConstellationsTask,
                    EveUniverseRegionsTask, EveUniverseSystemsTask)
-
-syslog.openlog(
-    os.path.basename(__file__), logoption=syslog.LOG_PID, facility=syslog.LOG_AUTH
-)
 
 
 app: Final = quart.Quart(__name__)
