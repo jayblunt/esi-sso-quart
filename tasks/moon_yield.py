@@ -41,9 +41,12 @@ class EveMoonYieldTask(EveTask):
                     moon_yield_query: Final = sqlalchemy.select(EveTables.MoonYield)
                     moon_yield_query_result = await session.execute(moon_yield_query)
                     existing_obj_set |= {result for result in moon_yield_query_result.scalars()}
+                    existing_id_set: Final = {m.moon_id for m in existing_obj_set}
 
                     obj_set: Final = set()
                     for md in moon_data_list:
+                        if md.moon_id in existing_id_set:
+                            continue
                         obj = EveTables.MoonYield(type_id=md.type_id, system_id=md.system_id, planet_id=md.planet_id, moon_id=md.moon_id, yield_percent=md.yield_percent)
                         obj_set.add(obj)
 

@@ -1,5 +1,7 @@
+import asyncio
+import inspect
 import zoneinfo
-from typing import Final
+from typing import Final, Union
 
 import aiohttp
 import aiohttp.client_exceptions
@@ -84,6 +86,29 @@ class EveStructureTask(EveTask):
                     await session.commit()
 
 
+    async def _get_moon(self, moon_id: int, client_session: aiohttp.ClientSession) -> Union[None, EveTables.UniverseMoon]:
+        url: Final = f"https://esi.evetech.net/latest/universe/moons/{moon_id}/"
+        attempts_remaining = self.ERROR_RETRY_COUNT
+        while attempts_remaining > 0:
+            async with client_session.get(url, params=self.common_params) as response:
+                if response.status in [200]:
+                    edict = dict()
+                    for k, v in dict(await response.json()).items():
+                        if k in ["name"]:
+                            edict[k] = v
+                        elif k in ["moon_id", "system_id"]:
+                            edict[k] = int(v)
+                        else:
+                            continue
+                    return EveTables.UniverseMoon(**edict)
+                else:
+                    attempts_remaining -= 1
+                    self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
+                    asyncio.sleep(self.ERROR_SLEEP_TIME)
+        self.logger.error("- {}.{}: {} -> {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  id, None))
+        return None
+
+
     async def run_extractions(self):
 
         corporation_id: Final = int(self.session.get(
@@ -102,8 +127,7 @@ class EveStructureTask(EveTask):
             return
 
         moon_id_set: Final = set()
-
-        extraction_obj_set = set()
+        extraction_obj_set: Final = set()
         extraction_history_obj_set: Final = set()
 
         for x in extractions:
@@ -120,7 +144,7 @@ class EveStructureTask(EveTask):
                     continue
                 edict[k] = v
 
-            obj: Final = EveTables.Extraction(**edict)
+            obj = EveTables.Extraction(**edict)
             extraction_obj_set.add(obj)
             moon_id_set.add(obj.moon_id)
 
@@ -128,43 +152,33 @@ class EveStructureTask(EveTask):
                 EveSSO.ESI_CHARACTER_ID, 0)), structure_id=int(x.get("structure_id", 0)), json=x)
             extraction_history_obj_set.add(history_obj)
 
+        # Add missing moons
         async with await self.db.sessionmaker() as session:
 
             async with session.begin():
-
-                known_moon_query = sqlalchemy.select(EveTables.MoonYield)
-                known_moon_query_result = await session.execute(known_moon_query)
-                known_moons_set: Final = {result for result in known_moon_query_result.scalars()}
-
-                moon_id_set |= {x.moon_id for x in known_moons_set}
-
                 existing_moon_query = sqlalchemy.select(EveTables.UniverseMoon)
                 existing_moon_query_result = await session.execute(existing_moon_query)
-                existing_moons_set: Final = {result for result in existing_moon_query_result.scalars()}
+                existing_moon_id_set: Final = {self.object_id(x) for x in existing_moon_query_result.scalars()}
 
-                existing_moon_id_set: Final = {x.moon_id for x in existing_moons_set}
-
-                moon_obj_set = set()
+                moon_obj_set: Final = set()
                 async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as client_session:
-                    for moon_id in moon_id_set - existing_moon_id_set:
-                        url = f"https://esi.evetech.net/latest/universe/moons/{moon_id}/"
-                        async with client_session.get(url, params=self.common_params) as response:
-                            print(f"{response.url} -> {response.status}")
-                            if response.status in [200]:
-                                edict = dict()
-                                for k, v in dict(await response.json()).items():
-                                    if k in ["name"]:
-                                        edict[k] = v
-                                    elif k in ["moon_id", "system_id"]:
-                                        edict[k] = int(v)
-                                    else:
-                                        continue
-                                moon_obj_set.add(EveTables.UniverseMoon(**edict))
+                    task_list: Final = list()
+                    for id in moon_id_set - existing_moon_id_set:
+                        task_list.append(asyncio.ensure_future(self._get_moon(id, client_session)))
+
+                    if len(task_list) > 0:
+                        result_list = await asyncio.gather(*task_list)
+                        self.logger.info("- {}.{}: {} = {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  "len(result_list)", len(result_list)))
+                        for obj in result_list:
+                            if obj is None:
+                                continue
+                            moon_obj_set.add(obj)
 
                 if len(moon_obj_set) > 0:
                     session.add_all(moon_obj_set)
                     await session.commit()
 
+        # Add extractions and structures
         async with await self.db.sessionmaker() as session:
 
             # Save history

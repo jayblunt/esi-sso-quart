@@ -83,9 +83,9 @@ class EveTask(metaclass=abc.ABCMeta):
             task_list: Final = list()
             for page in pages:
                 task_list.append(asyncio.ensure_future(self._get_page(url, page, client_session)))
-            result_list = asyncio.gather(*task_list)
-            await result_list
-            results += sum(result_list, [])
+            if len(task_list) > 0:
+                result_list = await asyncio.gather(*task_list)
+                results += sum(result_list, [])
 
         self.logger.info("- {}.{}: {}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  url, results))
         return results

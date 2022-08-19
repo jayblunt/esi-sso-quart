@@ -103,12 +103,13 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
                 for id in id_set - existing_id_set:
                     task_list.append(asyncio.ensure_future(self._get_page(id, client_session)))
 
-                result_list = await asyncio.gather(*task_list)
-                self.logger.info("- {}.{}: {} = {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  "len(result_list)", len(result_list)))
-                for obj in result_list:
-                    if obj is None:
-                        continue
-                    obj_set.add(obj)
+                if len(task_list) > 0:
+                    result_list = await asyncio.gather(*task_list)
+                    self.logger.info("- {}.{}: {} = {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  "len(result_list)", len(result_list)))
+                    for obj in result_list:
+                        if obj is None:
+                            continue
+                        obj_set.add(obj)
 
             if len(obj_set) > 0:
                 session.add_all(obj_set)
