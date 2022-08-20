@@ -1,4 +1,6 @@
 import asyncio
+import collections
+import collections.abc
 import inspect
 import zoneinfo
 from typing import Final, Union
@@ -41,19 +43,7 @@ class EveStructureTask(EveTask):
         self.logger.error("- {}.{}: {} -> {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  id, None))
         return None
 
-    async def run_structures(self):
-
-        corporation_id: Final = int(self.client_session.get(
-            EveSSO.ESI_CORPORATION_ID, 0))
-
-        required_scopes: Final = {
-            "esi-corporations.read_structures.v1"}
-
-        if not all([
-            self.client_session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False),
-            len(required_scopes.intersection(set(self.client_session.get(EveSSO.ESI_ACCESS_TOKEN_SCOPES, [])))) == len(required_scopes)
-        ]):
-            return
+    async def run_structures(self, character_id: int, corporation_id: int):
 
         url = f"https://esi.evetech.net/latest/corporations/{corporation_id}/structures/"
         structures: Final = await self.get_pages(url)
@@ -67,7 +57,7 @@ class EveStructureTask(EveTask):
 
         for x in structures:
             edict: Final = dict({
-                "character_id": int(self.client_session.get(EveSSO.ESI_CHARACTER_ID, 0)),
+                "character_id": character_id,
             })
             for k, v in x.items():
                 if k in ["fuel_expires", "state_timer_end", "state_timer_start", "unanchors_at"]:
@@ -85,8 +75,7 @@ class EveStructureTask(EveTask):
             structure_obj_set.add(obj)
             type_id_set.add(obj.type_id)
 
-            history_obj = EveTables.StructureHistory(character_id=int(self.client_session.get(
-                EveSSO.ESI_CHARACTER_ID, 0)), structure_id=int(x.get("structure_id", 0)), json=x)
+            history_obj = EveTables.StructureHistory(character_id=character_id, structure_id=int(x.get("structure_id", 0)), json=x)
             structure_history_obj_set.add(history_obj)
 
         # Add missing types
@@ -157,16 +146,7 @@ class EveStructureTask(EveTask):
         self.logger.error("- {}.{}: {} -> {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  id, None))
         return None
 
-    async def run_extractions(self):
-
-        corporation_id: Final = int(self.client_session.get(
-            EveSSO.ESI_CORPORATION_ID, 0))
-
-        required_scopes: Final = {
-            "esi-industry.read_corporation_mining.v1"}
-
-        if not all([self.client_session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False), len(required_scopes.intersection(set(self.client_session.get(EveSSO.ESI_ACCESS_TOKEN_SCOPES, [])))) == len(required_scopes)]):
-            return
+    async def run_extractions(self, character_id: int, corporation_id: int):
 
         url = f"https://esi.evetech.net/latest/corporation/{corporation_id}/mining/extractions/"
         extractions: Final = await self.get_pages(url)
@@ -180,8 +160,8 @@ class EveStructureTask(EveTask):
 
         for x in extractions:
             edict = dict({
-                "character_id": int(self.client_session.get(EveSSO.ESI_CHARACTER_ID, 0)),
-                "corporation_id": int(self.client_session.get(EveSSO.ESI_CORPORATION_ID, 0)),
+                "character_id": character_id,
+                "corporation_id": corporation_id,
             })
             for k, v in x.items():
                 if k in ["chunk_arrival_time", "extraction_start_time", "natural_decay_time"]:
@@ -196,8 +176,7 @@ class EveStructureTask(EveTask):
             extraction_obj_set.add(obj)
             moon_id_set.add(obj.moon_id)
 
-            history_obj: Final = EveTables.ExtractionHistory(character_id=int(self.client_session.get(
-                EveSSO.ESI_CHARACTER_ID, 0)), structure_id=int(x.get("structure_id", 0)), json=x)
+            history_obj: Final = EveTables.ExtractionHistory(character_id=character_id, structure_id=int(x.get("structure_id", 0)), json=x)
             extraction_history_obj_set.add(history_obj)
 
         # Add missing moons
@@ -247,5 +226,14 @@ class EveStructureTask(EveTask):
                 await db.commit()
 
     async def run(self):
-        await self.run_structures()
-        await self.run_extractions()
+        if not self.client_session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False):
+            return
+
+        character_id: Final = int(self.client_session.get(EveSSO.ESI_CHARACTER_ID, 0))
+        corporation_id: Final = int(self.client_session.get(EveSSO.ESI_CORPORATION_ID, 0))
+
+        if "esi-corporations.read_structures.v1" in self.client_session.get(EveSSO.ESI_ACCESS_TOKEN_SCOPES, []):
+            await self.run_structures(character_id, corporation_id)
+
+        if "esi-industry.read_corporation_mining.v1" in self.client_session.get(EveSSO.ESI_ACCESS_TOKEN_SCOPES, []):
+            await self.run_extractions(character_id, corporation_id)

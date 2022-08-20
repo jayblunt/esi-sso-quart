@@ -21,7 +21,6 @@ from tasks import (EveAccessControlTask, EveAllianceTask,
                    EveTask, EveUniverseConstellationsTask,
                    EveUniverseRegionsTask, EveUniverseSystemsTask)
 
-
 app: Final = quart.Quart(__name__)
 
 app.config.from_mapping(
