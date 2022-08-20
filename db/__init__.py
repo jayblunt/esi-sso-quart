@@ -182,6 +182,21 @@ class EveTables:
         character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
 
+    class PeriodicCredentials(Base):
+        __tablename__ = "app_periodic_credentials"
+        timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
+        character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        corporation_id = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.ForeignKey("esi_corporations.corporation_id"), nullable=False)
+        is_permitted = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
+        is_enabled = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
+        access_token_issued = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
+        access_token_exiry = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
+        access_token = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
+        refresh_token = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
+        is_director_role = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
+        is_accountant_role = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
+        is_station_manager_role = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
+
     class AccessControls(Base):
         __tablename__ = "app_access_control"
         id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
