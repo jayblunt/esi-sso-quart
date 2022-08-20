@@ -186,7 +186,7 @@ class EveTables:
         __tablename__ = "app_periodic_credentials"
         timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
         character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
-        corporation_id = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.ForeignKey("esi_corporations.corporation_id"), nullable=False)
+        corporation_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
         is_permitted = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
         is_enabled = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
         access_token_issued = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)

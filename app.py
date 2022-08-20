@@ -107,87 +107,86 @@ def _datetime(dt: datetime.datetime):
 @app.route("/", methods=["GET"])
 async def root() -> quart.Response:
 
-    # print(f"session: {dict(quart.session)}")
-    character_id: Final = quart.session.get(EveSSO.ESI_CHARACTER_ID, 0)
-    character_permitted: Final = quart.session.get(EveSSO.APP_PERMITTED, False)
+    client_session: Final = quart.session
+
+    # print(f"session: {dict(client_session.session)}")
+    character_id: Final = client_session.get(EveSSO.ESI_CHARACTER_ID, 0)
+    character_permitted: Final = client_session.get(EveSSO.APP_PERMITTED, False)
 
     if character_id > 0:
-        if not bool(quart.session.get("login_token", False)):
+        if not bool(client_session.get("login_token", False)):
             with open(os.path.join(evesession[EveTask.CONFIGDIR], f"{character_id}.json"), "w") as ofp:
-                ofp.write(json.dumps(dict(quart.session), ensure_ascii=True, indent=4))
-            quart.session["login_token"] = True
+                ofp.write(json.dumps(dict(client_session), ensure_ascii=True, indent=4))
+            client_session["login_token"] = True
 
     if character_id > 0 and character_permitted:
 
-        if bool(quart.session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)):
-            EveStructureTask(quart.session, evedb, app.logger)
+        if bool(client_session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)):
+            EveStructureTask(client_session, evedb, app.logger)
 
-        if not bool(quart.session.get("login_tasks_started", False)):
-            quart.session["login_tasks_started"] = True
+        if not bool(client_session.get("login_tasks_started", False)):
+            client_session["login_tasks_started"] = True
 
-            if bool(quart.session.get(EveSSO.ESI_CHARACTER_HAS_DIRECTOR_ROLE, False)):
-                EveEsiAlliancMemberTask(quart.session, evedb, app.logger)
+            if bool(client_session.get(EveSSO.ESI_CHARACTER_HAS_DIRECTOR_ROLE, False)):
+                EveEsiAlliancMemberTask(client_session, evedb, app.logger)
 
         extraction_results: Final = list()
         structure_results: Final = list()
         timer_results: Final = list()
         last_update_results: Final = list()
-        async with await evedb.sessionmaker() as session:
+        async with await evedb.sessionmaker() as db, db.begin():
 
             utcnow = datetime.datetime.utcnow()
 
-            async with session.begin():
-                timer_query: Final = (
-                    sqlalchemy.select(
-                        (
-                            EveTables.Structure,
-                        )
+            timer_query: Final = (
+                sqlalchemy.select(
+                    (
+                        EveTables.Structure,
                     )
-                    .where(
-                        EveTables.Structure.state_timer_end >= utcnow,
-                    )
-                    .join(EveTables.Structure.system)
-                    .join(EveTables.Structure.corporation)
-                    .order_by(EveTables.Structure.state_timer_end)
-                    .options(sqlalchemy.orm.selectinload(EveTables.Structure.system))
-                    .options(sqlalchemy.orm.selectinload(EveTables.Structure.corporation))
                 )
-                timer_query_result = await session.execute(timer_query)
-                timer_results += [result for result in timer_query_result.scalars()]
-
-            async with session.begin():
-                extraction_query: Final = (
-                    sqlalchemy.select(EveTables.Extraction)
-                    .where(
-                        EveTables.Extraction.natural_decay_time >= utcnow,
-                        EveTables.Extraction.extraction_start_time < utcnow,
-                    )
-                    .order_by(EveTables.Extraction.chunk_arrival_time)
-                    .options(sqlalchemy.orm.selectinload(EveTables.Extraction.structure))
-                    .options(sqlalchemy.orm.selectinload(EveTables.Extraction.corporation))
-                    .options(sqlalchemy.orm.selectinload(EveTables.Extraction.moon))
+                .where(
+                    EveTables.Structure.state_timer_end >= utcnow,
                 )
+                .join(EveTables.Structure.system)
+                .join(EveTables.Structure.corporation)
+                .order_by(EveTables.Structure.state_timer_end)
+                .options(sqlalchemy.orm.selectinload(EveTables.Structure.system))
+                .options(sqlalchemy.orm.selectinload(EveTables.Structure.corporation))
+            )
+            timer_query_result = await db.execute(timer_query)
+            timer_results += [result for result in timer_query_result.scalars()]
 
-                extraction_query_result = await session.execute(extraction_query)
-                extraction_results += [
-                    result for result in extraction_query_result.scalars()
-                ]
-
-            async with session.begin():
-                structure_query: Final = (
-                    sqlalchemy.select(
-                        (
-                            EveTables.Structure,
-                        )
-                    )
-                    .join(EveTables.Structure.system)
-                    .join(EveTables.Structure.corporation)
-                    .order_by(EveTables.Structure.fuel_expires)
-                    .options(sqlalchemy.orm.selectinload(EveTables.Structure.system))
-                    .options(sqlalchemy.orm.selectinload(EveTables.Structure.corporation))
+            extraction_query: Final = (
+                sqlalchemy.select(EveTables.Extraction)
+                .where(
+                    EveTables.Extraction.natural_decay_time >= utcnow,
+                    EveTables.Extraction.extraction_start_time < utcnow,
                 )
-                structure_query_result = await session.execute(structure_query)
-                structure_results += [result for result in structure_query_result.scalars()]
+                .order_by(EveTables.Extraction.chunk_arrival_time)
+                .options(sqlalchemy.orm.selectinload(EveTables.Extraction.structure))
+                .options(sqlalchemy.orm.selectinload(EveTables.Extraction.corporation))
+                .options(sqlalchemy.orm.selectinload(EveTables.Extraction.moon))
+            )
+
+            extraction_query_result = await db.execute(extraction_query)
+            extraction_results += [
+                result for result in extraction_query_result.scalars()
+            ]
+
+            structure_query: Final = (
+                sqlalchemy.select(
+                    (
+                        EveTables.Structure,
+                    )
+                )
+                .join(EveTables.Structure.system)
+                .join(EveTables.Structure.corporation)
+                .order_by(EveTables.Structure.fuel_expires)
+                .options(sqlalchemy.orm.selectinload(EveTables.Structure.system))
+                .options(sqlalchemy.orm.selectinload(EveTables.Structure.corporation))
+            )
+            structure_query_result = await db.execute(structure_query)
+            structure_results += [result for result in structure_query_result.scalars()]
 
             last_update_dict: Final = dict()
             for s in structure_results:
@@ -200,8 +199,8 @@ async def root() -> quart.Response:
 
         return await quart.render_template(
             "home.html",
-            character_name=quart.session.get(EveSSO.ESI_CHARACTER_NAME),
-            character_id=quart.session.get(EveSSO.ESI_CHARACTER_ID),
+            character_name=client_session.get(EveSSO.ESI_CHARACTER_NAME),
+            character_id=client_session.get(EveSSO.ESI_CHARACTER_ID),
             extractions=extraction_results,
             timers=timer_results,
             structures=structure_results,
@@ -212,7 +211,7 @@ async def root() -> quart.Response:
         return await quart.render_template(
             "permission.html",
             character_id=character_id,
-            character_name=quart.session.get(EveSSO.ESI_CHARACTER_NAME),
+            character_name=client_session.get(EveSSO.ESI_CHARACTER_NAME),
         )
 
     else:

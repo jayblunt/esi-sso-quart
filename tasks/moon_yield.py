@@ -34,27 +34,26 @@ class EveMoonYieldTask(EveTask):
 
         if len(moon_data_list) > 0:
 
-            async with await self.db.sessionmaker() as session:
+            async with await self.db.sessionmaker() as db, db.begin():
 
-                async with session.begin():
-                    existing_obj_set: Final = set()
-                    moon_yield_query: Final = sqlalchemy.select(EveTables.MoonYield)
-                    moon_yield_query_result = await session.execute(moon_yield_query)
-                    existing_obj_set |= {result for result in moon_yield_query_result.scalars()}
-                    existing_id_set: Final = {m.moon_id for m in existing_obj_set}
+                existing_obj_set: Final = set()
+                moon_yield_query: Final = sqlalchemy.select(EveTables.MoonYield)
+                moon_yield_query_result = await db.execute(moon_yield_query)
+                existing_obj_set |= {result for result in moon_yield_query_result.scalars()}
+                existing_id_set: Final = {m.moon_id for m in existing_obj_set}
 
-                    obj_set: Final = set()
-                    for md in moon_data_list:
-                        if md.moon_id in existing_id_set:
-                            continue
-                        obj = EveTables.MoonYield(type_id=md.type_id, system_id=md.system_id, planet_id=md.planet_id, moon_id=md.moon_id, yield_percent=md.yield_percent)
-                        obj_set.add(obj)
+                obj_set: Final = set()
+                for md in moon_data_list:
+                    if md.moon_id in existing_id_set:
+                        continue
+                    obj = EveTables.MoonYield(type_id=md.type_id, system_id=md.system_id, planet_id=md.planet_id, moon_id=md.moon_id, yield_percent=md.yield_percent)
+                    obj_set.add(obj)
 
-                    if len(existing_obj_set) > 0:
-                        [await session.delete(x) for x in existing_obj_set]
+                if len(existing_obj_set) > 0:
+                    [await db.delete(x) for x in existing_obj_set]
 
-                    if len(obj_set) > 0:
-                        session.add_all(obj_set)
+                if len(obj_set) > 0:
+                    db.add_all(obj_set)
 
-                    if any([len(existing_obj_set) > 0, len(obj_set) > 0]):
-                        await session.commit()
+                if any([len(existing_obj_set) > 0, len(obj_set) > 0]):
+                    await db.commit()

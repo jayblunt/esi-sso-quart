@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import collections.abc
 import datetime
 import inspect
 import logging
@@ -136,9 +137,8 @@ class EveSSO:
             session_headers["Authorization"] = f"Bearer {esi_access_token}"
 
         json = None
-        async with aiohttp.ClientSession(headers=session_headers) as client_session:
-            async with client_session.get(url) as response:
-                # response.raise_for_status()
+        async with aiohttp.ClientSession(headers=session_headers) as http_session:
+            async with http_session.get(url) as response:
                 if response.status in [200]:
                     json = dict(await response.json())
         return json
@@ -157,7 +157,7 @@ class EveSSO:
             except Exception as ex:
                 self.app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
 
-    async def process_token(self, token_response: dict) -> bool:
+    async def esi_process_token(self, client_session: collections.abc.MutableMapping, token_response: dict) -> bool:
 
         jwt_unverified_header: Final = jose.jwt.get_unverified_header(token_response["access_token"])
         jwt_key = None
@@ -184,61 +184,63 @@ class EveSSO:
                 quart.abort(500, "invalid jwt in token_response")
 
         if decoded_acess_token is None:
-            quart.session[self.ESI_CHARACTER_ID] = 0
+            client_session[self.ESI_CHARACTER_ID] = 0
 
-            for k in {self.ESI_ACCESS_TOKEN, self.ESI_REFRESH_TOKEN, self.ESI_DEBUG_TOKEN, self.ESI_DEBUG_ACCESS_TOKEN}.intersection(set(quart.session.keys())):
-                del quart.session[k]
+            for k in {self.ESI_ACCESS_TOKEN, self.ESI_REFRESH_TOKEN, self.ESI_DEBUG_TOKEN, self.ESI_DEBUG_ACCESS_TOKEN}.intersection(set(client_session.keys())):
+                del client_session[k]
 
-            quart.session[self.ESI_ACCESS_TOKEN_ISSUED] = int(datetime.datetime.utcnow().timestamp())
-            quart.session[self.ESI_ACCESS_TOKEN_EXPIRY] = int(datetime.datetime.utcnow().timestamp())
-            quart.session[self.ESI_ACCESS_TOKEN_SCOPES] = []
+            client_session[self.ESI_ACCESS_TOKEN_ISSUED] = int(datetime.datetime.utcnow().timestamp())
+            client_session[self.ESI_ACCESS_TOKEN_EXPIRY] = int(datetime.datetime.utcnow().timestamp())
+            client_session[self.ESI_ACCESS_TOKEN_SCOPES] = []
 
         else:
-            quart.session[self.ESI_CHARACTER_ID] = int(decoded_acess_token.get('sub', '').split(':')[-1])
-            quart.session[self.ESI_CHARACTER_NAME] = decoded_acess_token.get('name', '')
+            client_session[self.ESI_CHARACTER_ID] = int(decoded_acess_token.get('sub', '').split(':')[-1])
+            client_session[self.ESI_CHARACTER_NAME] = decoded_acess_token.get('name', '')
 
-            quart.session[self.ESI_ACCESS_TOKEN] = token_response.get("access_token", '')
-            quart.session[self.ESI_ACCESS_TOKEN_ISSUED] = token_response.get('iat', int(datetime.datetime.utcnow().timestamp()))
-            quart.session[self.ESI_ACCESS_TOKEN_EXPIRY] = token_response.get('exp', int(datetime.datetime.utcnow().timestamp()))
-            quart.session[self.ESI_ACCESS_TOKEN_SCOPES] = decoded_acess_token.get('scp', [])
+            client_session[self.ESI_ACCESS_TOKEN] = token_response.get("access_token", '')
+            client_session[self.ESI_ACCESS_TOKEN_ISSUED] = token_response.get('iat', int(datetime.datetime.utcnow().timestamp()))
+            client_session[self.ESI_ACCESS_TOKEN_EXPIRY] = token_response.get('exp', int(datetime.datetime.utcnow().timestamp()))
+            client_session[self.ESI_ACCESS_TOKEN_SCOPES] = decoded_acess_token.get('scp', [])
 
-            quart.session[self.ESI_REFRESH_TOKEN] = token_response.get('refresh_token', '')
+            client_session[self.ESI_REFRESH_TOKEN] = token_response.get('refresh_token', '')
 
-            quart.session[self.ESI_DEBUG_TOKEN] = token_response
-            quart.session[self.ESI_DEBUG_ACCESS_TOKEN] = decoded_acess_token
+            client_session[self.ESI_DEBUG_TOKEN] = token_response
+            client_session[self.ESI_DEBUG_ACCESS_TOKEN] = decoded_acess_token
 
         if self.db is not None and decoded_acess_token is not None and self.db is not None:
 
-            async with await self.db.sessionmaker() as session:
-                async with session.begin():
-                    character_query = sqlalchemy.select(EveTables.Credentials).where(
-                        EveTables.Credentials.character_id == quart.session[self.ESI_CHARACTER_ID])
-                    character_query_results = await session.execute(character_query)
-                    character_set = {result for result in character_query_results.scalars()}
+            async with await self.db.sessionmaker() as db, db.begin():
+                character_query = sqlalchemy.select(EveTables.Credentials).where(
+                    EveTables.Credentials.character_id == client_session[self.ESI_CHARACTER_ID])
+                character_query_results = await db.execute(character_query)
+                character_set = {result for result in character_query_results.scalars()}
 
-                    if len(character_set) > 0:
-                        [await session.delete(x) for x in character_set]
+                if len(character_set) > 0:
+                    [await db.delete(x) for x in character_set]
 
-                    edict = dict({
-                        "character_id": quart.session[self.ESI_CHARACTER_ID],
-                        "json": token_response
-                    })
+                edict = dict({
+                    "character_id": client_session[self.ESI_CHARACTER_ID],
+                    "json": token_response
+                })
 
-                    obj = EveTables.Credentials(**edict)
-                    session.add(obj)
-                    await session.commit()
+                obj = EveTables.Credentials(**edict)
+                if obj is not None:
+                    db.add(obj)
+                    await db.commit()
 
         return decoded_acess_token is not None
 
     def esi_sso_login(self) -> quart.redirect:
-        quart.session[self.APP_SESSION_STATE] = uuid.uuid4().hex
+        client_session: Final = quart.session
+
+        client_session[self.APP_SESSION_STATE] = uuid.uuid4().hex
 
         redirect_params: Final = [
             'response_type=code',
             f'redirect_uri={self.callback_url}',
             f'client_id={self.client_id}',
             f'scope={urllib.parse.quote(" ".join(self.scopes))}',
-            f'state={quart.session[self.APP_SESSION_STATE]}'
+            f'state={client_session[self.APP_SESSION_STATE]}'
         ]
 
         redirect_url: Final = f"{self.configuration['authorization_endpoint']}?{'&'.join(redirect_params)}"
@@ -246,17 +248,21 @@ class EveSSO:
         return quart.redirect(redirect_url)
 
     async def esi_sso_logout(self) -> quart.redirect:
-        quart.session.clear()
+        client_session: Final = quart.session
+
+        client_session.clear()
 
         return quart.redirect("/")
 
     async def esi_sso_callback(self) -> quart.redirect:
 
+        client_session: Final = quart.session
+
         required_callback_keys: Final = ["code", "state"]
         if not all(map(lambda x: bool(quart.request.args.get(x)), required_callback_keys)):
             quart.abort(500, f"invalid call to {self.callback_route}")
 
-        if quart.request.args["state"] != quart.session.get(self.APP_SESSION_STATE):
+        if quart.request.args["state"] != client_session.get(self.APP_SESSION_STATE):
             quart.abort(500, f"invalid session state in {self.callback_route}")
 
         post_token_url = f"{self.configuration['token_endpoint']}"
@@ -271,8 +277,8 @@ class EveSSO:
         }
 
         token_response = dict()
-        async with aiohttp.ClientSession(headers=post_session_headers) as client_session:
-            async with client_session.post(post_token_url, data=post_body) as response:
+        async with aiohttp.ClientSession(headers=post_session_headers) as http_session:
+            async with http_session.post(post_token_url, data=post_body) as response:
                 if response.status in [200]:
                     token_response = dict(await response.json())
 
@@ -280,84 +286,82 @@ class EveSSO:
         if not all(map(lambda x: bool(token_response.get(x)), required_response_keys)):
             quart.abort(500, f"invalid response to {post_token_url}")
 
-        await self.process_token(token_response)
+        await self.esi_process_token(client_session, token_response)
 
-        character_id: Final = quart.session.get(self.ESI_CHARACTER_ID, 0)
+        character_id: Final = client_session.get(self.ESI_CHARACTER_ID, 0)
         if character_id > 0:
 
             common_params: Final = {"datasource": "tranquility"}
             session_headers: Final = {
-                "Authorization": f"Bearer {quart.session.get(self.ESI_ACCESS_TOKEN)}"
+                "Authorization": f"Bearer {client_session.get(self.ESI_ACCESS_TOKEN)}"
             }
 
             character_response = None
-            async with aiohttp.ClientSession(headers=session_headers) as client_session:
-
+            async with aiohttp.ClientSession(headers=session_headers) as http_session:
                 post_token_url = f"https://esi.evetech.net/latest/characters/{character_id}/"
-                async with client_session.get(post_token_url, params=common_params) as response:
+                async with http_session.get(post_token_url, params=common_params) as response:
                     if response.status in [200]:
                         character_response = dict(await response.json())
 
             character_roles_response = None
-            if "esi-characters.read_corporation_roles.v1" in quart.session.get(self.ESI_ACCESS_TOKEN_SCOPES, []):
-                async with aiohttp.ClientSession(headers=session_headers) as client_session:
+            if "esi-characters.read_corporation_roles.v1" in client_session.get(self.ESI_ACCESS_TOKEN_SCOPES, []):
+                async with aiohttp.ClientSession(headers=session_headers) as http_session:
                     post_character_roles_url = f"https://esi.evetech.net/latest/characters/{character_id}/roles"
-                    async with client_session.get(post_character_roles_url, params=common_params) as response:
+                    async with http_session.get(post_character_roles_url, params=common_params) as response:
                         if response.status in [200]:
                             character_roles_response = dict(await response.json())
 
             if self.db is not None and character_response is not None:
 
-                async with await self.db.sessionmaker() as session:
-                    async with session.begin():
-                        character_query = sqlalchemy.select(EveTables.Character).where(
-                            EveTables.Character.character_id == character_id)
-                        character_query_results = await session.execute(character_query)
-                        character_set = {result for result in character_query_results.scalars()}
+                async with await self.db.sessionmaker() as db, db.begin():
+                    character_query = sqlalchemy.select(EveTables.Character).where(
+                        EveTables.Character.character_id == character_id)
+                    character_query_results = await db.execute(character_query)
+                    character_set = {result for result in character_query_results.scalars()}
 
-                        if len(character_set) > 0:
-                            [await session.delete(x) for x in character_set]
+                    if len(character_set) > 0:
+                        [await db.delete(x) for x in character_set]
 
-                        edict = dict({
-                            "character_id": int(character_id)
-                        })
-                        for k, v in character_response.items():
-                            if k in ["corporation_id", "alliance_id"]:
-                                v = int(v)
-                            elif k in ["birthday"]:
-                                v = dateutil.parser.parse(v).replace(tzinfo=zoneinfo.ZoneInfo("UTC"))
-                            elif k not in ["name"]:
-                                continue
-                            edict[k] = v
+                    edict = dict({
+                        "character_id": int(character_id)
+                    })
+                    for k, v in character_response.items():
+                        if k in ["corporation_id", "alliance_id"]:
+                            v = int(v)
+                        elif k in ["birthday"]:
+                            v = dateutil.parser.parse(v).replace(tzinfo=zoneinfo.ZoneInfo("UTC"))
+                        elif k not in ["name"]:
+                            continue
+                        edict[k] = v
 
-                        obj = EveTables.Character(**edict)
-                        session.add(obj)
-                        await session.commit()
+                    obj = EveTables.Character(**edict)
+                    if obj is not None:
+                        db.add(obj)
+                        await db.commit()
 
             if character_response is not None:
                 # for k in [self.ESI_CORPORATION_ID, self.ESI_ALLIANCE_ID, self.ESI_CHARACTER_SECURITY_STATUS, self.ESI_CHARACTER_BIRTHDAY]:
                 for k in [self.ESI_CORPORATION_ID, self.ESI_ALLIANCE_ID]:
                     v = character_response.get(k, None)
                     if v is not None:
-                        quart.session[k] = v
+                        client_session[k] = v
 
             if character_roles_response is not None:
-                quart.session[self.ESI_CHARACTER_HAS_ACCOUNTANT_ROLE] = 'Accountant' in character_roles_response.get('roles', [])
-                quart.session[self.ESI_CHARACTER_HAS_DIRECTOR_ROLE] = 'Director' in character_roles_response.get('roles', [])
-                quart.session[self.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE] = 'Station_Manager' in character_roles_response.get('roles', [])
+                client_session[self.ESI_CHARACTER_HAS_ACCOUNTANT_ROLE] = 'Accountant' in character_roles_response.get('roles', [])
+                client_session[self.ESI_CHARACTER_HAS_DIRECTOR_ROLE] = 'Director' in character_roles_response.get('roles', [])
+                client_session[self.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE] = 'Station_Manager' in character_roles_response.get('roles', [])
 
         acl_set: Final = set()
-        async with await self.db.sessionmaker() as session:
-            async with session.begin():
-                acl_query = sqlalchemy.select(EveTables.AccessControls)
-                acl_query_result = await session.execute(acl_query)
-                acl_set |= {result for result in acl_query_result.scalars()}
+        async with await self.db.sessionmaker() as db, db.begin():
+            acl_query = sqlalchemy.select(EveTables.AccessControls)
+            acl_query_result = await db.execute(acl_query)
+            acl_set |= {result for result in acl_query_result.scalars()}
 
         acl_pass = False
         acl_evaluations = [
-            (EveAccessType.ALLIANCE, quart.session.get(self.ESI_ALLIANCE_ID, 0)),
-            (EveAccessType.CORPORATION, quart.session.get(self.ESI_CORPORATION_ID, 0)),
-            (EveAccessType.CHARACTER, quart.session.get(self.ESI_CHARACTER_ID, 0)),
+            (EveAccessType.ALLIANCE, client_session.get(self.ESI_ALLIANCE_ID, 0)),
+            (EveAccessType.CORPORATION, client_session.get(self.ESI_CORPORATION_ID, 0)),
+            (EveAccessType.CHARACTER, client_session.get(self.ESI_CHARACTER_ID, 0)),
         ]
 
         for acl_type, acl_id in acl_evaluations:
@@ -366,18 +370,18 @@ class EveSSO:
                     acl_pass = acl.permit
                     self.logger.info(f"{inspect.currentframe().f_code.co_name}: {acl}: {acl_pass}")
 
-        quart.session[EveSSO.APP_PERMITTED] = acl_pass
+        client_session[EveSSO.APP_PERMITTED] = acl_pass
 
         return quart.redirect("/")
 
-    async def esi_sso_refresh(self) -> quart.redirect:
+    async def esi_sso_refresh(self, client_session: collections.abc.MutableMapping) -> quart.redirect:
 
         now = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
 
-        if now < datetime.datetime.fromtimestamp(quart.session[self.ESI_ACCESS_TOKEN_ISSUED]).replace(tzinfo=datetime.timezone.utc):
+        if now < datetime.datetime.fromtimestamp(client_session.get(self.ESI_ACCESS_TOKEN_ISSUED, 0)).replace(tzinfo=datetime.timezone.utc):
             return
 
-        if (now + datetime.timedelta(minutes=5)) < datetime.datetime.fromtimestamp(quart.session[self.ESI_ACCESS_TOKEN_EXPIRY]).replace(tzinfo=datetime.timezone.utc):
+        if (now + datetime.timedelta(minutes=5)) < datetime.datetime.fromtimestamp(client_session.get(self.ESI_ACCESS_TOKEN_EXPIRY, 0)).replace(tzinfo=datetime.timezone.utc):
             return
 
         post_token_url = f"{self.configuration['token_endpoint']}"
@@ -386,16 +390,16 @@ class EveSSO:
         }
         post_body: Final = {
             "grant_type": "refresh_token",
-            "refresh_token": quart.session.get(self.ESI_REFRESH_TOKEN, ''),
+            "refresh_token": client_session.get(self.ESI_REFRESH_TOKEN, ''),
             "client_id": self.client_id
         }
 
         token_response = dict()
-        async with aiohttp.ClientSession(headers=post_session_headers) as client_session:
-            async with client_session.post(post_token_url, data=post_body) as response:
+        async with aiohttp.ClientSession(headers=post_session_headers) as http_session:
+            async with http_session.post(post_token_url, data=post_body) as response:
                 if response.status in [200]:
                     token_response = dict(await response.json())
 
         required_response_keys: Final = ["access_token", "token_type", "refresh_token"]
         if all(map(lambda x: bool(token_response.get(x)), required_response_keys)):
-            await self.process_token(token_response)
+            await self.esi_process_token(client_session, token_response)
