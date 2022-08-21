@@ -268,8 +268,6 @@ class EveStructurePollingTask(EveStructureTask):
 
                         available_corporation_id_dict[obj.corporation_id] = obj
 
-            print(available_corporation_id_dict)
-
             refresh_obj: EveTables.Structure = None
             async with await self.db.sessionmaker() as db, db.begin():
                 query = sqlalchemy.select(EveTables.Structure).where(EveTables.Structure.corporation_id.in_(available_corporation_id_dict.keys())).order_by(sqlalchemy.asc(EveTables.Structure.timestamp)).limit(1)
@@ -282,14 +280,11 @@ class EveStructurePollingTask(EveStructureTask):
                 await asyncio.sleep(int(refresh_interval.total_seconds()))
                 continue
 
-            print(refresh_obj)
-
-            if refresh_obj.timestamp + refresh_interval >= now:
+            # Hack to avoid wierd timing bug
+            if refresh_obj.timestamp + refresh_interval >= now - datetime.timedelta(seconds=15):
                 remaining_interval: Final = (refresh_obj.timestamp + refresh_interval) - now
                 await asyncio.sleep(int(min(refresh_interval.total_seconds(), remaining_interval.total_seconds())))
                 continue
-
-            print(refresh_obj)
 
             corporation_id: Final = refresh_obj.corporation_id
             character_id: Final = available_corporation_id_dict[corporation_id].character_id
