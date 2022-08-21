@@ -274,7 +274,7 @@ class EveSSO:
                             else:
                                 attempts_remaining -= 1
                                 self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
-                                asyncio.sleep(3)
+                                await asyncio.sleep(3)
                     return dict()
 
                 task_list: Final = [
@@ -422,8 +422,8 @@ class EveSSO:
                 obj = None
                 if len(character_set) > 0:
                     obj: EveTables.PeriodicCredentials = character_set.pop()
-                    if obj.is_enabled:
-                        obj.is_enabled = False
+                    obj.is_enabled = False
+                    obj.is_permitted = False
                     await db.commit()
 
         client_session.clear()

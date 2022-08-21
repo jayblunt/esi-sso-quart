@@ -4,7 +4,7 @@ import collections.abc
 import datetime
 import inspect
 import zoneinfo
-from typing import Final, List, Union
+from typing import Final, Union, Dict
 
 import aiohttp
 import aiohttp.client_exceptions
@@ -40,7 +40,7 @@ class EveStructureTask(EveTask):
                 else:
                     attempts_remaining -= 1
                     self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
-                    asyncio.sleep(self.ERROR_SLEEP_TIME)
+                    await asyncio.sleep(self.ERROR_SLEEP_TIME)
         self.logger.error("- {}.{}: {} -> {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  id, None))
         return None
 
@@ -143,7 +143,7 @@ class EveStructureTask(EveTask):
                 else:
                     attempts_remaining -= 1
                     self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
-                    asyncio.sleep(self.ERROR_SLEEP_TIME)
+                    await asyncio.sleep(self.ERROR_SLEEP_TIME)
         self.logger.error("- {}.{}: {} -> {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  id, None))
         return None
 
@@ -234,26 +234,26 @@ class EveStructureTask(EveTask):
         corporation_id: Final = int(client_session.get(EveSSO.ESI_CORPORATION_ID, 0))
         access_token: Final = client_session.get(EveSSO.ESI_ACCESS_TOKEN, '')
 
+        task_list: Final = list()
+
         if "esi-corporations.read_structures.v1" in client_session.get(EveSSO.ESI_ACCESS_TOKEN_SCOPES, []):
-            await self.run_structures(character_id, corporation_id, access_token)
+            task_list.append(asyncio.ensure_future(self.run_structures(character_id, corporation_id, access_token)))
 
         if "esi-industry.read_corporation_mining.v1" in client_session.get(EveSSO.ESI_ACCESS_TOKEN_SCOPES, []):
-            await self.run_extractions(character_id, corporation_id, access_token)
+            task_list.append(asyncio.ensure_future(self.run_extractions(character_id, corporation_id, access_token)))
+
+        if len(task_list) > 0:
+            await asyncio.gather(*task_list)
 
 
 class EveStructurePollingTask(EveStructureTask):
 
     async def run(self, client_session: collections.abc.MutableSet):
-        refresh_interval: Final = datetime.timedelta(seconds=300)
-        last_run = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc) - refresh_interval
+        refresh_interval: Final = datetime.timedelta(seconds=900)
         while True:
             now: Final = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
-            # if now <= last_run + run_window:
-            #     delay = now - (last_run + run_window)
-            #     asyncio.sleep(int(delay.total_seconds()))
-            #     continue
 
-            available_corporation_id_dict: Final = dict()
+            available_corporation_id_dict: Final[Dict[int, EveTables.PeriodicCredentials]] = dict()
             async with await self.db.sessionmaker() as db, db.begin():
                 query = sqlalchemy.select(EveTables.PeriodicCredentials).where(EveTables.PeriodicCredentials.is_permitted.is_(True)).order_by(sqlalchemy.asc(EveTables.PeriodicCredentials.access_token_exiry))
                 results = await db.execute(query)
@@ -278,14 +278,29 @@ class EveStructurePollingTask(EveStructureTask):
                 if len(obj_set) > 0:
                     refresh_obj = obj_set.pop()
 
-
             if refresh_obj is None:
-                asyncio.sleep(int(refresh_interval.total_seconds()))
+                await asyncio.sleep(int(refresh_interval.total_seconds()))
                 continue
+
+            print(refresh_obj)
 
             if refresh_obj.timestamp + refresh_interval >= now:
-                remaining_interval: Final = now - ( refresh_obj.timestamp + refresh_interval )
-                asyncio.sleep(int(min(refresh_interval.total_seconds(), remaining_interval.total_seconds())))
+                remaining_interval: Final = (refresh_obj.timestamp + refresh_interval) - now
+                await asyncio.sleep(int(min(refresh_interval.total_seconds(), remaining_interval.total_seconds())))
                 continue
 
-            self.run_structures(refresh_obj.character_id, refresh_obj.corporation_id)
+            print(refresh_obj)
+
+            corporation_id: Final = refresh_obj.corporation_id
+            character_id: Final = available_corporation_id_dict[corporation_id].character_id
+            access_token: Final = available_corporation_id_dict[corporation_id].access_token
+
+            self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"UPDATING {corporation_id} via {character_id}"))
+
+            task_list: Final = [
+                asyncio.ensure_future(self.run_structures(character_id, corporation_id, access_token)),
+                asyncio.ensure_future(self.run_extractions(character_id, corporation_id, access_token)),
+            ]
+            if len(task_list) > 0:
+                await asyncio.gather(*task_list)
+

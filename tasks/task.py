@@ -90,5 +90,5 @@ class EveTask(metaclass=abc.ABCMeta):
                 else:
                     attempts_remaining -= 1
                     self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
-                    asyncio.sleep(self.ERROR_SLEEP_TIME)
+                    await asyncio.sleep(self.ERROR_SLEEP_TIME)
         return []

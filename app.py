@@ -69,7 +69,7 @@ async def _before_serving():
         EveUniverseSystemsTask(evesession, evedb, app.logger)
         EveAllianceTask(evesession, evedb, app.logger)
 
-        # EveStructurePollingTask(evesession, evedb, app.logger)
+        EveStructurePollingTask(evesession, evedb, app.logger)
 
 
 @app.errorhandler(404)
