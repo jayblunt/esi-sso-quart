@@ -1,16 +1,25 @@
 :root {
-    --background-color: gray;
+    --background-color: #ededed;
     --foreground-color: black;
-    --input-background-color: lightgray;
+    --input-background-color: #c0c0c0;
     --a-foreground-color: black;
 }
 
 @media (prefers-color-scheme: dark) {
-     :root {
+    :root {
         --background-color: #121212;
         --foreground-color: white;
-        --input-background-color: lightgray;
+        --input-background-color: #c0c0c0;
         --a-foreground-color: white;
+    }
+}
+
+@media (prefers-color-scheme: light) {
+    :root {
+        --background-color: #ededed;
+        --foreground-color: black;
+        --input-background-color: #c0c0c0;
+        --a-foreground-color: black;
     }
 }
 
