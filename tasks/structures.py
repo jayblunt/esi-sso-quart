@@ -1,9 +1,10 @@
 import asyncio
 import collections
 import collections.abc
+import datetime
 import inspect
 import zoneinfo
-from typing import Final, Union
+from typing import Final, List, Union
 
 import aiohttp
 import aiohttp.client_exceptions
@@ -43,10 +44,10 @@ class EveStructureTask(EveTask):
         self.logger.error("- {}.{}: {} -> {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  id, None))
         return None
 
-    async def run_structures(self, character_id: int, corporation_id: int):
+    async def run_structures(self, character_id: int, corporation_id: int, access_token: str):
 
         url = f"https://esi.evetech.net/latest/corporations/{corporation_id}/structures/"
-        structures: Final = await self.get_pages(url)
+        structures: Final = await self.get_pages(url, access_token)
 
         if len(structures) == 0:
             return
@@ -146,10 +147,10 @@ class EveStructureTask(EveTask):
         self.logger.error("- {}.{}: {} -> {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  id, None))
         return None
 
-    async def run_extractions(self, character_id: int, corporation_id: int):
+    async def run_extractions(self, character_id: int, corporation_id: int, access_token: str):
 
         url = f"https://esi.evetech.net/latest/corporation/{corporation_id}/mining/extractions/"
-        extractions: Final = await self.get_pages(url)
+        extractions: Final = await self.get_pages(url, access_token)
 
         if len(extractions) == 0:
             return
@@ -225,15 +226,66 @@ class EveStructureTask(EveTask):
 
                 await db.commit()
 
-    async def run(self):
-        if not self.client_session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False):
+    async def run(self, client_session: collections.abc.MutableMapping):
+        if not client_session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False):
             return
 
-        character_id: Final = int(self.client_session.get(EveSSO.ESI_CHARACTER_ID, 0))
-        corporation_id: Final = int(self.client_session.get(EveSSO.ESI_CORPORATION_ID, 0))
+        character_id: Final = int(client_session.get(EveSSO.ESI_CHARACTER_ID, 0))
+        corporation_id: Final = int(client_session.get(EveSSO.ESI_CORPORATION_ID, 0))
+        access_token: Final = client_session.get(EveSSO.ESI_ACCESS_TOKEN, '')
 
-        if "esi-corporations.read_structures.v1" in self.client_session.get(EveSSO.ESI_ACCESS_TOKEN_SCOPES, []):
-            await self.run_structures(character_id, corporation_id)
+        if "esi-corporations.read_structures.v1" in client_session.get(EveSSO.ESI_ACCESS_TOKEN_SCOPES, []):
+            await self.run_structures(character_id, corporation_id, access_token)
 
-        if "esi-industry.read_corporation_mining.v1" in self.client_session.get(EveSSO.ESI_ACCESS_TOKEN_SCOPES, []):
-            await self.run_extractions(character_id, corporation_id)
+        if "esi-industry.read_corporation_mining.v1" in client_session.get(EveSSO.ESI_ACCESS_TOKEN_SCOPES, []):
+            await self.run_extractions(character_id, corporation_id, access_token)
+
+
+class EveStructurePollingTask(EveStructureTask):
+
+    async def run(self, client_session: collections.abc.MutableSet):
+        refresh_interval: Final = datetime.timedelta(seconds=300)
+        last_run = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc) - refresh_interval
+        while True:
+            now: Final = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
+            # if now <= last_run + run_window:
+            #     delay = now - (last_run + run_window)
+            #     asyncio.sleep(int(delay.total_seconds()))
+            #     continue
+
+            available_corporation_id_dict: Final = dict()
+            async with await self.db.sessionmaker() as db, db.begin():
+                query = sqlalchemy.select(EveTables.PeriodicCredentials).where(EveTables.PeriodicCredentials.is_permitted.is_(True)).order_by(sqlalchemy.asc(EveTables.PeriodicCredentials.access_token_exiry))
+                results = await db.execute(query)
+                rl = [x for x in results.scalars()]
+                for obj in rl:
+                    if isinstance(obj, EveTables.PeriodicCredentials):
+                        if not obj.is_station_manager_role:
+                            continue
+
+                        if not available_corporation_id_dict.get(obj.corporation_id) is None:
+                            continue
+
+                        available_corporation_id_dict[obj.corporation_id] = obj
+
+            print(available_corporation_id_dict)
+
+            refresh_obj: EveTables.Structure = None
+            async with await self.db.sessionmaker() as db, db.begin():
+                query = sqlalchemy.select(EveTables.Structure).where(EveTables.Structure.corporation_id.in_(available_corporation_id_dict.keys())).order_by(sqlalchemy.asc(EveTables.Structure.timestamp)).limit(1)
+                results = await db.execute(query)
+                obj_set: Final = {x for x in results.scalars()}
+                if len(obj_set) > 0:
+                    refresh_obj = obj_set.pop()
+
+
+            if refresh_obj is None:
+                asyncio.sleep(int(refresh_interval.total_seconds()))
+                continue
+
+            if refresh_obj.timestamp + refresh_interval >= now:
+                remaining_interval: Final = now - ( refresh_obj.timestamp + refresh_interval )
+                asyncio.sleep(int(min(refresh_interval.total_seconds(), remaining_interval.total_seconds())))
+                continue
+
+            self.run_structures(refresh_obj.character_id, refresh_obj.corporation_id)

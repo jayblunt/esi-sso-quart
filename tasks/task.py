@@ -9,7 +9,6 @@ from typing import Any, Final, List
 import aiohttp
 import aiohttp.client_exceptions
 from db import EveDatabase
-from sso import EveSSO
 
 
 class EveTask(metaclass=abc.ABCMeta):
@@ -21,26 +20,25 @@ class EveTask(metaclass=abc.ABCMeta):
     CONFIGDIR: Final = "CONFIGDIR"
 
     def __init__(self, client_session: collections.abc.MutableMapping, db: EveDatabase, logger: logging.Logger = logging.getLogger()):
-        self.client_session: Final = client_session
         self.db: Final = db
         self.logger: Final = logger
         self.name: Final = self.__class__.__name__
-        self.configdir: Final = os.path.abspath(self.client_session.get(self.CONFIGDIR, "."))
+        self.configdir: Final = os.path.abspath(client_session.get(self.CONFIGDIR, "."))
 
-        if self.client_session.get(self.name, False):
+        if client_session.get(self.name, False):
             self.task: asyncio.Task = None
         else:
-            self.client_session[self.name] = True
-            self.task: asyncio.Task = asyncio.create_task(self.manage_task())
+            client_session[self.name] = True
+            self.task: asyncio.Task = asyncio.create_task(self.manage_task(client_session))
 
-    async def manage_task(self):
+    async def manage_task(self, client_session: collections.abc.MutableMapping):
         self.logger.info(f"> {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
-        await self.run()
-        self.client_session[self.name] = False
+        await self.run(client_session)
+        client_session[self.name] = False
         self.logger.info(f"< {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
 
     @abc.abstractmethod
-    async def run():
+    async def run(self, client_session: collections.abc.MutableMapping):
         pass
 
     @property
@@ -50,12 +48,11 @@ class EveTask(metaclass=abc.ABCMeta):
             "language": "en",
         }
 
-    async def get_pages(self, url: str) -> List[Any]:
+    async def get_pages(self, url: str, access_token: str) -> List[Any]:
 
         session_headers: Final = dict()
-        esi_access_token: Final = self.client_session.get(EveSSO.ESI_ACCESS_TOKEN, '')
-        if len(esi_access_token) > 0:
-            session_headers["Authorization"] = f"Bearer {esi_access_token}"
+        if len(access_token) > 0:
+            session_headers["Authorization"] = f"Bearer {access_token}"
 
         maxpageno: int = 1
         results: Final = list()
@@ -78,7 +75,7 @@ class EveTask(metaclass=abc.ABCMeta):
                 result_list = await asyncio.gather(*task_list)
                 results += sum(result_list, [])
 
-        self.logger.info("- {}.{}: {}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  url, results))
+        self.logger.warning("- {}.{}: {}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  url, results))
         return results
 
     async def _get_page(self, url: str, page: int, http_session: aiohttp.ClientSession) -> List:

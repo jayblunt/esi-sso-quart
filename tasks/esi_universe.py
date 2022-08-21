@@ -1,5 +1,7 @@
 import abc
 import asyncio
+import collections
+import collections.abc
 import inspect
 import json
 import os
@@ -13,6 +15,7 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 from db import EveTables
+from sso import EveSSO
 
 from .task import EveTask
 
@@ -60,14 +63,15 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
         self.logger.error("- {}.{}: {} -> {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  id, None))
         return None
 
-    async def run(self):
+    async def run(self, client_session: collections.abc.MutableMapping):
 
         self.logger.info(f"> {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
 
         obj_class: Final = self.object_class()
 
         url = self.index_url()
-        id_set: Final = set(await self.get_pages(url))
+        access_token: Final = client_session.get(EveSSO.ESI_ACCESS_TOKEN, '')
+        id_set: Final = set(await self.get_pages(url, access_token))
 
         cache_dict: Final = dict()
         cache_filename: Final = os.path.join(self.configdir, f"{self.__class__.__name__}.json")

@@ -17,9 +17,10 @@ import sqlalchemy.sql
 from db import EveDatabase, EveTables
 from sso import EveSSO
 from tasks import (EveAccessControlTask, EveAllianceTask,
-                   EveEsiAlliancMemberTask, EveMoonYieldTask, EveStructureTask,
-                   EveTask, EveUniverseConstellationsTask,
-                   EveUniverseRegionsTask, EveUniverseSystemsTask)
+                   EveEsiAlliancMemberTask, EveMoonYieldTask,
+                   EveStructurePollingTask, EveStructureTask, EveTask,
+                   EveUniverseConstellationsTask, EveUniverseRegionsTask,
+                   EveUniverseSystemsTask)
 
 app: Final = quart.Quart(__name__)
 
@@ -67,6 +68,8 @@ async def _before_serving():
         EveUniverseConstellationsTask(evesession, evedb, app.logger)
         EveUniverseSystemsTask(evesession, evedb, app.logger)
         EveAllianceTask(evesession, evedb, app.logger)
+
+        # EveStructurePollingTask(evesession, evedb, app.logger)
 
 
 @app.errorhandler(404)

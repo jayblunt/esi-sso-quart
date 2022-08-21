@@ -1,3 +1,4 @@
+import collections.abc
 from typing import Final
 
 import aiohttp
@@ -15,11 +16,11 @@ from .task import EveTask
 
 class EveEsiAlliancMemberTask(EveTask):
 
-    async def run(self):
+    async def run(self, client_session: collections.abc.MutableMapping):
 
         corporation_id_set: Final = set()
 
-        alliance_id: Final = int(self.client_session.get(EveSSO.ESI_ALLIANCE_ID, 0))
+        alliance_id: Final = int(client_session.get(EveSSO.ESI_ALLIANCE_ID, 0))
         if alliance_id in [99002329]:
             corporation_id_set.add(1000169)
 

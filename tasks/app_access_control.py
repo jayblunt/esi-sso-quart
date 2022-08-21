@@ -1,3 +1,4 @@
+import collections.abc
 import inspect
 from typing import Final
 
@@ -13,7 +14,7 @@ from .task import EveTask
 
 class EveAccessControlTask(EveTask):
 
-    async def run(self):
+    async def run(self, client_session: collections.abc.MutableMapping):
 
         self.logger.info(f"> {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
 

@@ -1,3 +1,5 @@
+import collections
+import collections.abc
 import dataclasses
 import json
 import os
@@ -24,7 +26,7 @@ class MoonYieldData:
 
 class EveMoonYieldTask(EveTask):
 
-    async def run(self):
+    async def run(self, client_session: collections.abc.MutableSet):
 
         moon_data_list: Final = list()
         moon_data_filename: Final = os.path.abspath(os.path.join(self.configdir, "moon_data.json"))
