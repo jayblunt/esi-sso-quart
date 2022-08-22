@@ -20,7 +20,7 @@ import sqlalchemy.ext.asyncio
 import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
-from db import EveAccessType, EveDatabase, EveTables
+from db import EveAccessType, EveAuthType, EveDatabase, EveTables
 
 
 class EveSSO:
@@ -162,33 +162,29 @@ class EveSSO:
                 self.app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
 
     async def refresh_token_task(self) -> None:
+        refresh_interval: Final = datetime.timedelta(seconds=60)
         while True:
-            refresh_window: Final = datetime.timedelta(seconds=60)
+            now: Final = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
 
-            refresh_obj_list: Final[List[EveTables.PeriodicCredentials]] = list()
-            refresh_obj_list.clear()
+            refresh_obj: EveTables.PeriodicCredentials = None
             async with await self.db.sessionmaker() as db, db.begin():
-                query = sqlalchemy.select(EveTables.PeriodicCredentials).order_by(sqlalchemy.asc(EveTables.PeriodicCredentials.access_token_exiry)).limit(1)
+                query = sqlalchemy.select(EveTables.PeriodicCredentials).where(EveTables.PeriodicCredentials.is_permitted.is_(True)).order_by(sqlalchemy.asc(EveTables.PeriodicCredentials.access_token_exiry)).limit(1)
                 results = await db.execute(query)
-                rl = [x for x in results.scalars()]
-                refresh_obj_list.extend(rl)
+                obj_set = {x for x in results.scalars()}
+                if len(obj_set) > 0:
+                    refresh_obj = obj_set.pop()
 
-            if len(refresh_obj_list) <= 0:
-                await asyncio.sleep(refresh_window.total_seconds())
+            if refresh_obj is None:
+                await asyncio.sleep(refresh_interval.total_seconds())
                 continue
 
-            refresh_time: Final = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc) - refresh_window
-
-            refresh_obj: Final[EveTables.PeriodicCredentials] = refresh_obj_list.pop()
-            refresh_obj_token_expiry: Final[datetime.datetime] = refresh_obj.access_token_exiry
-            refresh_time_remaining = min(refresh_window.total_seconds(), (refresh_obj_token_expiry - refresh_time).total_seconds())
-            refresh_time_remaining = int(refresh_time_remaining)
-            if refresh_time_remaining > 0:
-                # self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"sleeping {refresh_time_remaining} seconds"))
-                await asyncio.sleep(refresh_time_remaining)
+            if refresh_obj.access_token_exiry - refresh_interval >= now - datetime.timedelta(seconds=15):
+                remaining_interval: datetime.timedelta = (refresh_obj.access_token_exiry - refresh_interval) - now
+                await asyncio.sleep(int(min(refresh_interval.total_seconds(), remaining_interval.total_seconds())))
                 continue
 
             refresh_character_id: Final = refresh_obj.character_id
+
             client_session = dict({
                 EveSSO.ESI_ACCESS_TOKEN_ISSUED: int(refresh_obj.access_token_issued.timestamp()),
                 EveSSO.ESI_ACCESS_TOKEN_EXPIRY: int(refresh_obj.access_token_exiry.timestamp()),
@@ -206,7 +202,7 @@ class EveSSO:
                     self.logger.error("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  "WUT"))
                     continue
 
-                obj = update_obj_set.pop()
+                obj: EveTables.PeriodicCredentials = update_obj_set.pop()
                 if await self.esi_sso_refresh(client_session):
 
                     update_dict = {
@@ -225,6 +221,12 @@ class EveSSO:
                     self.logger.error("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"refresh failed for {refresh_obj.character_id}"))
 
                     obj.is_enabled = False
+                    obj.is_permitted = False
+                await db.commit()
+
+            async with await self.db.sessionmaker() as db, db.begin():
+                obj = EveTables.AuthLog(character_id=client_session.get(EveSSO.ESI_CHARACTER_ID, 0), auth_type=EveAuthType.REFRESH)
+                db.add(obj)
                 await db.commit()
 
     async def esi_update_client_session(self, client_session: collections.abc.MutableMapping, token_response: dict, decoded_acess_token: dict):
@@ -363,7 +365,7 @@ class EveSSO:
                             }
                             obj = EveTables.PeriodicCredentials(**{**periodic_credentials, **new_periodic_credentials})
                             db.add(obj)
-                        db.commit()
+                        await db.commit()
 
     async def esi_process_token(self, client_session: collections.abc.MutableMapping, token_response: dict) -> dict:
 
@@ -426,6 +428,12 @@ class EveSSO:
                     obj.is_permitted = False
                     await db.commit()
 
+        if self.db is not None:
+            async with await self.db.sessionmaker() as db, db.begin():
+                obj = EveTables.AuthLog(character_id=client_session.get(EveSSO.ESI_CHARACTER_ID, 0), auth_type=EveAuthType.LOGOUT)
+                db.add(obj)
+                await db.commit()
+
         client_session.clear()
 
         return quart.redirect("/")
@@ -467,6 +475,12 @@ class EveSSO:
             quart.abort(500, "invalid jwt in token_response")
 
         await self.esi_update_client_session(client_session, token_response, decoded_acess_token)
+
+        if self.db is not None:
+            async with await self.db.sessionmaker() as db, db.begin():
+                obj = EveTables.AuthLog(character_id=client_session.get(EveSSO.ESI_CHARACTER_ID, 0), auth_type=EveAuthType.LOGIN)
+                db.add(obj)
+                await db.commit()
 
         acl_set: Final = set()
         async with await self.db.sessionmaker() as db, db.begin():

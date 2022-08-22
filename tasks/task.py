@@ -75,7 +75,7 @@ class EveTask(metaclass=abc.ABCMeta):
                 result_list = await asyncio.gather(*task_list)
                 results += sum(result_list, [])
 
-        self.logger.warning("- {}.{}: {}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  url, results))
+        self.logger.info("- {}.{}: {}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  url, results))
         return results
 
     async def _get_page(self, url: str, page: int, http_session: aiohttp.ClientSession) -> List:

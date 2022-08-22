@@ -13,6 +13,12 @@ class EveAccessType(enum.Enum):
     ALLIANCE = 2
 
 
+class EveAuthType(enum.Enum):
+    LOGIN = 0
+    LOGOUT = 1
+    REFRESH = 2
+
+
 class EveTables:
 
     Base = sqlalchemy.orm.declarative_base()
@@ -198,6 +204,12 @@ class EveTables:
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(id={self.id}, type={self.type}, permit={self.permit})"
 
+    class AuthLog(Base):
+        __tablename__ = "app_auth_log"
+        timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), primary_key=True, server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
+        character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        auth_type = sqlalchemy.Column(sqlalchemy.Enum(EveAuthType), nullable=False)
+
 
 class EveDatabase:
 
@@ -216,7 +228,7 @@ class EveDatabase:
             self._sessionmaker = sqlalchemy.orm.sessionmaker(await self.engine, expire_on_commit=False, class_=sqlalchemy.ext.asyncio.AsyncSession)
         return self._sessionmaker()
 
-    def __init__(self, db: str, echo: bool = True) -> None:
+    def __init__(self, db: str, echo: bool = False) -> None:
         self._engine = sqlalchemy.ext.asyncio.create_async_engine(db, echo=echo, future=False)
         self._sessionmaker = None
         self._initialized = False
