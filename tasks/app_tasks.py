@@ -3,8 +3,9 @@ import collections
 import collections.abc
 import datetime
 import inspect
+import os
 import zoneinfo
-from typing import Final, Union, Dict
+from typing import Dict, Final, Union
 
 import aiohttp
 import aiohttp.client_exceptions
@@ -16,34 +17,149 @@ import sqlalchemy.orm
 import sqlalchemy.sql
 from db import EveTables
 from sso import EveSSO
+from telemetry import otel, otel_add_error
 
 from .task import EveTask
 
 
 class EveStructureTask(EveTask):
 
-    async def _get_type(self, type_id: int, http_session: aiohttp.ClientSession) -> Union[None, EveTables.UniverseType]:
-        url: Final = f"https://esi.evetech.net/latest/universe/types/{type_id}/"
+    async def _get_url(self, url: str, http_session: aiohttp.ClientSession) -> Union[Dict, None]:
         attempts_remaining = self.ERROR_RETRY_COUNT
         while attempts_remaining > 0:
-            async with http_session.get(url, params=self.common_params) as response:
+            async with await http_session.get(url, params=self.common_params) as response:
                 if response.status in [200]:
-                    edict = dict()
-                    for k, v in dict(await response.json()).items():
-                        if k in ["name"]:
-                            edict[k] = v
-                        elif k in ["type_id", "group_id", "market_group_id"]:
-                            edict[k] = int(v)
-                        else:
-                            continue
-                    return EveTables.UniverseType(**edict)
+                    return dict(await response.json())
                 else:
                     attempts_remaining -= 1
-                    self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
+                    otel_add_error(f"{response.url} -> {response.status}")
+                    self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
                     await asyncio.sleep(self.ERROR_SLEEP_TIME)
-        self.logger.error("- {}.{}: {} -> {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  id, None))
+        self.logger.error("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  url))
         return None
 
+    async def _get_type(self, type_id: int, http_session: aiohttp.ClientSession) -> Union[None, EveTables.UniverseType]:
+        url: Final = f"https://esi.evetech.net/latest/universe/types/{type_id}/"
+        rdict: Final = await self._get_url(url, http_session)
+        if rdict is not None:
+            edict: Final = dict()
+            for k, v in rdict.items():
+                if k in ["name"]:
+                    edict[k] = v
+                elif k in ["type_id", "group_id", "market_group_id"]:
+                    edict[k] = int(v)
+                else:
+                    continue
+            return EveTables.UniverseType(**edict)
+        return None
+
+    async def _get_corporation(self, corporation_id: int, http_session: aiohttp.ClientSession) -> Union[None, EveTables.Corporation]:
+        url: Final = f"https://esi.evetech.net/latest/corporations/{corporation_id}/"
+        rdict: Final = await self._get_url(url, http_session)
+        if rdict is not None:
+            edict: Final = dict({
+                "corporation_id": corporation_id
+            })
+            for k, v in rdict.items():
+                if k in ["alliance_id"]:
+                    edict[k] = int(v)
+                elif k not in ["name", "ticker"]:
+                    continue
+                edict[k] = v
+            return EveTables.Corporation(**edict)
+        return None
+
+    async def _get_moon(self, moon_id: int, http_session: aiohttp.ClientSession) -> Union[None, EveTables.UniverseMoon]:
+        url: Final = f"https://esi.evetech.net/latest/universe/moons/{moon_id}/"
+        rdict: Final = await self._get_url(url, http_session)
+        if rdict is not None:
+            edict: Final = dict()
+            for k, v in rdict.items():
+                if k in ["name"]:
+                    edict[k] = v
+                elif k in ["moon_id", "system_id"]:
+                    edict[k] = int(v)
+                else:
+                    continue
+            return EveTables.UniverseMoon(**edict)
+        return None
+
+    @otel
+    async def backfill_types(self, type_id_set: set) -> None:
+        async with await self.db.sessionmaker() as db, db.begin():
+
+            existing_type_query = sqlalchemy.select(EveTables.UniverseType)
+            existing_type_query_result = await db.execute(existing_type_query)
+            existing_type_id_set: Final = {x.type_id for x in existing_type_query_result.scalars()}
+
+            type_obj_set: Final = set()
+            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as http_session:
+                type_task_list: Final = list()
+                for id in type_id_set - existing_type_id_set:
+                    type_task_list.append(asyncio.ensure_future(self._get_type(id, http_session)))
+
+                if len(type_task_list) > 0:
+                    result_list = await asyncio.gather(*type_task_list)
+                    for obj in result_list:
+                        if obj is None:
+                            continue
+                        type_obj_set.add(obj)
+
+            if len(type_obj_set) > 0:
+                db.add_all(type_obj_set)
+                await db.commit()
+
+    @otel
+    async def backfill_moons(self, moon_id_set: set) -> None:
+        async with await self.db.sessionmaker() as db, db.begin():
+
+            existing_moon_query = sqlalchemy.select(EveTables.UniverseMoon)
+            existing_moon_query_result = await db.execute(existing_moon_query)
+            existing_moon_id_set: Final = {x.moon_id for x in existing_moon_query_result.scalars()}
+
+            moon_obj_set: Final = set()
+            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as http_session:
+                task_list: Final = list()
+                for id in moon_id_set - existing_moon_id_set:
+                    task_list.append(asyncio.ensure_future(self._get_moon(id, http_session)))
+
+                if len(task_list) > 0:
+                    result_list = await asyncio.gather(*task_list)
+                    for obj in result_list:
+                        if obj is None:
+                            continue
+                        moon_obj_set.add(obj)
+
+            if len(moon_obj_set) > 0:
+                db.add_all(moon_obj_set)
+                await db.commit()
+
+    @otel
+    async def backfill_corporations(self, corporation_id_set: set) -> None:
+        async with await self.db.sessionmaker() as db, db.begin():
+
+            existing_corporation_query = sqlalchemy.select(EveTables.Corporation)
+            existing_corporation_query_result = await db.execute(existing_corporation_query)
+            existing_corporation_id_set: Final = {x.corporation_id for x in existing_corporation_query_result.scalars()}
+
+            corporation_obj_set: Final = set()
+            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as http_session:
+                corporation_task_list: Final = list()
+                for id in corporation_id_set - existing_corporation_id_set:
+                    corporation_task_list.append(asyncio.ensure_future(self._get_corporation(id, http_session)))
+
+                if len(corporation_task_list) > 0:
+                    result_list = await asyncio.gather(*corporation_task_list)
+                    for obj in result_list:
+                        if obj is None:
+                            continue
+                        corporation_obj_set.add(obj)
+
+            if len(corporation_obj_set) > 0:
+                db.add_all(corporation_obj_set)
+                await db.commit()
+
+    @otel
     async def run_structures(self, character_id: int, corporation_id: int, access_token: str):
 
         url = f"https://esi.evetech.net/latest/corporations/{corporation_id}/structures/"
@@ -53,6 +169,7 @@ class EveStructureTask(EveTask):
             return
 
         type_id_set: Final = set()
+        corporation_id_set: Final = set()
         structure_obj_set: Final = set()
         structure_history_obj_set: Final = set()
 
@@ -75,34 +192,16 @@ class EveStructureTask(EveTask):
             obj = EveTables.Structure(**edict)
             structure_obj_set.add(obj)
             type_id_set.add(obj.type_id)
+            corporation_id_set.add(obj.corporation_id)
 
             history_obj = EveTables.StructureHistory(character_id=character_id, structure_id=int(x.get("structure_id", 0)), json=x)
             structure_history_obj_set.add(history_obj)
 
         # Add missing types
-        async with await self.db.sessionmaker() as db, db.begin():
+        await self.backfill_types(type_id_set)
 
-            existing_type_query = sqlalchemy.select(EveTables.UniverseType)
-            existing_type_query_result = await db.execute(existing_type_query)
-            existing_type_id_set: Final = {x.type_id for x in existing_type_query_result.scalars()}
-
-            type_obj_set: Final = set()
-            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as http_session:
-                task_list: Final = list()
-                for id in type_id_set - existing_type_id_set:
-                    task_list.append(asyncio.ensure_future(self._get_type(id, http_session)))
-
-                if len(task_list) > 0:
-                    result_list = await asyncio.gather(*task_list)
-                    self.logger.info("- {}.{}: {} = {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  "len(result_list)", len(result_list)))
-                    for obj in result_list:
-                        if obj is None:
-                            continue
-                        type_obj_set.add(obj)
-
-            if len(type_obj_set) > 0:
-                db.add_all(type_obj_set)
-                await db.commit()
+        # Add missing corporations
+        await self.backfill_corporations(corporation_id_set)
 
         # Add structures and history
         if len(structure_history_obj_set) > 0:
@@ -125,28 +224,7 @@ class EveStructureTask(EveTask):
 
                 await db.commit()
 
-    async def _get_moon(self, moon_id: int, http_session: aiohttp.ClientSession) -> Union[None, EveTables.UniverseMoon]:
-        url: Final = f"https://esi.evetech.net/latest/universe/moons/{moon_id}/"
-        attempts_remaining = self.ERROR_RETRY_COUNT
-        while attempts_remaining > 0:
-            async with http_session.get(url, params=self.common_params) as response:
-                if response.status in [200]:
-                    edict = dict()
-                    for k, v in dict(await response.json()).items():
-                        if k in ["name"]:
-                            edict[k] = v
-                        elif k in ["moon_id", "system_id"]:
-                            edict[k] = int(v)
-                        else:
-                            continue
-                    return EveTables.UniverseMoon(**edict)
-                else:
-                    attempts_remaining -= 1
-                    self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
-                    await asyncio.sleep(self.ERROR_SLEEP_TIME)
-        self.logger.error("- {}.{}: {} -> {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  id, None))
-        return None
-
+    @otel
     async def run_extractions(self, character_id: int, corporation_id: int, access_token: str):
 
         url = f"https://esi.evetech.net/latest/corporation/{corporation_id}/mining/extractions/"
@@ -156,6 +234,7 @@ class EveStructureTask(EveTask):
             return
 
         moon_id_set: Final = set()
+        corporation_id_set: Final = set()
         extraction_obj_set: Final = set()
         extraction_history_obj_set: Final = set()
 
@@ -176,34 +255,16 @@ class EveStructureTask(EveTask):
             obj = EveTables.Extraction(**edict)
             extraction_obj_set.add(obj)
             moon_id_set.add(obj.moon_id)
+            corporation_id_set.add(obj.corporation_id)
 
             history_obj: Final = EveTables.ExtractionHistory(character_id=character_id, structure_id=int(x.get("structure_id", 0)), json=x)
             extraction_history_obj_set.add(history_obj)
 
         # Add missing moons
-        async with await self.db.sessionmaker() as db, db.begin():
+        await self.backfill_moons(moon_id_set)
 
-            existing_moon_query = sqlalchemy.select(EveTables.UniverseMoon)
-            existing_moon_query_result = await db.execute(existing_moon_query)
-            existing_moon_id_set: Final = {x.moon_id for x in existing_moon_query_result.scalars()}
-
-            moon_obj_set: Final = set()
-            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as http_session:
-                task_list: Final = list()
-                for id in moon_id_set - existing_moon_id_set:
-                    task_list.append(asyncio.ensure_future(self._get_moon(id, http_session)))
-
-                if len(task_list) > 0:
-                    result_list = await asyncio.gather(*task_list)
-                    self.logger.info("- {}.{}: {} = {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  "len(result_list)", len(result_list)))
-                    for obj in result_list:
-                        if obj is None:
-                            continue
-                        moon_obj_set.add(obj)
-
-            if len(moon_obj_set) > 0:
-                db.add_all(moon_obj_set)
-                await db.commit()
+        # Add missing corporations
+        await self.backfill_corporations(corporation_id_set)
 
         # Add extractions and history
         if len(extraction_history_obj_set) > 0:
@@ -226,6 +287,7 @@ class EveStructureTask(EveTask):
 
                 await db.commit()
 
+    @otel
     async def run(self, client_session: collections.abc.MutableMapping):
         if not client_session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False):
             return
@@ -248,10 +310,13 @@ class EveStructureTask(EveTask):
 
 class EveStructurePollingTask(EveStructureTask):
 
+    @otel
     async def run(self, client_session: collections.abc.MutableSet):
-        refresh_interval: Final = datetime.timedelta(seconds=900)
+        refresh_buffer: Final = datetime.timedelta(seconds=15)
+        refresh_interval: Final = datetime.timedelta(seconds=900) - refresh_buffer
         while True:
-            now: Final = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
+            now: Final = datetime.datetime.now(tz=datetime.timezone.utc)
+
 
             available_corporation_id_dict: Final[Dict[int, EveTables.PeriodicCredentials]] = dict()
             async with await self.db.sessionmaker() as db, db.begin():
@@ -280,9 +345,8 @@ class EveStructurePollingTask(EveStructureTask):
                 await asyncio.sleep(int(refresh_interval.total_seconds()))
                 continue
 
-            # Hack to avoid wierd timing bug
-            if refresh_obj.timestamp + refresh_interval >= now - datetime.timedelta(seconds=15):
-                remaining_interval: Final = (refresh_obj.timestamp + refresh_interval) - now
+            if refresh_obj.timestamp + refresh_interval > now:
+                remaining_interval: Final = (refresh_obj.timestamp + refresh_interval + refresh_buffer) - now
                 await asyncio.sleep(int(min(refresh_interval.total_seconds(), remaining_interval.total_seconds())))
                 continue
 
@@ -290,7 +354,7 @@ class EveStructurePollingTask(EveStructureTask):
             character_id: Final = available_corporation_id_dict[corporation_id].character_id
             access_token: Final = available_corporation_id_dict[corporation_id].access_token
 
-            self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"UPDATING {corporation_id} via {character_id}"))
+            self.logger.info("- {}.{}: {} {} {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  corporation_id, "structures updated by", character_id))
 
             task_list: Final = [
                 asyncio.ensure_future(self.run_structures(character_id, corporation_id, access_token)),
@@ -298,4 +362,3 @@ class EveStructurePollingTask(EveStructureTask):
             ]
             if len(task_list) > 0:
                 await asyncio.gather(*task_list)
-

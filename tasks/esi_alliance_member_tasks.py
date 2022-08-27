@@ -10,12 +10,14 @@ import sqlalchemy.orm
 import sqlalchemy.sql
 from db import EveTables
 from sso import EveSSO
+from telemetry import otel
 
 from .task import EveTask
 
 
 class EveEsiAlliancMemberTask(EveTask):
 
+    @otel
     async def run(self, client_session: collections.abc.MutableMapping):
 
         corporation_id_set: Final = set()
@@ -27,7 +29,7 @@ class EveEsiAlliancMemberTask(EveTask):
         if alliance_id > 0:
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as http_session:
                 url = f"https://esi.evetech.net/latest/alliances/{alliance_id}/corporations/"
-                async with http_session.get(url, params=self.common_params) as response:
+                async with await http_session.get(url, params=self.common_params) as response:
                     # print(f"{response.url} -> {response.status}")
                     if response.status in [200]:
                         for corporation_id in list(await response.json()):
@@ -74,7 +76,7 @@ class EveEsiAlliancMemberTask(EveTask):
                         # print(f"corporation_id: {corporation_id}")
 
                         url = f"https://esi.evetech.net/latest/corporations/{corporation_id}/"
-                        async with http_session.get(url, params=self.common_params) as response:
+                        async with await http_session.get(url, params=self.common_params) as response:
                             # print(f"{response.url} -> {response.status}")
                             if response.status in [200]:
                                 edict: Final = dict({

@@ -9,7 +9,7 @@ from typing import Any, Final, List
 import aiohttp
 import aiohttp.client_exceptions
 from db import EveDatabase
-
+from telemetry import otel
 
 class EveTask(metaclass=abc.ABCMeta):
 
@@ -32,10 +32,8 @@ class EveTask(metaclass=abc.ABCMeta):
             self.task: asyncio.Task = asyncio.create_task(self.manage_task(client_session))
 
     async def manage_task(self, client_session: collections.abc.MutableMapping):
-        self.logger.info(f"> {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
         await self.run(client_session)
         client_session[self.name] = False
-        self.logger.info(f"< {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
 
     @abc.abstractmethod
     async def run(self, client_session: collections.abc.MutableMapping):
@@ -48,6 +46,7 @@ class EveTask(metaclass=abc.ABCMeta):
             "language": "en",
         }
 
+    @otel
     async def get_pages(self, url: str, access_token: str) -> List[Any]:
 
         session_headers: Final = dict()
@@ -58,16 +57,14 @@ class EveTask(metaclass=abc.ABCMeta):
         results: Final = list()
 
         async with aiohttp.ClientSession(headers=session_headers) as http_session:
-            async with http_session.get(url, params=self.common_params) as response:
-                self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
-
+            async with await http_session.get(url, params=self.common_params) as response:
                 if response.status in [200]:
                     maxpageno = int(response.headers.get('X-Pages', 1))
                     results.extend(await response.json())
 
-        pages = list(range(2, 1 + int(maxpageno)))
+            pages = list(range(2, 1 + int(maxpageno)))
 
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST), headers=session_headers) as http_session:
+        # async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST), headers=session_headers) as http_session:
             task_list: Final = list()
             for page in pages:
                 task_list.append(asyncio.ensure_future(self._get_page(url, page, http_session)))
@@ -75,7 +72,6 @@ class EveTask(metaclass=abc.ABCMeta):
                 result_list = await asyncio.gather(*task_list)
                 results += sum(result_list, [])
 
-        self.logger.info("- {}.{}: {}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  url, results))
         return results
 
     async def _get_page(self, url: str, page: int, http_session: aiohttp.ClientSession) -> List:
@@ -84,11 +80,11 @@ class EveTask(metaclass=abc.ABCMeta):
         }}
         attempts_remaining = self.ERROR_RETRY_COUNT
         while attempts_remaining > 0:
-            async with http_session.get(url, params=request_params) as response:
+            async with await http_session.get(url, params=request_params) as response:
                 if response.status in [200]:
                     return await response.json()
                 else:
                     attempts_remaining -= 1
                     self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
                     await asyncio.sleep(self.ERROR_SLEEP_TIME)
-        return []
+        return list()

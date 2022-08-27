@@ -8,12 +8,14 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 from db import EveAccessType, EveTables
+from telemetry import otel
 
 from .task import EveTask
 
 
 class EveAccessControlTask(EveTask):
 
+    @otel
     async def run(self, client_session: collections.abc.MutableMapping):
 
         self.logger.info(f"> {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")

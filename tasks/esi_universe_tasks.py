@@ -16,6 +16,7 @@ import sqlalchemy.orm
 import sqlalchemy.sql
 from db import EveTables
 from sso import EveSSO
+from telemetry import otel, otel_add_error
 
 from .task import EveTask
 
@@ -51,18 +52,20 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
         url: Final = self.item_url(id)
         attempts_remaining = self.ERROR_RETRY_COUNT
         while attempts_remaining > 0:
-            async with http_session.get(url, params=self.common_params) as response:
+            async with await http_session.get(url, params=self.common_params) as response:
                 if response.status in [200]:
                     edict: Final = self.item_dict(id, await response.json())
                     if len(edict) > 0:
                         return obj_class(**edict)
                 else:
                     attempts_remaining -= 1
+                    otel_add_error(f"{response.url} -> {response.status}")
                     self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
                     await asyncio.sleep(self.ERROR_SLEEP_TIME)
         self.logger.error("- {}.{}: {} -> {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  id, None))
         return None
 
+    @otel
     async def run(self, client_session: collections.abc.MutableMapping):
 
         self.logger.info(f"> {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
@@ -75,12 +78,9 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
 
         cache_dict: Final = dict()
         cache_filename: Final = os.path.join(self.configdir, f"{self.__class__.__name__}.json")
-        self.logger.info("- {}.{}: {} = {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  "cache_filename", cache_filename))
         if os.path.exists(cache_filename):
             with open(cache_filename) as ifp:
                 cache_dict |= {self.object_id(x): x for x in [obj_class(**edict) for edict in json.load(ifp)]}
-
-        self.logger.info("- {}.{}: {} = {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  "cache_dict", cache_dict))
 
         async with await self.db.sessionmaker() as db, db.begin():
 
@@ -101,7 +101,6 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
 
                 if len(task_list) > 0:
                     result_list = await asyncio.gather(*task_list)
-                    self.logger.info("- {}.{}: {} = {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  "len(result_list)", len(result_list)))
                     for obj in result_list:
                         if obj is None:
                             continue

@@ -8,3 +8,7 @@ quart>=0.17.0
 quart_session>=1.0.4
 SQLAlchemy>=1.4.39
 uvicorn>=0.18.2
+opentelemetry-exporter-otlp-proto-grpc
+opentelemetry-exporter-otlp-proto-http 
+opentelemetry-instrumentation-asyncpg
+opentelemetry-instrumentation-aiohttp-client

@@ -11,6 +11,7 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 from db import EveTables
+from telemetry import otel
 
 from .task import EveTask
 
@@ -26,6 +27,7 @@ class MoonYieldData:
 
 class EveMoonYieldTask(EveTask):
 
+    @otel
     async def run(self, client_session: collections.abc.MutableSet):
 
         moon_data_list: Final = list()

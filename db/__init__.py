@@ -5,6 +5,7 @@ import sqlalchemy.ext.asyncio
 import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
+from telemetry import otel
 
 
 class EveAccessType(enum.Enum):
@@ -17,6 +18,8 @@ class EveAuthType(enum.Enum):
     LOGIN = 0
     LOGOUT = 1
     REFRESH = 2
+    LOGIN_USER = 3
+    LOGIN_CONTRIBUTOR = 4
 
 
 class EveTables:
@@ -187,6 +190,7 @@ class EveTables:
         is_director_role = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
         is_accountant_role = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
         is_station_manager_role = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
+        session_id = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
         access_token_issued = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
         access_token_exiry = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
         refresh_token = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
@@ -208,10 +212,16 @@ class EveTables:
         __tablename__ = "app_auth_log"
         timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), primary_key=True, server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
         character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        session_id = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
         auth_type = sqlalchemy.Column(sqlalchemy.Enum(EveAuthType), nullable=False)
 
 
 class EveDatabase:
+
+    def __init__(self, db: str, echo: bool = False) -> None:
+        self._engine = sqlalchemy.ext.asyncio.create_async_engine(db, echo=echo, future=False)
+        self._sessionmaker = None
+        self._initialized = False
 
     async def _initialize(self):
         if not self._initialized:
@@ -228,7 +238,3 @@ class EveDatabase:
             self._sessionmaker = sqlalchemy.orm.sessionmaker(await self.engine, expire_on_commit=False, class_=sqlalchemy.ext.asyncio.AsyncSession)
         return self._sessionmaker()
 
-    def __init__(self, db: str, echo: bool = False) -> None:
-        self._engine = sqlalchemy.ext.asyncio.create_async_engine(db, echo=echo, future=False)
-        self._sessionmaker = None
-        self._initialized = False
