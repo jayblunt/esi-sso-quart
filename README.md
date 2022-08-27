@@ -1,9 +1,23 @@
 # esi-sso-quart
-SSO for ESI with Quart
+
+## Introduction
+
+Oringally an SSO for ESI exampple with Quart.
+
+Now multi-corp structure fuel / extraction tracking.
 
 [Eve Online](https://www.eveonline.com/) ESI login example using [Quart](https://quart.palletsprojects.com/en/latest/) (asyncio implementation of the Flask api).
 
-Requires a valid [application](https://developers.eveonline.com/applications) setup, and a reverse proxy implementation with `X-Forwarded-For` / `X-Forwarded-Proto` headers included.
+Requires a valid [application](https://developers.eveonline.com/applications) setup.
+
+## System Requirements
+
+- [Python](https://python.org) 3.9 / 3.10
+- [Redis](https://redis.io) for session state
+- [Postgres](https://postgresql.org) for backing store
+- Some form of reverse proxy / tls termination. I used [relayd](https://man.openbsd.org/relayd), which is part of [OpenBSD](https://openbsd.org). Reverse proxy must set `X-Forwarded-For` / `X-Forwarded-Proto` headers.
+
+## Python Requirements
 
 This example uses [Quart-Session](https://pypi.org/project/Quart-Session/) which requires a working backend. I used [Redis](https://redis.io) with a default configuration (listening on localhost).
 
@@ -14,4 +28,79 @@ pip install -U pip wheel setuptools
 pip install -r requirements.txt
 ```
 
+## ESI ClientID and ClientSecret Environment Variables
 
+Create an ESI Application at [developers.eveonline.com](https://developers.eveonline.com).
+
+The application uses the following scopes:
+- `publicData`
+- `esi-characters.read_corporation_roles.v1`
+- `esi-corporations.read_structures.v1`
+- `esi-industry.read_corporation_mining.v1`
+
+`publicData` is used for all logins, the others are only requested for "Contributor" logins (to provide structure / extraction data).
+
+Set environent variables for the ClientID and ClientSecret:
+
+```shell
+export EVEONLINE_CLIENT_SECRET='<client_secret_from_developers_eveonline_com>'
+export EVEONLINE_CLIENT_ID='<client_id_from_developers_eveonline_com'
+```
+
+## Database and SQLAlchemy 
+
+Should work with a suitable [SQLAlchemy](https://www.sqlalchemy.org) engine URL. I use:
+
+```shell
+export SQLALCHEMY_DB_URL='postgresql+asyncpg://username:password@hostname/database'
+```
+
+Setting this up on a local machine was approximately:
+
+```shell
+createuser --pwprompt username
+createdb --encoding=UTF8 --owner=username database
+```
+
+## Open Telemetry
+
+This example can be optionally configured to send telemetry to [honeycomb.io](https://www.honeycomb.io).
+Check the [OpenTelemetry for Python](https://docs.honeycomb.io/getting-data-in/opentelemetry/python/) link for an introduction.
+For telemetry to be transmitted, install the packages from `requirements.txt` and set the environment variables for your team:
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://api.honeycomb.io/"
+export OTEL_EXPORTER_OTLP_HEADERS="x-honeycomb-team=your-api-key"
+export OTEL_SERVICE_NAME="your-service-name"
+```
+
+## Permissions
+
+This example includes a very basic permissions system.
+Alliances / Corporaations / Characters can be included / excluded.
+The intent of the implementation is to be similar to the way in-game ACLs behave.
+
+Permission is evaluated by checking Alliance then Corporation then Character id against the permission list. Check `AppFunctions.is_permitted` for the details.
+
+**You will want to adjust either the defaults in `tasks/app_access_control.py`, at a minimum to permit your Character(s) and/or exclude the Alliances and Corporations in my defaults.**
+
+## Notes
+
+At startup the example will pull universe data from [ESI](https://esi.evetech.net/).
+
+**This can be slow, especially on the first startup, when the database is empty.**
+
+**Structure information will not populate until this universe data is collected (because of the ORM relationships that are defined between structures and systems and moons).**
+
+This example is almost entirely [asyncio](https://docs.python.org/3/library/asyncio.html), including the [SQLAlchemy](https://docs.sqlalchemy.org/en/14/orm/extensions/asyncio.html) usage.
+
+There are small "tasks" - coroutines - (via [asyncio.create_task()](https://docs.python.org/3/library/asyncio-task.html#asyncio.create_task) for collecting universe and structure data, and for refreshing jwt keys and access_tokens for users.
+
+-- Jay Blunt
+
+## Copyright
+
+© 2022 Jay Blunt. All rights reserved.
+
+All EVE related materials © 2014 CCP hf. All rights reserved.
+
+"EVE", "EVE Online", "CCP", and all related logos and images are trademarks or registered trademarks of CCP hf.

@@ -1,6 +1,6 @@
 import asyncio
 import datetime
-import json
+import logging
 import os
 import uuid
 from typing import Final
@@ -8,21 +8,21 @@ from typing import Final
 import quart
 import quart.sessions
 import quart_session
-import sqlalchemy
-import sqlalchemy.ext.asyncio
-import sqlalchemy.ext.asyncio.engine
-import sqlalchemy.orm
-import sqlalchemy.sql
 
+from app_functions import AppFunctions
 from db import EveDatabase, EveTables
 from sso import EveSSO
-from tasks import (EveAccessControlTask, EveAllianceTask,
-                   EveEsiAlliancMemberTask, EveMoonYieldTask,
+from telemetry import otel, otel_initialize
+from tasks import (EveAccessControlTask, EveAllianceTask, EveMoonYieldTask,
                    EveStructurePollingTask, EveStructureTask, EveTask,
                    EveUniverseConstellationsTask, EveUniverseRegionsTask,
                    EveUniverseSystemsTask)
 
+otel_initialize()
+
 app: Final = quart.Quart(__name__)
+
+app.logger.setLevel(logging.INFO)
 
 app.config.from_mapping(
     {
@@ -36,7 +36,6 @@ app.config.from_mapping(
         "BASEDIR": os.path.dirname(os.path.realpath(__file__)),
         "EVEONLINE_CLIENT_ID": os.getenv("EVEONLINE_CLIENT_ID", ""),
         "EVEONLINE_CLIENT_SECRET": os.getenv("EVEONLINE_CLIENT_SECRET", ""),
-        "EVEONLINE_CLIENT_SCOPES": os.getenv("EVEONLINE_CLIENT_SCOPES", ""),
         "SQLALCHEMY_DB_URL": os.getenv("SQLALCHEMY_DB_URL", ""),
     }
 )
@@ -44,7 +43,8 @@ app.config.from_mapping(
 evesso_config: Final = {
     "client_id": app.config.get("EVEONLINE_CLIENT_ID"),
     "client_secret": app.config.get("EVEONLINE_CLIENT_SECRET"),
-    "scopes": app.config.get("EVEONLINE_CLIENT_SCOPES", "publicData").split(),
+    "scopes": ["publicData", "esi-characters.read_corporation_roles.v1",
+        "esi-corporations.read_structures.v1", "esi-industry.read_corporation_mining.v1"]
 }
 
 evedb: Final = EveDatabase(
@@ -57,6 +57,7 @@ evesession[EveTask.CONFIGDIR] = os.path.abspath(os.path.join(app.config.get("BAS
 
 
 @app.before_serving
+@otel
 async def _before_serving():
     if not bool(evesession.get("setup_tasks_started", False)):
         evesession["setup_tasks_started"] = True
@@ -107,95 +108,48 @@ def _datetime(dt: datetime.datetime):
 
 
 @app.route("/", methods=["GET"])
+@otel
 async def root() -> quart.Response:
 
     client_session: Final = quart.session
 
-    # print(f"session: {dict(client_session.session)}")
-    character_id: Final = client_session.get(EveSSO.ESI_CHARACTER_ID, 0)
-    character_permitted: Final = client_session.get(EveSSO.APP_PERMITTED, False)
+    now: Final = datetime.datetime.now(tz=datetime.timezone.utc)
 
-    if character_id > 0:
-        if not bool(client_session.get("login_token", False)):
-            with open(os.path.join(evesession[EveTask.CONFIGDIR], f"{character_id}.json"), "w") as ofp:
-                ofp.write(json.dumps(dict(client_session), ensure_ascii=True, indent=4))
-            client_session["login_token"] = True
+    character_id: Final = client_session.get(EveSSO.ESI_CHARACTER_ID, 0)
+    corpporation_id: Final = client_session.get(EveSSO.ESI_CORPORATION_ID, 0)
+    alliance_id: Final = client_session.get(EveSSO.ESI_ALLIANCE_ID, 0)
+    # character_permitted: Final = client_session.get(EveSSO.APP_PERMITTED, False)
+    character_permitted: Final = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id)
+
+    # if character_id > 0:
+    #     if not bool(client_session.get("login_token", False)):
+    #         with open(os.path.join(evesession[EveTask.CONFIGDIR], f"{character_id}.json"), "w") as ofp:
+    #             ofp.write(json.dumps(dict(client_session), ensure_ascii=True, indent=4))
+    #         client_session["login_token"] = True
 
     if character_id > 0 and character_permitted:
 
         if bool(client_session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)):
             EveStructureTask(client_session, evedb, app.logger)
 
-        if not bool(client_session.get("login_tasks_started", False)):
-            client_session["login_tasks_started"] = True
-
-            if bool(client_session.get(EveSSO.ESI_CHARACTER_HAS_DIRECTOR_ROLE, False)):
-                EveEsiAlliancMemberTask(client_session, evedb, app.logger)
-
         extraction_results: Final = list()
-        structure_results: Final = list()
         timer_results: Final = list()
+        structure_results: Final = list()
         last_update_results: Final = list()
+
         async with await evedb.sessionmaker() as db, db.begin():
 
-            utcnow = datetime.datetime.utcnow()
-
-            timer_query: Final = (
-                sqlalchemy.select(
-                    (
-                        EveTables.Structure,
-                    )
-                )
-                .where(
-                    EveTables.Structure.state_timer_end >= utcnow,
-                )
-                .join(EveTables.Structure.system)
-                .join(EveTables.Structure.corporation)
-                .order_by(EveTables.Structure.state_timer_end)
-                .options(sqlalchemy.orm.selectinload(EveTables.Structure.system))
-                .options(sqlalchemy.orm.selectinload(EveTables.Structure.corporation))
-            )
-            timer_query_result = await db.execute(timer_query)
-            timer_results += [result for result in timer_query_result.scalars()]
-
-            extraction_query: Final = (
-                sqlalchemy.select(EveTables.Extraction)
-                .where(
-                    EveTables.Extraction.natural_decay_time >= utcnow,
-                    EveTables.Extraction.extraction_start_time < utcnow,
-                )
-                .order_by(EveTables.Extraction.chunk_arrival_time)
-                .options(sqlalchemy.orm.selectinload(EveTables.Extraction.structure))
-                .options(sqlalchemy.orm.selectinload(EveTables.Extraction.corporation))
-                .options(sqlalchemy.orm.selectinload(EveTables.Extraction.moon))
-            )
-
-            extraction_query_result = await db.execute(extraction_query)
-            extraction_results += [
-                result for result in extraction_query_result.scalars()
-            ]
-
-            structure_query: Final = (
-                sqlalchemy.select(
-                    (
-                        EveTables.Structure,
-                    )
-                )
-                .join(EveTables.Structure.system)
-                .join(EveTables.Structure.corporation)
-                .order_by(EveTables.Structure.fuel_expires)
-                .options(sqlalchemy.orm.selectinload(EveTables.Structure.system))
-                .options(sqlalchemy.orm.selectinload(EveTables.Structure.corporation))
-            )
-            structure_query_result = await db.execute(structure_query)
-            structure_results += [result for result in structure_query_result.scalars()]
+            timer_results += await AppFunctions.get_timers(db, now)
+            extraction_results += await AppFunctions.get_extractions(db, now)
+            structure_results += await AppFunctions.get_fuel_expiries(db, now)
 
             last_update_dict: Final = dict()
-            for s in structure_results:
-                if s.corporation_id not in last_update_dict.keys():
-                    last_update_dict[s.corporation_id] = s
-                elif s.timestamp > last_update_dict[s.corporation_id].timestamp:
-                    last_update_dict[s.corporation_id] = s
+            for obj in structure_results:
+                if isinstance(obj, EveTables.Structure):
+                    if obj.corporation_id not in last_update_dict.keys():
+                        last_update_dict[obj.corporation_id] = obj
+                    elif obj.timestamp > last_update_dict[obj.corporation_id].timestamp:
+                        last_update_dict[obj.corporation_id] = obj
 
             last_update_results += sorted(last_update_dict.values(), reverse=False, key=lambda x: x.timestamp)
 
@@ -221,7 +175,6 @@ async def root() -> quart.Response:
 
 
 if __name__ == "__main__":
-    # logging.basicConfig(level=logging.DEBUG)
 
     app_debug = app.config.get("DEBUG", False)
     app_port = app.config.get("PORT", 5050)
