@@ -160,7 +160,7 @@ class EveStructureTask(EveTask):
                 await db.commit()
 
     @otel
-    async def run_structures(self, character_id: int, corporation_id: int, access_token: str):
+    async def run_structures(self, now: datetime.datetime, character_id: int, corporation_id: int, access_token: str):
 
         url = f"https://esi.evetech.net/latest/corporations/{corporation_id}/structures/"
         structures: Final = await self.get_pages(url, access_token)
@@ -225,7 +225,7 @@ class EveStructureTask(EveTask):
                 await db.commit()
 
     @otel
-    async def run_extractions(self, character_id: int, corporation_id: int, access_token: str):
+    async def run_extractions(self, now: datetime.datetime, character_id: int, corporation_id: int, access_token: str):
 
         url = f"https://esi.evetech.net/latest/corporation/{corporation_id}/mining/extractions/"
         extractions: Final = await self.get_pages(url, access_token)
@@ -235,7 +235,7 @@ class EveStructureTask(EveTask):
 
         moon_id_set: Final = set()
         corporation_id_set: Final = set()
-        extraction_obj_set: Final = set()
+        fresh_extractions_obj_dict: Final = dict()
         extraction_history_obj_set: Final = set()
 
         for x in extractions:
@@ -252,8 +252,8 @@ class EveStructureTask(EveTask):
                     continue
                 edict[k] = v
 
-            obj = EveTables.Extraction(**edict)
-            extraction_obj_set.add(obj)
+            obj = EveTables.ScheduledExtraction(**edict)
+            fresh_extractions_obj_dict[obj.structure_id] = obj
             moon_id_set.add(obj.moon_id)
             corporation_id_set.add(obj.corporation_id)
 
@@ -266,24 +266,52 @@ class EveStructureTask(EveTask):
         # Add missing corporations
         await self.backfill_corporations(corporation_id_set)
 
-        # Add extractions and history
+        # Append History
         if len(extraction_history_obj_set) > 0:
-            # Save history
             async with await self.db.sessionmaker() as db, db.begin():
                 db.add_all(extraction_history_obj_set)
                 await db.commit()
 
-        if len(extraction_obj_set) > 0:
-            # Save current extractions
+        # Update Scheduled and Completed
+        if len(fresh_extractions_obj_dict.keys()) > 0:
             async with await self.db.sessionmaker() as db, db.begin():
-                all_extractions_query: Final = sqlalchemy.select(EveTables.Extraction).where(EveTables.Extraction.corporation_id == corporation_id)
-                all_extractions_query_result = await db.execute(all_extractions_query)
-                existing_obj_set = {result for result in all_extractions_query_result.scalars()}
 
-                if len(existing_obj_set) > 0:
-                    [await db.delete(x) for x in existing_obj_set]
+                completed_extractions_query: Final = sqlalchemy.select(EveTables.CompletedExtraction).where(EveTables.CompletedExtraction.corporation_id == corporation_id)
+                completed_extractions_query_result = await db.execute(completed_extractions_query)
+                completed_extractions_dict: Final = {x.structure_id: x for x in completed_extractions_query_result.scalars()}
 
-                db.add_all(extraction_obj_set)
+                existing_extractions_query: Final = sqlalchemy.select(EveTables.ScheduledExtraction).where(EveTables.ScheduledExtraction.corporation_id == corporation_id)
+                existing_extractions_query_result = await db.execute(existing_extractions_query)
+                existing_extractions_obj_dict = {x.structure_id: x for x in existing_extractions_query_result.scalars()}
+
+                for structure_id in set(fresh_extractions_obj_dict.keys()).intersection(set(existing_extractions_obj_dict.keys())):
+
+                    existing_extraction: EveTables.ScheduledExtraction = existing_extractions_obj_dict[structure_id]
+                    if now >= existing_extraction.chunk_arrival_time:
+
+                        # Remove the old / existing completed extraction
+                        if structure_id in completed_extractions_dict.keys():
+                            await db.delete(completed_extractions_dict[structure_id])
+
+                        belt_lifetime_estimate: Final = datetime.timedelta(days=2)
+
+                        completed_extraction = EveTables.CompletedExtraction(
+                            character_id=existing_extraction.character_id,
+                            corporation_id=existing_extraction.corporation_id,
+                            structure_id=existing_extraction.structure_id,
+                            moon_id=existing_extraction.moon_id,
+                            extraction_start_time=existing_extraction.extraction_start_time,
+                            chunk_arrival_time=existing_extraction.chunk_arrival_time,
+                            natural_decay_time=existing_extraction.natural_decay_time,
+                            belt_decay_time=existing_extraction.chunk_arrival_time + belt_lifetime_estimate)
+
+                        db.add(completed_extraction)
+
+                # We wipe and re-insert to handle the case where a structure goes away between taaks
+                if len(existing_extractions_obj_dict.keys()) > 0:
+                    [await db.delete(x) for x in existing_extractions_obj_dict.values()]
+
+                db.add_all(fresh_extractions_obj_dict.values())
 
                 await db.commit()
 
@@ -296,13 +324,15 @@ class EveStructureTask(EveTask):
         corporation_id: Final = int(client_session.get(EveSSO.ESI_CORPORATION_ID, 0))
         access_token: Final = client_session.get(EveSSO.ESI_ACCESS_TOKEN, '')
 
+        now: Final = datetime.datetime.now(tz=datetime.timezone.utc)
+
         task_list: Final = list()
 
         if "esi-corporations.read_structures.v1" in client_session.get(EveSSO.ESI_ACCESS_TOKEN_SCOPES, []):
-            task_list.append(asyncio.ensure_future(self.run_structures(character_id, corporation_id, access_token)))
+            task_list.append(asyncio.ensure_future(self.run_structures(now, character_id, corporation_id, access_token)))
 
         if "esi-industry.read_corporation_mining.v1" in client_session.get(EveSSO.ESI_ACCESS_TOKEN_SCOPES, []):
-            task_list.append(asyncio.ensure_future(self.run_extractions(character_id, corporation_id, access_token)))
+            task_list.append(asyncio.ensure_future(self.run_extractions(now, character_id, corporation_id, access_token)))
 
         if len(task_list) > 0:
             await asyncio.gather(*task_list)
@@ -357,8 +387,8 @@ class EveStructurePollingTask(EveStructureTask):
             self.logger.info("- {}.{}: {} {} {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  corporation_id, "structures updated by", character_id))
 
             task_list: Final = [
-                asyncio.ensure_future(self.run_structures(character_id, corporation_id, access_token)),
-                asyncio.ensure_future(self.run_extractions(character_id, corporation_id, access_token)),
+                asyncio.ensure_future(self.run_structures(now, character_id, corporation_id, access_token)),
+                asyncio.ensure_future(self.run_extractions(now, character_id, corporation_id, access_token)),
             ]
             if len(task_list) > 0:
                 await asyncio.gather(*task_list)
