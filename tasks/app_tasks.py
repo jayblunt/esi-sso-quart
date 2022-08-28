@@ -313,7 +313,7 @@ class EveStructurePollingTask(EveStructureTask):
     @otel
     async def run(self, client_session: collections.abc.MutableSet):
         refresh_buffer: Final = datetime.timedelta(seconds=15)
-        refresh_interval: Final = datetime.timedelta(seconds=900) - refresh_buffer
+        refresh_interval: Final = datetime.timedelta(seconds=600) - refresh_buffer
         while True:
             now: Final = datetime.datetime.now(tz=datetime.timezone.utc)
 
