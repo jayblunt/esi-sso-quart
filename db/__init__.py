@@ -238,7 +238,7 @@ class EveTables:
 class EveDatabase:
 
     def __init__(self, db: str, echo: bool = False) -> None:
-        self._engine = sqlalchemy.ext.asyncio.create_async_engine(db, echo=echo, future=False)
+        self._engine = sqlalchemy.ext.asyncio.create_async_engine(db, echo=echo, future=False, pool_size=8, max_overflow=0)
         self._sessionmaker = None
         self._initialized = False
 
