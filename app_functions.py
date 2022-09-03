@@ -15,7 +15,7 @@ class AppFunctions:
 
     @staticmethod
     @otel
-    async def get_timers(db: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list:
+    async def get_active_timers(db: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list:
         timer_query: Final = (
             sqlalchemy.select(
                 (
@@ -36,17 +36,17 @@ class AppFunctions:
 
     @staticmethod
     @otel
-    async def get_extractions(db: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list:
+    async def get_completed_extractions(db: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list:
         extraction_query: Final = (
-            sqlalchemy.select(EveTables.Extraction)
+            sqlalchemy.select(EveTables.CompletedExtraction)
             .where(
-                EveTables.Extraction.natural_decay_time >= now,
-                EveTables.Extraction.extraction_start_time < now,
+                EveTables.CompletedExtraction.belt_decay_time >= now,
+                EveTables.CompletedExtraction.extraction_start_time < now,
             )
-            .order_by(EveTables.Extraction.chunk_arrival_time)
-            .options(sqlalchemy.orm.selectinload(EveTables.Extraction.structure))
-            .options(sqlalchemy.orm.selectinload(EveTables.Extraction.corporation))
-            .options(sqlalchemy.orm.selectinload(EveTables.Extraction.moon))
+            .order_by(EveTables.CompletedExtraction.chunk_arrival_time)
+            .options(sqlalchemy.orm.selectinload(EveTables.CompletedExtraction.structure))
+            .options(sqlalchemy.orm.selectinload(EveTables.CompletedExtraction.corporation))
+            .options(sqlalchemy.orm.selectinload(EveTables.CompletedExtraction.moon))
         )
 
         extraction_query_result = await db.execute(extraction_query)
@@ -56,7 +56,27 @@ class AppFunctions:
 
     @staticmethod
     @otel
-    async def get_fuel_expiries(db: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list:
+    async def get_scheduled_extractions(db: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list:
+        extraction_query: Final = (
+            sqlalchemy.select(EveTables.ScheduledExtraction)
+            .where(
+                EveTables.ScheduledExtraction.chunk_arrival_time >= now,
+                EveTables.ScheduledExtraction.extraction_start_time < now,
+            )
+            .order_by(EveTables.ScheduledExtraction.chunk_arrival_time)
+            .options(sqlalchemy.orm.selectinload(EveTables.ScheduledExtraction.structure))
+            .options(sqlalchemy.orm.selectinload(EveTables.ScheduledExtraction.corporation))
+            .options(sqlalchemy.orm.selectinload(EveTables.ScheduledExtraction.moon))
+        )
+
+        extraction_query_result = await db.execute(extraction_query)
+        return [
+            result for result in extraction_query_result.scalars()
+        ]
+
+    @staticmethod
+    @otel
+    async def get_structure_fuel_expiries(db: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list:
         structure_query: Final = (
             sqlalchemy.select(
                 (

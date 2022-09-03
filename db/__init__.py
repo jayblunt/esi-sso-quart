@@ -147,8 +147,8 @@ class EveTables:
         structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
 
-    class Extraction(Base):
-        __tablename__ = "app_extraction"
+    class ScheduledExtraction(Base):
+        __tablename__ = "app_scheduled_extraction"
         timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
         character_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
         corporation_id = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.ForeignKey("esi_corporations.corporation_id"), nullable=False)
@@ -157,6 +157,25 @@ class EveTables:
         extraction_start_time = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
         chunk_arrival_time = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
         natural_decay_time = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
+
+        structure = sqlalchemy.orm.relationship("Structure")
+        corporation = sqlalchemy.orm.relationship("Corporation")
+        moon = sqlalchemy.orm.relationship("UniverseMoon")
+
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}(structure_id={self.structure_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time})"
+
+    class CompletedExtraction(Base):
+        __tablename__ = "app_completed_extraction"
+        timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
+        character_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+        corporation_id = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.ForeignKey("esi_corporations.corporation_id"), nullable=False)
+        structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.ForeignKey("app_structure.structure_id"), primary_key=True, nullable=False)
+        moon_id = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.ForeignKey("esi_universe_moons.moon_id"), nullable=False)
+        extraction_start_time = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
+        chunk_arrival_time = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
+        natural_decay_time = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
+        belt_decay_time = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
 
         structure = sqlalchemy.orm.relationship("Structure")
         corporation = sqlalchemy.orm.relationship("Corporation")
@@ -219,7 +238,7 @@ class EveTables:
 class EveDatabase:
 
     def __init__(self, db: str, echo: bool = False) -> None:
-        self._engine = sqlalchemy.ext.asyncio.create_async_engine(db, echo=echo, future=False)
+        self._engine = sqlalchemy.ext.asyncio.create_async_engine(db, echo=echo, future=False, pool_size=8, max_overflow=0)
         self._sessionmaker = None
         self._initialized = False
 

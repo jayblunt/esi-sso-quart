@@ -132,19 +132,21 @@ async def root() -> quart.Response:
         if bool(client_session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)):
             EveStructureTask(client_session, evedb, app.logger)
 
-        extraction_results: Final = list()
-        timer_results: Final = list()
-        structure_results: Final = list()
+        active_timer_results: Final = list()
+        completed_extraction_results: Final = list()
+        scheduled_extraction_results: Final = list()
+        structure_fuel_results: Final = list()
         last_update_results: Final = list()
 
         async with await evedb.sessionmaker() as db, db.begin():
 
-            timer_results += await AppFunctions.get_timers(db, now)
-            extraction_results += await AppFunctions.get_extractions(db, now)
-            structure_results += await AppFunctions.get_fuel_expiries(db, now)
+            active_timer_results += await AppFunctions.get_active_timers(db, now)
+            completed_extraction_results += await AppFunctions.get_completed_extractions(db, now)
+            scheduled_extraction_results += await AppFunctions.get_scheduled_extractions(db, now)
+            structure_fuel_results += await AppFunctions.get_structure_fuel_expiries(db, now)
 
             last_update_dict: Final = dict()
-            for obj in structure_results:
+            for obj in structure_fuel_results:
                 if isinstance(obj, EveTables.Structure):
                     if obj.corporation_id not in last_update_dict.keys():
                         last_update_dict[obj.corporation_id] = obj
@@ -157,9 +159,10 @@ async def root() -> quart.Response:
             "home.html",
             character_name=client_session.get(EveSSO.ESI_CHARACTER_NAME),
             character_id=client_session.get(EveSSO.ESI_CHARACTER_ID),
-            extractions=extraction_results,
-            timers=timer_results,
-            structures=structure_results,
+            active_timers=active_timer_results,
+            completed_extractions=completed_extraction_results,
+            scheduled_extractions=scheduled_extraction_results,
+            structure_fuel_expiries=structure_fuel_results,
             last_update=last_update_results,
         )
 
