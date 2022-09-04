@@ -147,6 +147,11 @@ class EveTables:
         structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
 
+    class StructureModifiers(Base):
+        __tablename__ = "app_structure_modifiers"
+        structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        belt_lifetime_modifier = sqlalchemy.Column(sqlalchemy.Numeric, default=1.0, nullable=False)
+
     class ScheduledExtraction(Base):
         __tablename__ = "app_scheduled_extraction"
         timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
@@ -256,4 +261,3 @@ class EveDatabase:
         if self._sessionmaker is None:
             self._sessionmaker = sqlalchemy.orm.sessionmaker(await self.engine, expire_on_commit=False, class_=sqlalchemy.ext.asyncio.AsyncSession)
         return self._sessionmaker()
-
