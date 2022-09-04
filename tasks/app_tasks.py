@@ -282,7 +282,7 @@ class EveStructureTask(EveTask):
 
                 existing_extractions_query: Final = sqlalchemy.select(EveTables.ScheduledExtraction).where(EveTables.ScheduledExtraction.corporation_id == corporation_id)
                 existing_extractions_query_result = await db.execute(existing_extractions_query)
-                existing_extractions_obj_dict = {x.structure_id: x for x in existing_extractions_query_result.scalars()}
+                existing_extractions_obj_dict: Final = {x.structure_id: x for x in existing_extractions_query_result.scalars()}
 
                 for structure_id in set(fresh_extractions_obj_dict.keys()).intersection(set(existing_extractions_obj_dict.keys())):
 
@@ -294,6 +294,14 @@ class EveStructureTask(EveTask):
                             await db.delete(completed_extractions_dict[structure_id])
 
                         belt_lifetime_estimate: Final = datetime.timedelta(days=2)
+
+                        modifier_query: Final = sqlalchemy.select(EveTables.StructureModifiers).where(EveTables.StructureModifiers.structure_id == structure_id).limit(1)
+                        modifier_query_result: Final = await db.execute(modifier_query)
+                        modifier_obj_dct: Final[Dict[int, EveTables.StructureModifiers]] = {x.structure_id: x for x in modifier_query_result.scalars()}
+
+                        modifier_obj = modifier_obj_dct.get(structure_id)
+                        if modifier_obj is not None:
+                            belt_lifetime_estimate *= modifier_obj.belt_lifetime_modifier
 
                         completed_extraction = EveTables.CompletedExtraction(
                             character_id=existing_extraction.character_id,
@@ -346,7 +354,6 @@ class EveStructurePollingTask(EveStructureTask):
         refresh_interval: Final = datetime.timedelta(seconds=600) - refresh_buffer
         while True:
             now: Final = datetime.datetime.now(tz=datetime.timezone.utc)
-
 
             available_corporation_id_dict: Final[Dict[int, EveTables.PeriodicCredentials]] = dict()
             async with await self.db.sessionmaker() as db, db.begin():
