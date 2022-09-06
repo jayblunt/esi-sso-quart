@@ -24,7 +24,7 @@ from .task import EveTask
 
 class EveStructureTask(EveTask):
 
-    async def _get_url(self, url: str, http_session: aiohttp.ClientSession) -> Union[Dict, None]:
+    async def _get_url(self, url: str, http_session: aiohttp.ClientSession) -> dict | None:
         attempts_remaining = self.ERROR_RETRY_COUNT
         while attempts_remaining > 0:
             async with await http_session.get(url, params=self.common_params) as response:
@@ -35,10 +35,10 @@ class EveStructureTask(EveTask):
                     otel_add_error(f"{response.url} -> {response.status}")
                     self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
                     await asyncio.sleep(self.ERROR_SLEEP_TIME)
-        self.logger.error("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  url))
+        self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url}")
         return None
 
-    async def _get_type(self, type_id: int, http_session: aiohttp.ClientSession) -> Union[None, EveTables.UniverseType]:
+    async def _get_type(self, type_id: int, http_session: aiohttp.ClientSession) -> None | EveTables.UniverseType:
         url: Final = f"https://esi.evetech.net/latest/universe/types/{type_id}/"
         rdict: Final = await self._get_url(url, http_session)
         if rdict is not None:
@@ -53,7 +53,7 @@ class EveStructureTask(EveTask):
             return EveTables.UniverseType(**edict)
         return None
 
-    async def _get_corporation(self, corporation_id: int, http_session: aiohttp.ClientSession) -> Union[None, EveTables.Corporation]:
+    async def _get_corporation(self, corporation_id: int, http_session: aiohttp.ClientSession) -> None | EveTables.Corporation:
         url: Final = f"https://esi.evetech.net/latest/corporations/{corporation_id}/"
         rdict: Final = await self._get_url(url, http_session)
         if rdict is not None:
@@ -69,7 +69,7 @@ class EveStructureTask(EveTask):
             return EveTables.Corporation(**edict)
         return None
 
-    async def _get_moon(self, moon_id: int, http_session: aiohttp.ClientSession) -> Union[None, EveTables.UniverseMoon]:
+    async def _get_moon(self, moon_id: int, http_session: aiohttp.ClientSession) -> None | EveTables.UniverseMoon:
         url: Final = f"https://esi.evetech.net/latest/universe/moons/{moon_id}/"
         rdict: Final = await self._get_url(url, http_session)
         if rdict is not None:
@@ -297,7 +297,7 @@ class EveStructureTask(EveTask):
 
                         modifier_query: Final = sqlalchemy.select(EveTables.StructureModifiers).where(EveTables.StructureModifiers.structure_id == structure_id).limit(1)
                         modifier_query_result: Final = await db.execute(modifier_query)
-                        modifier_obj_dct: Final[Dict[int, EveTables.StructureModifiers]] = {x.structure_id: x for x in modifier_query_result.scalars()}
+                        modifier_obj_dct: Final[dict[int, EveTables.StructureModifiers]] = {x.structure_id: x for x in modifier_query_result.scalars()}
 
                         modifier_obj = modifier_obj_dct.get(structure_id)
                         if modifier_obj is not None:
@@ -355,7 +355,7 @@ class EveStructurePollingTask(EveStructureTask):
         while True:
             now: Final = datetime.datetime.now(tz=datetime.timezone.utc)
 
-            available_corporation_id_dict: Final[Dict[int, EveTables.PeriodicCredentials]] = dict()
+            available_corporation_id_dict: Final[dict[int, EveTables.PeriodicCredentials]] = dict()
             async with await self.db.sessionmaker() as db, db.begin():
                 query = sqlalchemy.select(EveTables.PeriodicCredentials).where(EveTables.PeriodicCredentials.is_permitted.is_(True)).order_by(sqlalchemy.asc(EveTables.PeriodicCredentials.access_token_exiry))
                 results = await db.execute(query)

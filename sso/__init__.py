@@ -63,7 +63,7 @@ class EveSSO:
                  login_route: str = '/sso/login',
                  logout_route: str = '/sso/logout',
                  callback_route: str = '/sso/callback',
-                 logger: Optional[logging.Logger] = None) -> None:
+                 logger: logging.Logger | None = None) -> None:
 
         self.app: Final = app
         self.db: Final = db

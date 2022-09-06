@@ -47,7 +47,7 @@ class EveTask(metaclass=abc.ABCMeta):
         }
 
     @otel
-    async def get_pages(self, url: str, access_token: str) -> List[Any]:
+    async def get_pages(self, url: str, access_token: str) -> list[Any]:
 
         session_headers: Final = dict()
         if len(access_token) > 0:
@@ -74,7 +74,7 @@ class EveTask(metaclass=abc.ABCMeta):
 
         return results
 
-    async def _get_page(self, url: str, page: int, http_session: aiohttp.ClientSession) -> List:
+    async def _get_page(self, url: str, page: int, http_session: aiohttp.ClientSession) -> list:
         request_params = {**self.common_params, **{
             "page": page
         }}

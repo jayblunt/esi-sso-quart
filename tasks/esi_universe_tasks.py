@@ -62,7 +62,7 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
                     otel_add_error(f"{response.url} -> {response.status}")
                     self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
                     await asyncio.sleep(self.ERROR_SLEEP_TIME)
-        self.logger.error("- {}.{}: {} -> {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  id, None))
+        self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {id} -> {None}")
         return None
 
     @otel
