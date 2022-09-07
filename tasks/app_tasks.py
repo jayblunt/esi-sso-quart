@@ -301,7 +301,7 @@ class EveStructureTask(EveTask):
 
                         modifier_obj = modifier_obj_dct.get(structure_id)
                         if modifier_obj is not None:
-                            belt_lifetime_estimate *= modifier_obj.belt_lifetime_modifier
+                            belt_lifetime_estimate *= float(modifier_obj.belt_lifetime_modifier)
 
                         completed_extraction = EveTables.CompletedExtraction(
                             character_id=existing_extraction.character_id,
