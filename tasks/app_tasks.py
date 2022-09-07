@@ -17,7 +17,7 @@ import sqlalchemy.orm
 import sqlalchemy.sql
 from db import EveTables
 from sso import EveSSO
-from telemetry import otel, otel_add_error
+from telemetry import otel, otel_add_error, otel_add_event
 
 from .task import EveTask
 
@@ -350,7 +350,7 @@ class EveStructurePollingTask(EveStructureTask):
 
     @otel
     async def run(self, client_session: collections.abc.MutableSet):
-        refresh_buffer: Final = datetime.timedelta(seconds=15)
+        refresh_buffer: Final = datetime.timedelta(seconds=30)
         refresh_interval: Final = datetime.timedelta(seconds=600) - refresh_buffer
         while True:
             now: Final = datetime.datetime.now(tz=datetime.timezone.utc)
@@ -383,7 +383,8 @@ class EveStructurePollingTask(EveStructureTask):
                 continue
 
             if refresh_obj.timestamp + refresh_interval > now:
-                remaining_interval: Final = (refresh_obj.timestamp + refresh_interval + refresh_buffer) - now
+                remaining_interval: Final = refresh_obj.timestamp + refresh_interval + refresh_buffer - now
+                otel_add_event(inspect.currentframe().f_code.co_name, {"remaining_interval": remaining_interval.total_seconds()})
                 await asyncio.sleep(int(min(refresh_interval.total_seconds(), remaining_interval.total_seconds())))
                 continue
 
@@ -391,11 +392,11 @@ class EveStructurePollingTask(EveStructureTask):
             character_id: Final = available_corporation_id_dict[corporation_id].character_id
             access_token: Final = available_corporation_id_dict[corporation_id].access_token
 
+            otel_add_event(inspect.currentframe().f_code.co_name, {"character_id": character_id, "corporation_id": corporation_id})
             self.logger.info("- {}.{}: {} {} {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  corporation_id, "structures updated by", character_id))
 
-            task_list: Final = [
+            await asyncio.gather(
                 asyncio.ensure_future(self.run_structures(now, character_id, corporation_id, access_token)),
                 asyncio.ensure_future(self.run_extractions(now, character_id, corporation_id, access_token)),
-            ]
-            if len(task_list) > 0:
-                await asyncio.gather(*task_list)
+            )
+            await asyncio.sleep(int(refresh_buffer.total_seconds()))
