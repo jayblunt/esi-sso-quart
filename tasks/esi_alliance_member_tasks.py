@@ -1,4 +1,5 @@
 import collections.abc
+import inspect
 from typing import Final
 
 import aiohttp
@@ -10,7 +11,7 @@ import sqlalchemy.orm
 import sqlalchemy.sql
 from db import EveTables
 from sso import EveSSO
-from telemetry import otel
+from telemetry import otel, otel_add_error
 
 from .task import EveTask
 
@@ -34,6 +35,9 @@ class EveEsiAlliancMemberTask(EveTask):
                     if response.status in [200]:
                         for corporation_id in list(await response.json()):
                             corporation_id_set.add(int(corporation_id))
+                    else:
+                        otel_add_error(f"{response.url} -> {response.status}")
+                        self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
 
         if alliance_id > 0 and len(corporation_id_set) > 0:
 
@@ -92,6 +96,9 @@ class EveEsiAlliancMemberTask(EveTask):
 
                                 obj = EveTables.Corporation(**edict)
                                 obj_set.add(obj)
+                            else:
+                                otel_add_error(f"{response.url} -> {response.status}")
+                                self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
 
                 if len(obj_set) > 0:
                     print(obj_set)
