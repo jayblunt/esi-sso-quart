@@ -4,12 +4,13 @@ import collections.abc
 import inspect
 import logging
 import os
-from typing import Any, Final, List
+from typing import Any, Final
 
 import aiohttp
 import aiohttp.client_exceptions
 from db import EveDatabase
-from telemetry import otel
+from telemetry import otel, otel_add_error
+
 
 class EveTask(metaclass=abc.ABCMeta):
 
@@ -47,7 +48,7 @@ class EveTask(metaclass=abc.ABCMeta):
         }
 
     @otel
-    async def get_pages(self, url: str, access_token: str) -> List[Any]:
+    async def get_pages(self, url: str, access_token: str) -> list[Any]:
 
         session_headers: Final = dict()
         if len(access_token) > 0:
@@ -61,10 +62,12 @@ class EveTask(metaclass=abc.ABCMeta):
                 if response.status in [200]:
                     maxpageno = int(response.headers.get('X-Pages', 1))
                     results.extend(await response.json())
+                else:
+                    otel_add_error(f"{response.url} -> {response.status}")
+                    self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
 
             pages = list(range(2, 1 + int(maxpageno)))
 
-        # async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST), headers=session_headers) as http_session:
             task_list: Final = list()
             for page in pages:
                 task_list.append(asyncio.ensure_future(self._get_page(url, page, http_session)))
@@ -74,7 +77,7 @@ class EveTask(metaclass=abc.ABCMeta):
 
         return results
 
-    async def _get_page(self, url: str, page: int, http_session: aiohttp.ClientSession) -> List:
+    async def _get_page(self, url: str, page: int, http_session: aiohttp.ClientSession) -> list:
         request_params = {**self.common_params, **{
             "page": page
         }}
@@ -85,6 +88,7 @@ class EveTask(metaclass=abc.ABCMeta):
                     return await response.json()
                 else:
                     attempts_remaining -= 1
+                    otel_add_error(f"{response.url} -> {response.status}")
                     self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
                     await asyncio.sleep(self.ERROR_SLEEP_TIME)
         return list()

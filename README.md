@@ -12,7 +12,7 @@ Requires a valid [application](https://developers.eveonline.com/applications) se
 
 ## System Requirements
 
-- [Python](https://python.org) 3.9 / 3.10
+- [Python](https://python.org) 3.10
 - [Redis](https://redis.io) for session state
 - [Postgres](https://postgresql.org) for backing store
 - Some form of reverse proxy / tls termination. I used [relayd](https://man.openbsd.org/relayd), which is part of [OpenBSD](https://openbsd.org). Reverse proxy must set `X-Forwarded-For` / `X-Forwarded-Proto` headers.

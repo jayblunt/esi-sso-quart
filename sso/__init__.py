@@ -63,7 +63,7 @@ class EveSSO:
                  login_route: str = '/sso/login',
                  logout_route: str = '/sso/logout',
                  callback_route: str = '/sso/callback',
-                 logger: Optional[logging.Logger] = None) -> None:
+                 logger: logging.Logger | None = None) -> None:
 
         self.app: Final = app
         self.db: Final = db
@@ -147,6 +147,10 @@ class EveSSO:
             async with await http_session.get(url) as response:
                 if response.status in [200]:
                     json = dict(await response.json())
+                else:
+                    otel_add_error(f"{response.url} -> {response.status}")
+                    self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
+
         return json
 
     async def _get_jwks(self, url: str) -> list[dict]:
@@ -356,6 +360,9 @@ class EveSSO:
             async with await http_session.post(post_token_url, data=post_body) as response:
                 if response.status in [200]:
                     token_response = dict(await response.json())
+                else:
+                    otel_add_error(f"{response.url} -> {response.status}")
+                    self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
 
         required_response_keys: Final = ["access_token", "token_type", "refresh_token"]
         if not all(map(lambda x: bool(token_response.get(x)), required_response_keys)):
@@ -411,6 +418,9 @@ class EveSSO:
             async with await http_session.post(post_token_url, data=post_body) as response:
                 if response.status in [200]:
                     token_response = dict(await response.json())
+                else:
+                    otel_add_error(f"{response.url} -> {response.status}")
+                    self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
 
         required_response_keys: Final = ["access_token", "token_type", "refresh_token"]
         if all(map(lambda x: bool(token_response.get(x)), required_response_keys)):
@@ -470,6 +480,7 @@ class EveSSO:
                                 return await response.json()
                             else:
                                 attempts_remaining -= 1
+                                otel_add_error(f"{response.url} -> {response.status}")
                                 self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
                                 await asyncio.sleep(3)
                     return dict()

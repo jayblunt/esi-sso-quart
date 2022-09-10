@@ -17,14 +17,14 @@ import sqlalchemy.orm
 import sqlalchemy.sql
 from db import EveTables
 from sso import EveSSO
-from telemetry import otel, otel_add_error
+from telemetry import otel, otel_add_error, otel_add_event
 
 from .task import EveTask
 
 
 class EveStructureTask(EveTask):
 
-    async def _get_url(self, url: str, http_session: aiohttp.ClientSession) -> Union[Dict, None]:
+    async def _get_url(self, url: str, http_session: aiohttp.ClientSession) -> dict | None:
         attempts_remaining = self.ERROR_RETRY_COUNT
         while attempts_remaining > 0:
             async with await http_session.get(url, params=self.common_params) as response:
@@ -35,10 +35,10 @@ class EveStructureTask(EveTask):
                     otel_add_error(f"{response.url} -> {response.status}")
                     self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
                     await asyncio.sleep(self.ERROR_SLEEP_TIME)
-        self.logger.error("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  url))
+        self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url}")
         return None
 
-    async def _get_type(self, type_id: int, http_session: aiohttp.ClientSession) -> Union[None, EveTables.UniverseType]:
+    async def _get_type(self, type_id: int, http_session: aiohttp.ClientSession) -> None | EveTables.UniverseType:
         url: Final = f"https://esi.evetech.net/latest/universe/types/{type_id}/"
         rdict: Final = await self._get_url(url, http_session)
         if rdict is not None:
@@ -53,7 +53,7 @@ class EveStructureTask(EveTask):
             return EveTables.UniverseType(**edict)
         return None
 
-    async def _get_corporation(self, corporation_id: int, http_session: aiohttp.ClientSession) -> Union[None, EveTables.Corporation]:
+    async def _get_corporation(self, corporation_id: int, http_session: aiohttp.ClientSession) -> None | EveTables.Corporation:
         url: Final = f"https://esi.evetech.net/latest/corporations/{corporation_id}/"
         rdict: Final = await self._get_url(url, http_session)
         if rdict is not None:
@@ -69,7 +69,7 @@ class EveStructureTask(EveTask):
             return EveTables.Corporation(**edict)
         return None
 
-    async def _get_moon(self, moon_id: int, http_session: aiohttp.ClientSession) -> Union[None, EveTables.UniverseMoon]:
+    async def _get_moon(self, moon_id: int, http_session: aiohttp.ClientSession) -> None | EveTables.UniverseMoon:
         url: Final = f"https://esi.evetech.net/latest/universe/moons/{moon_id}/"
         rdict: Final = await self._get_url(url, http_session)
         if rdict is not None:
@@ -297,11 +297,11 @@ class EveStructureTask(EveTask):
 
                         modifier_query: Final = sqlalchemy.select(EveTables.StructureModifiers).where(EveTables.StructureModifiers.structure_id == structure_id).limit(1)
                         modifier_query_result: Final = await db.execute(modifier_query)
-                        modifier_obj_dct: Final[Dict[int, EveTables.StructureModifiers]] = {x.structure_id: x for x in modifier_query_result.scalars()}
+                        modifier_obj_dct: Final[dict[int, EveTables.StructureModifiers]] = {x.structure_id: x for x in modifier_query_result.scalars()}
 
                         modifier_obj = modifier_obj_dct.get(structure_id)
                         if modifier_obj is not None:
-                            belt_lifetime_estimate *= modifier_obj.belt_lifetime_modifier
+                            belt_lifetime_estimate *= float(modifier_obj.belt_lifetime_modifier)
 
                         completed_extraction = EveTables.CompletedExtraction(
                             character_id=existing_extraction.character_id,
@@ -350,12 +350,12 @@ class EveStructurePollingTask(EveStructureTask):
 
     @otel
     async def run(self, client_session: collections.abc.MutableSet):
-        refresh_buffer: Final = datetime.timedelta(seconds=15)
+        refresh_buffer: Final = datetime.timedelta(seconds=30)
         refresh_interval: Final = datetime.timedelta(seconds=600) - refresh_buffer
         while True:
             now: Final = datetime.datetime.now(tz=datetime.timezone.utc)
 
-            available_corporation_id_dict: Final[Dict[int, EveTables.PeriodicCredentials]] = dict()
+            available_corporation_id_dict: Final[dict[int, EveTables.PeriodicCredentials]] = dict()
             async with await self.db.sessionmaker() as db, db.begin():
                 query = sqlalchemy.select(EveTables.PeriodicCredentials).where(EveTables.PeriodicCredentials.is_permitted.is_(True)).order_by(sqlalchemy.asc(EveTables.PeriodicCredentials.access_token_exiry))
                 results = await db.execute(query)
@@ -383,7 +383,8 @@ class EveStructurePollingTask(EveStructureTask):
                 continue
 
             if refresh_obj.timestamp + refresh_interval > now:
-                remaining_interval: Final = (refresh_obj.timestamp + refresh_interval + refresh_buffer) - now
+                remaining_interval: Final = refresh_obj.timestamp + refresh_interval + refresh_buffer - now
+                otel_add_event(inspect.currentframe().f_code.co_name, {"remaining_interval": remaining_interval.total_seconds()})
                 await asyncio.sleep(int(min(refresh_interval.total_seconds(), remaining_interval.total_seconds())))
                 continue
 
@@ -391,11 +392,11 @@ class EveStructurePollingTask(EveStructureTask):
             character_id: Final = available_corporation_id_dict[corporation_id].character_id
             access_token: Final = available_corporation_id_dict[corporation_id].access_token
 
+            otel_add_event(inspect.currentframe().f_code.co_name, {"character_id": character_id, "corporation_id": corporation_id})
             self.logger.info("- {}.{}: {} {} {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  corporation_id, "structures updated by", character_id))
 
-            task_list: Final = [
+            await asyncio.gather(
                 asyncio.ensure_future(self.run_structures(now, character_id, corporation_id, access_token)),
                 asyncio.ensure_future(self.run_extractions(now, character_id, corporation_id, access_token)),
-            ]
-            if len(task_list) > 0:
-                await asyncio.gather(*task_list)
+            )
+            await asyncio.sleep(int(refresh_buffer.total_seconds()))
