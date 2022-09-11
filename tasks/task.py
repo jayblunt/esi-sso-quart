@@ -4,7 +4,7 @@ import collections.abc
 import inspect
 import logging
 import os
-from typing import Any, Final
+import typing
 
 import aiohttp
 import aiohttp.client_exceptions
@@ -14,17 +14,18 @@ from telemetry import otel, otel_add_error
 
 class EveTask(metaclass=abc.ABCMeta):
 
-    LIMIT_PER_HOST: Final = 37
-    ERROR_SLEEP_TIME: Final = 7
-    ERROR_RETRY_COUNT: Final = 11
+    LIMIT_PER_HOST: typing.Final = 37
+    ERROR_SLEEP_TIME: typing.Final = 7
+    ERROR_RETRY_COUNT: typing.Final = 11
 
-    CONFIGDIR: Final = "CONFIGDIR"
+    CONFIGDIR: typing.Final = "CONFIGDIR"
 
+    @otel
     def __init__(self, client_session: collections.abc.MutableMapping, db: EveDatabase, logger: logging.Logger = logging.getLogger()):
-        self.db: Final = db
-        self.logger: Final = logger
-        self.name: Final = self.__class__.__name__
-        self.configdir: Final = os.path.abspath(client_session.get(self.CONFIGDIR, "."))
+        self.db: typing.Final = db
+        self.logger: typing.Final = logger
+        self.name: typing.Final = self.__class__.__name__
+        self.configdir: typing.Final = os.path.abspath(client_session.get(self.CONFIGDIR, "."))
 
         if client_session.get(self.name, False):
             self.task: asyncio.Task = None
@@ -48,16 +49,16 @@ class EveTask(metaclass=abc.ABCMeta):
         }
 
     @otel
-    async def get_pages(self, url: str, access_token: str) -> list[Any]:
+    async def get_pages(self, url: str, access_token: str) -> list[typing.Any]:
 
-        session_headers: Final = dict()
+        session_headers: typing.Final = dict()
         if len(access_token) > 0:
             session_headers["Authorization"] = f"Bearer {access_token}"
 
-        maxpageno: int = 1
-        results: Final = list()
-
         async with aiohttp.ClientSession(headers=session_headers) as http_session:
+            maxpageno: int = 0
+            results: typing.Final = list()
+
             async with await http_session.get(url, params=self.common_params) as response:
                 if response.status in [200]:
                     maxpageno = int(response.headers.get('X-Pages', 1))
@@ -68,16 +69,16 @@ class EveTask(metaclass=abc.ABCMeta):
 
             pages = list(range(2, 1 + int(maxpageno)))
 
-            task_list: Final = list()
-            for page in pages:
-                task_list.append(asyncio.ensure_future(self._get_page(url, page, http_session)))
+            task_list: typing.Final = [asyncio.ensure_future(self._get_item(url, x, http_session)) for x in pages]
             if len(task_list) > 0:
-                result_list = await asyncio.gather(*task_list)
-                results += sum(result_list, [])
+                results += sum(await asyncio.gather(*task_list), [])
 
-        return results
+            return results
 
-    async def _get_page(self, url: str, page: int, http_session: aiohttp.ClientSession) -> list:
+        return list()
+
+    @otel
+    async def _get_item(self, url: str, page: int, http_session: aiohttp.ClientSession) -> list:
         request_params = {**self.common_params, **{
             "page": page
         }}

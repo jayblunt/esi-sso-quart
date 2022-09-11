@@ -41,7 +41,7 @@ class AppFunctions:
             sqlalchemy.select(EveTables.CompletedExtraction)
             .where(
                 EveTables.CompletedExtraction.belt_decay_time >= now,
-                EveTables.CompletedExtraction.extraction_start_time < now,
+                EveTables.CompletedExtraction.chunk_arrival_time <= now,
             )
             .order_by(EveTables.CompletedExtraction.chunk_arrival_time)
             .options(sqlalchemy.orm.selectinload(EveTables.CompletedExtraction.structure))
@@ -61,7 +61,7 @@ class AppFunctions:
             sqlalchemy.select(EveTables.ScheduledExtraction)
             .where(
                 EveTables.ScheduledExtraction.chunk_arrival_time >= now,
-                EveTables.ScheduledExtraction.extraction_start_time < now,
+                EveTables.ScheduledExtraction.extraction_start_time <= now,
             )
             .order_by(EveTables.ScheduledExtraction.chunk_arrival_time)
             .options(sqlalchemy.orm.selectinload(EveTables.ScheduledExtraction.structure))
@@ -82,6 +82,9 @@ class AppFunctions:
                 (
                     EveTables.Structure,
                 )
+            )
+            .where(
+                EveTables.Structure.fuel_expires >= now,
             )
             .join(EveTables.Structure.system)
             .join(EveTables.Structure.corporation)
