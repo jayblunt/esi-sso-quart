@@ -8,6 +8,7 @@ from typing import Final
 import quart
 import quart.sessions
 import quart_session
+import opentelemetry.instrumentation.asgi
 
 from app_functions import AppFunctions
 from db import EveDatabase, EveTables
@@ -18,7 +19,6 @@ from tasks import (EveAccessControlTask, EveAllianceTask, EveMoonYieldTask,
                    EveUniverseConstellationsTask, EveUniverseRegionsTask,
                    EveUniverseSystemsTask)
 
-otel_initialize()
 
 app: Final = quart.Quart(__name__)
 
@@ -31,7 +31,6 @@ app.config.from_mapping(
         "HOST": "127.0.0.1",
         "SECRET_KEY": uuid.uuid4().hex,
         "SESSION_TYPE": "redis",
-        "SESSION_PROTECTION": True,
         "SESSION_REVERSE_PROXY": True,
         "BASEDIR": os.path.dirname(os.path.realpath(__file__)),
         "EVEONLINE_CLIENT_ID": os.getenv("EVEONLINE_CLIENT_ID", ""),
@@ -44,7 +43,7 @@ evesso_config: Final = {
     "client_id": app.config.get("EVEONLINE_CLIENT_ID"),
     "client_secret": app.config.get("EVEONLINE_CLIENT_SECRET"),
     "scopes": ["publicData", "esi-characters.read_corporation_roles.v1",
-        "esi-corporations.read_structures.v1", "esi-industry.read_corporation_mining.v1"]
+               "esi-corporations.read_structures.v1", "esi-industry.read_corporation_mining.v1"]
 }
 
 evedb: Final = EveDatabase(
@@ -74,11 +73,13 @@ async def _before_serving():
 
 
 @app.errorhandler(404)
+@otel
 async def error_404(path: str) -> quart.Response:
     return quart.redirect("/")
 
 
 @app.template_filter("structure_state")
+@otel
 def _structure_state(state: str):
     map: Final = {
         "deploy_vulnerable": "Deploy / Vulnerable",
@@ -95,6 +96,7 @@ def _structure_state(state: str):
 
 
 @app.template_filter("timestamp_age")
+@otel
 def _timestamp_age(dt: datetime.datetime):
     age_days: Final = (datetime.datetime.now(datetime.timezone.utc) - dt.replace(tzinfo=datetime.timezone.utc)).days
     if age_days >= 3:
@@ -103,6 +105,7 @@ def _timestamp_age(dt: datetime.datetime):
 
 
 @app.template_filter("datetime")
+@otel
 def _datetime(dt: datetime.datetime):
     return dt.replace(tzinfo=None).isoformat(sep=" ", timespec="minutes")
 
@@ -118,14 +121,8 @@ async def root() -> quart.Response:
     character_id: Final = client_session.get(EveSSO.ESI_CHARACTER_ID, 0)
     corpporation_id: Final = client_session.get(EveSSO.ESI_CORPORATION_ID, 0)
     alliance_id: Final = client_session.get(EveSSO.ESI_ALLIANCE_ID, 0)
-    # character_permitted: Final = client_session.get(EveSSO.APP_PERMITTED, False)
-    character_permitted: Final = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id)
 
-    # if character_id > 0:
-    #     if not bool(client_session.get("login_token", False)):
-    #         with open(os.path.join(evesession[EveTask.CONFIGDIR], f"{character_id}.json"), "w") as ofp:
-    #             ofp.write(json.dumps(dict(client_session), ensure_ascii=True, indent=4))
-    #         client_session["login_token"] = True
+    character_permitted: Final = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id)
 
     if character_id > 0 and character_permitted:
 
@@ -179,6 +176,9 @@ async def root() -> quart.Response:
 
 if __name__ == "__main__":
 
+    # logging.basicConfig(level=logging.DEBUG)
+    otel_initialize()
+
     app_debug = app.config.get("DEBUG", False)
     app_port = app.config.get("PORT", 5050)
     app_host = app.config.get("HOST", "127.0.0.1")
@@ -194,11 +194,16 @@ if __name__ == "__main__":
         config.bind = [f"{app_host}:{app_port}"]
         config.accesslog = "-"
 
+        @otel
         async def async_main():
             await evedb._initialize()
 
+            app.asgi_app = opentelemetry.instrumentation.asgi.OpenTelemetryMiddleware(
+                app.asgi_app
+            )
+
             app.asgi_app = ProxyHeadersMiddleware(
-                app.asgi_app, trusted_hosts=["127.0.0.1", "::1"]
+                app.asgi_app, trusted_hosts=["127.0.0.1"]
             )
 
             await hypercorn.asyncio.serve(app, config)
