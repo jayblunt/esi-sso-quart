@@ -3,7 +3,7 @@ import functools
 import typing
 
 import opentelemetry.exporter.otlp.proto.http.trace_exporter
-# import opentelemetry.instrumentation.aiohttp_client
+import opentelemetry.instrumentation.aiohttp_client
 import opentelemetry.instrumentation.asyncpg
 import opentelemetry.sdk.resources
 import opentelemetry.sdk.trace

@@ -24,6 +24,7 @@ from .task import EveTask
 
 class EveStructureTask(EveTask):
 
+    @otel
     async def _get_url(self, url: str, http_session: aiohttp.ClientSession) -> dict | None:
         attempts_remaining = self.ERROR_RETRY_COUNT
         while attempts_remaining > 0:
@@ -38,6 +39,7 @@ class EveStructureTask(EveTask):
         self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url}")
         return None
 
+    @otel
     async def _get_type(self, type_id: int, http_session: aiohttp.ClientSession) -> None | EveTables.UniverseType:
         url: Final = f"https://esi.evetech.net/latest/universe/types/{type_id}/"
         rdict: Final = await self._get_url(url, http_session)
@@ -53,6 +55,7 @@ class EveStructureTask(EveTask):
             return EveTables.UniverseType(**edict)
         return None
 
+    @otel
     async def _get_corporation(self, corporation_id: int, http_session: aiohttp.ClientSession) -> None | EveTables.Corporation:
         url: Final = f"https://esi.evetech.net/latest/corporations/{corporation_id}/"
         rdict: Final = await self._get_url(url, http_session)
@@ -69,6 +72,7 @@ class EveStructureTask(EveTask):
             return EveTables.Corporation(**edict)
         return None
 
+    @otel
     async def _get_moon(self, moon_id: int, http_session: aiohttp.ClientSession) -> None | EveTables.UniverseMoon:
         url: Final = f"https://esi.evetech.net/latest/universe/moons/{moon_id}/"
         rdict: Final = await self._get_url(url, http_session)
@@ -395,8 +399,13 @@ class EveStructurePollingTask(EveStructureTask):
             otel_add_event(inspect.currentframe().f_code.co_name, {"character_id": character_id, "corporation_id": corporation_id})
             self.logger.info("- {}.{}: {} {} {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  corporation_id, "structures updated by", character_id))
 
-            await asyncio.gather(
-                asyncio.ensure_future(self.run_structures(now, character_id, corporation_id, access_token)),
-                asyncio.ensure_future(self.run_extractions(now, character_id, corporation_id, access_token)),
-            )
+            # XXX: fixme
+            # need structures first, because of the db relationships .. urgh
+            await self.run_structures(now, character_id, corporation_id, access_token)
+            await self.run_extractions(now, character_id, corporation_id, access_token)
+
+            # await asyncio.gather(
+            #     asyncio.ensure_future(self.run_structures(now, character_id, corporation_id, access_token)),
+            #     asyncio.ensure_future(self.run_extractions(now, character_id, corporation_id, access_token)),
+            # )
             await asyncio.sleep(int(refresh_buffer.total_seconds()))

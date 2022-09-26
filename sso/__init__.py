@@ -53,6 +53,7 @@ class EveSSO:
     ESI_DEBUG_TOKEN: Final = "debug_token"
     ESI_DEBUG_ACCESS_TOKEN: Final = "debug_access_token"
 
+    @otel
     def __init__(self,
                  app: quart.Quart,
                  db: EveDatabase,
@@ -87,6 +88,7 @@ class EveSSO:
         self.refresh_token_task: asyncio.Task = None
 
         @app.before_serving
+        @otel
         async def _esi_sso_setup():
             self.configuration = await self._get_json(self.configuration_url)
 
@@ -106,6 +108,7 @@ class EveSSO:
             app.add_url_rule(f"{self.login_route}/<string:variant>", self.login_endpoint, view_func=self.esi_sso_login, methods=["GET"])
 
         @app.after_serving
+        @otel
         async def _esi_sso_teardown():
             for task in [self.refresh_jwks_task, self.refresh_token_task]:
                 if task is None:
@@ -137,6 +140,7 @@ class EveSSO:
     def callback_endpoint(self) -> str:
         return f"callback_{self.client_id}"
 
+    @otel
     async def _get_json(self, url: str, esi_access_token: str = '') -> dict:
         session_headers: Final = dict()
         if len(esi_access_token) > 0:
@@ -153,6 +157,7 @@ class EveSSO:
 
         return json
 
+    @otel
     async def _get_jwks(self, url: str) -> list[dict]:
         payload: Final = await self._get_json(url)
         return payload.get("keys", [])
@@ -280,9 +285,11 @@ class EveSSO:
 
         client_session[EveSSO.APP_SESSION_ID] = uuid.uuid4().hex
 
-        login_scopes = self.scopes        
+        login_scopes = ['publicData']
         if variant == 'user':
             login_scopes = ['publicData']
+        elif variant == 'contributor':
+            login_scopes = self.scopes
 
         client_session[EveSSO.APP_SESSION_SCOPES] = login_scopes
 
