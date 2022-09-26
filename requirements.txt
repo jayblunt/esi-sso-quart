@@ -11,4 +11,5 @@ uvicorn>=0.18.2
 # opentelemetry-exporter-otlp-proto-grpc
 opentelemetry-exporter-otlp-proto-http 
 opentelemetry-instrumentation-asyncpg
+opentelemetry-instrumentation-asgi
 opentelemetry-instrumentation-aiohttp-client
