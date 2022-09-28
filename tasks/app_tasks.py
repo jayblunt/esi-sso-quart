@@ -338,16 +338,18 @@ class EveStructureTask(EveTask):
 
         now: Final = datetime.datetime.now(tz=datetime.timezone.utc)
 
-        task_list: Final = list()
+        # task_list: Final = list()
 
         if "esi-corporations.read_structures.v1" in client_session.get(EveSSO.ESI_ACCESS_TOKEN_SCOPES, []):
-            task_list.append(asyncio.ensure_future(self.run_structures(now, character_id, corporation_id, access_token)))
+            await self.run_structures(now, character_id, corporation_id, access_token)
+            # task_list.append(asyncio.ensure_future(self.run_structures(now, character_id, corporation_id, access_token)))
 
         if "esi-industry.read_corporation_mining.v1" in client_session.get(EveSSO.ESI_ACCESS_TOKEN_SCOPES, []):
-            task_list.append(asyncio.ensure_future(self.run_extractions(now, character_id, corporation_id, access_token)))
+            await self.run_extractions(now, character_id, corporation_id, access_token)
+            # task_list.append(asyncio.ensure_future(self.run_extractions(now, character_id, corporation_id, access_token)))
 
-        if len(task_list) > 0:
-            await asyncio.gather(*task_list)
+        # if len(task_list) > 0:
+        #     await asyncio.gather(*task_list)
 
 
 class EveStructurePollingTask(EveStructureTask):

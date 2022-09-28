@@ -44,9 +44,9 @@ class EveTables:
         name = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
         ticker = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
 
-        structures = sqlalchemy.orm.relationship("Structure", back_populates="corporation", viewonly=True)
-        scheduled_extractions = sqlalchemy.orm.relationship("ScheduledExtraction", back_populates="corporation", viewonly=True)
-        completed_extractions = sqlalchemy.orm.relationship("CompletedExtraction", back_populates="corporation", viewonly=True)
+        # structures = sqlalchemy.orm.relationship("Structure", back_populates="corporation", viewonly=True)
+        # scheduled_extractions = sqlalchemy.orm.relationship("ScheduledExtraction", back_populates="corporation", viewonly=True)
+        # completed_extractions = sqlalchemy.orm.relationship("CompletedExtraction", back_populates="corporation", viewonly=True)
 
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(corporation_id={self.corporation_id}, name={self.name})"
@@ -71,8 +71,8 @@ class EveTables:
         constellation_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
         name = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
 
-        moons = sqlalchemy.orm.relationship("UniverseMoon", back_populates="system", viewonly=True)
-        structures = sqlalchemy.orm.relationship("Structure", back_populates="system", viewonly=True)
+        # moons = sqlalchemy.orm.relationship("UniverseMoon", back_populates="system", viewonly=True)
+        # structures = sqlalchemy.orm.relationship("Structure", back_populates="system", viewonly=True)
 
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(constellation_id={self.constellation_id}, system_id={self.system_id}, name={self.name})"
@@ -84,8 +84,8 @@ class EveTables:
         name = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
 
         system = sqlalchemy.orm.relationship("UniverseSystem", viewonly=True)
-        scheduled_extractions = sqlalchemy.orm.relationship("ScheduledExtraction", back_populates="moon", viewonly=True)
-        completed_extractions = sqlalchemy.orm.relationship("CompletedExtraction", back_populates="moon", viewonly=True)
+        # scheduled_extractions = sqlalchemy.orm.relationship("ScheduledExtraction", back_populates="moon", viewonly=True)
+        # completed_extractions = sqlalchemy.orm.relationship("CompletedExtraction", back_populates="moon", viewonly=True)
 
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(system_id={self.system_id}, moon_id={self.moon_id}, name={self.name})"
@@ -146,8 +146,8 @@ class EveTables:
         corporation = sqlalchemy.orm.relationship("Corporation", viewonly=True)
         system = sqlalchemy.orm.relationship("UniverseSystem", viewonly=True)
 
-        scheduled_extractions = sqlalchemy.orm.relationship("ScheduledExtraction", back_populates="structure", cascade="all, delete")
-        completed_extractions = sqlalchemy.orm.relationship("CompletedExtraction", back_populates="structure", cascade="all, delete")
+        # scheduled_extractions = sqlalchemy.orm.relationship("ScheduledExtraction", back_populates="structure", cascade="all, delete")
+        # completed_extractions = sqlalchemy.orm.relationship("CompletedExtraction", back_populates="structure", cascade="all, delete")
 
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(structure_id={self.structure_id}, system_id={self.system_id}, name={self.name})"
