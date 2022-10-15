@@ -40,11 +40,17 @@ h1 {
     top: 0;
     opacity: 0.25;
     z-index: -1;
+    display: block;
+    margin-block-start: 0.5em;
+    margin-block-end: 0.25em;
 }
 
 h3 {
     font-size: 2vw;
     font-weight: bold;
+    display: block;
+    margin-block-start: 0.5em;
+    margin-block-end: 0.25em;
 }
 
 input {

@@ -84,7 +84,7 @@ class AppFunctions:
                 )
             )
             .where(
-                EveTables.Structure.fuel_expires >= now,
+                EveTables.Structure.fuel_expires > now,
             )
             .join(EveTables.Structure.system)
             .join(EveTables.Structure.corporation)

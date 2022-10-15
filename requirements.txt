@@ -4,12 +4,13 @@ asyncpg>=0.26.0
 hypercorn>=0.13.2
 python-dateutil>=2.8.2
 python-jose>=3.3.0
-quart>=0.17.0
+quart>=0.18.0
 quart_session>=1.0.4
 SQLAlchemy>=1.4.39
 uvicorn>=0.18.2
 # opentelemetry-exporter-otlp-proto-grpc
 opentelemetry-exporter-otlp-proto-http 
+opentelemetry-instrumentation
 opentelemetry-instrumentation-asyncpg
 opentelemetry-instrumentation-asgi
 opentelemetry-instrumentation-aiohttp-client

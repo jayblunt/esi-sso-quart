@@ -338,16 +338,18 @@ class EveStructureTask(EveTask):
 
         now: Final = datetime.datetime.now(tz=datetime.timezone.utc)
 
-        task_list: Final = list()
+        # task_list: Final = list()
 
         if "esi-corporations.read_structures.v1" in client_session.get(EveSSO.ESI_ACCESS_TOKEN_SCOPES, []):
-            task_list.append(asyncio.ensure_future(self.run_structures(now, character_id, corporation_id, access_token)))
+            await self.run_structures(now, character_id, corporation_id, access_token)
+            # task_list.append(asyncio.ensure_future(self.run_structures(now, character_id, corporation_id, access_token)))
 
         if "esi-industry.read_corporation_mining.v1" in client_session.get(EveSSO.ESI_ACCESS_TOKEN_SCOPES, []):
-            task_list.append(asyncio.ensure_future(self.run_extractions(now, character_id, corporation_id, access_token)))
+            await self.run_extractions(now, character_id, corporation_id, access_token)
+            # task_list.append(asyncio.ensure_future(self.run_extractions(now, character_id, corporation_id, access_token)))
 
-        if len(task_list) > 0:
-            await asyncio.gather(*task_list)
+        # if len(task_list) > 0:
+        #     await asyncio.gather(*task_list)
 
 
 class EveStructurePollingTask(EveStructureTask):
@@ -399,8 +401,13 @@ class EveStructurePollingTask(EveStructureTask):
             otel_add_event(inspect.currentframe().f_code.co_name, {"character_id": character_id, "corporation_id": corporation_id})
             self.logger.info("- {}.{}: {} {} {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  corporation_id, "structures updated by", character_id))
 
-            await asyncio.gather(
-                asyncio.ensure_future(self.run_structures(now, character_id, corporation_id, access_token)),
-                asyncio.ensure_future(self.run_extractions(now, character_id, corporation_id, access_token)),
-            )
+            # XXX: fixme
+            # need structures first, because of the db relationships .. urgh
+            await self.run_structures(now, character_id, corporation_id, access_token)
+            await self.run_extractions(now, character_id, corporation_id, access_token)
+
+            # await asyncio.gather(
+            #     asyncio.ensure_future(self.run_structures(now, character_id, corporation_id, access_token)),
+            #     asyncio.ensure_future(self.run_extractions(now, character_id, corporation_id, access_token)),
+            # )
             await asyncio.sleep(int(refresh_buffer.total_seconds()))

@@ -47,7 +47,7 @@ evesso_config: Final = {
 }
 
 evedb: Final = EveDatabase(
-    app.config.get("SQLALCHEMY_DB_URL", "sqlite+pysqlite://")
+    app.config.get("SQLALCHEMY_DB_URL", "sqlite+pysqlite://"),
 )
 quart_session.Session(app)
 evesso: Final = EveSSO(app, evedb, **evesso_config)

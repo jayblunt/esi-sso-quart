@@ -93,7 +93,7 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
                 async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as http_session:
                     task_list: Final = list()
                     for obj_id in missing_obj_id_set:
-                        self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{str(self.object_class)}({obj_id})"))
+                        self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{str(self.object_class.__name__)}({obj_id})"))
                         task_list.append(asyncio.ensure_future(self._get_item(obj_id, http_session)))
 
                     if len(task_list) > 0:
