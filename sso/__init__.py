@@ -33,6 +33,7 @@ class EveSSO:
 
     APP_SESSION_ID: Final = "app_session_id"
     APP_SESSION_SCOPES: Final = "app_session_scopes"
+    APP_SESSION_TYPE: Final = "app_session_type"
 
     ESI_CHARACTER_NAME: Final = "character_name"
     ESI_CHARACTER_ID: Final = "character_id"
@@ -290,6 +291,11 @@ class EveSSO:
             login_scopes = ['publicData']
         elif variant == 'contributor':
             login_scopes = self.scopes
+
+        if len(login_scopes) == 1 and 'publicData' in login_scopes:
+            client_session[EveSSO.APP_SESSION_TYPE] = "USER"
+        else:
+            client_session[EveSSO.APP_SESSION_TYPE] = "CONTRIBUTOR"
 
         client_session[EveSSO.APP_SESSION_SCOPES] = login_scopes
 

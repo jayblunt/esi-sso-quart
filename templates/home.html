@@ -1,12 +1,4 @@
-{% extends "base.html" %} {% block content %}
-<div class="character" id="character" width="100%">
-  {% if character_id %}
-  <p>
-    <a href="/sso/logout"><img width="128" height="128" alt="{{character_name}}" src="https://images.evetech.net/characters/{{character_id}}/portrait?size=128" /></a>
-  </p>
-  {% endif %}
-</div>
-{% if active_timers %}
+{% extends "base.html" %} {% block content %} {% include "character.html" %} {% if active_timers %}
 <div class="box">
   <h3>Active Structure Timers</h3>
   <table>
@@ -155,7 +147,7 @@
   </table>
 </div>
 {% endif %}
-<div class="copyright" id="copyright_string">
+<div class="copyright">
   <p>© 2022 Jay Blunt. All rights reserved.<br />All EVE related materials © 2014 CCP hf. All rights reserved.<br />"EVE", "EVE Online", "CCP", and all related logos and images are trademarks or registered trademarks of CCP hf.</p>
 </div>
 {% endblock %}

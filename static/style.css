@@ -34,12 +34,12 @@ body {
 }
 
 h1 {
-    margin: 0;
-    font-size: 14vw;
-    position: absolute;
     top: 0;
+    margin: 0;
+    position: absolute;
     opacity: 0.25;
     z-index: -1;
+    font-size: 14vw;
     display: block;
     margin-block-start: 0.5em;
     margin-block-end: 0.25em;
@@ -59,7 +59,7 @@ input {
 }
 
 table {
-    width: 99%;
+    width: 95%;
     font-size: 1vw;
     text-align: right;
 }
@@ -92,16 +92,30 @@ tr .stale {
 tr .fresh {}
 
 .character {
-    position: absolute;
     margin: 0.75vw;
     top: 0.25vw;
+    position: absolute;
     opacity: 0.75;
     z-index: -1;
 }
 
 .character img {
-    border: 1px solid var(--foreground-color);
-    border-radius: 99%;
+    border: 2px solid var(--foreground-color);
+    border-radius: 98%;
+    max-width: 75%;
+    height: auto;
+}
+
+.character .user img {
+    border: 2px solid var(--foreground-color);
+    border-radius: 98%;
+    max-width: 75%;
+    height: auto;
+}
+
+.character .contributor img {
+    border: 8px solid var(--background-color);
+    border-radius: 98%;
     max-width: 75%;
     height: auto;
 }

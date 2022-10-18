@@ -1,17 +1,10 @@
-{% extends "base.html" %} {% block content %}
-<div class="character" id="character" width="100%">
-  {% if character_id %}
-  <p>
-    <a href="/sso/logout"><img width="128" height="128" alt="{{character_name}}" src="https://images.evetech.net/characters/{{character_id}}/portrait?size=128" /></a>
-  </p>
-  {% endif %}
-</div>
+{% extends "base.html" %} {% block content %} {% include "character.html" %}
 <div class="box">
   <h3>Permission Denied</h3>
   <p>Hello {{ character_name }}. You are not currently permissioned to see this information.</p>
   <p>If this is in error, please contact Jay Blunt in-game.</p>
 </div>
-<div class="copyright" id="copyright_string">
+<div class="copyright">
   <p>© 2022 Jay Blunt. All rights reserved.<br />All EVE related materials © 2014 CCP hf. All rights reserved.<br />"EVE", "EVE Online", "CCP", and all related logos and images are trademarks or registered trademarks of CCP hf.</p>
 </div>
 {% endblock %}
