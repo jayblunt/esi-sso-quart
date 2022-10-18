@@ -83,7 +83,7 @@ def otel(func: typing.Callable):
             return wrapper
 
 
-def otel_add_event(name: str, attributes: typing.Optional[typing.Dict] = None) -> None:
+def otel_add_event(name: str, attributes: dict | None = None) -> None:
     global _OTEL_INITIALIZED
     if not _OTEL_INITIALIZED:
         return
@@ -93,7 +93,7 @@ def otel_add_event(name: str, attributes: typing.Optional[typing.Dict] = None) -
         span.add_event(name, attributes=attributes)
 
 
-def otel_add_error(description: typing.Optional[str] = None) -> None:
+def otel_add_error(description: str | None = None) -> None:
     global _OTEL_INITIALIZED
     if not _OTEL_INITIALIZED:
         return

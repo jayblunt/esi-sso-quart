@@ -114,7 +114,8 @@ tr .fresh {}
 }
 
 .character .contributor img {
-    border: 8px solid var(--background-color);
+    /* border: 8px solid var(--background-color); */
+    border: 8px solid #FFD700;
     border-radius: 98%;
     max-width: 75%;
     height: auto;

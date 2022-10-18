@@ -1,24 +1,24 @@
 import asyncio
 import datetime
+import inspect
 import logging
 import os
 import uuid
 from typing import Final
 
+import opentelemetry.instrumentation.asgi
 import quart
 import quart.sessions
 import quart_session
-import opentelemetry.instrumentation.asgi
 
 from app_functions import AppFunctions
 from db import EveDatabase, EveTables
 from sso import EveSSO
-from telemetry import otel, otel_initialize
 from tasks import (EveAccessControlTask, EveAllianceTask, EveMoonYieldTask,
                    EveStructurePollingTask, EveStructureTask, EveTask,
                    EveUniverseConstellationsTask, EveUniverseRegionsTask,
                    EveUniverseSystemsTask)
-
+from telemetry import otel, otel_initialize
 
 app: Final = quart.Quart(__name__)
 
@@ -175,6 +175,7 @@ async def root() -> quart.Response:
         )
 
     elif character_id > 0 and not character_permitted:
+        app.logger.warning(f"{character_id} not permitted")
         return await quart.render_template(
             "permission.html",
             character_id=character_id,
