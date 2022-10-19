@@ -39,7 +39,7 @@ h1 {
     position: absolute;
     opacity: 0.25;
     z-index: -1;
-    font-size: 14vw;
+    font-size: 12vw;
     display: block;
     margin-block-start: 0.5em;
     margin-block-end: 0.25em;
@@ -51,6 +51,8 @@ h3 {
     display: block;
     margin-block-start: 0.5em;
     margin-block-end: 0.25em;
+    min-width: 0;
+    /* width: 100vw; */
 }
 
 input {
@@ -62,6 +64,8 @@ table {
     width: 95%;
     font-size: 1vw;
     text-align: right;
+    -webkit-border-horizontal-spacing: 0px;
+    -webkit-border-vertical-spacing: 0px;
 }
 
 thead {
@@ -151,10 +155,10 @@ tr .fresh {}
     padding-bottom: 2vw;
     padding-left: 2vw;
     padding-right: 2vw;
-    /* width: 75vw auto;
-    margin: 2vw auto; */
+    margin-left: 2%;
+    margin-right: 2%;
+    width: 94%;
     background-color: var(--background-color);
-    /* border: 1px solid var(--foreground-color); */
     opacity: 0.7;
     transition: 0.2s all;
 }

@@ -1,0 +1,69 @@
+{% extends "base.html" %} {% block content %} {% include "character.html" %}
+<div class="box">
+    <h3>Introduction</h3>
+    <p>EVE has no great way to monitor structures for organizations that do not fit in the Alliance / Corp structure of
+        EVE.</p>
+    <p>This site attemtps to do that.</p>
+</div>
+<div class="box">
+    <h3>Logging In</h3>
+    <p>Almost everyone will want to login as a User. This enables viewing of structure information, and requires minimal
+        data
+        to login.</p>
+    <p>If you manage structures, and want to contribute your structure information, then login as a Contributor. You
+        will need the in-game corporate roles of "Station Manager" and "Accountant" (see
+        <a href="https://support.eveonline.com/hc/en-us/articles/203217712-Roles-Listing">this article</a>
+        for more information about corporation roles).
+    </p>
+    <p>If you are not sure how you are logged in, look at your character image at the top of the window. If your
+        character has a thin border the color of the foreground - you are logged in as a User. If your character has a
+        thicker border in yellow - you are logged in as a Contributor.</p>
+</div>
+<div class="box">
+    <h3>Permissions</h3>
+    <p>Because all EVE players trust each other entirely, ... this site has a permissions
+        system based on Alliances / Corporations / Users.</p>
+    <p>CCP does not (currently) have a way to access in-game ACL information from outside-of-game. So the site has no
+        way of knowing if you are included / excluded in-game.</p>
+    <p>If you get a "Permission Denied" page in error, please contact Jay Blunt in-game to get the permissions fixed.</p>
+</div>
+<div class="box">
+    <h3>Logging Out</h3>
+    <p>This site will try and maintain your login session. If you change IP address or some other
+        Internet voodooo, it will assume you have logged out.</p>
+    <p>If you navigate away from ths site without explictly logging out .. the site will try and remember you for next
+        time.</p>
+    <p>If you click your character image, you will be logged out.</p>
+    <p>If you are logged out, you will be served the login page when you visit.</p>
+</div>
+<div class="box">
+    <h3>"I have an idea how I can make this better"</h3>
+    <p>Great! I need all the help I can get!</p>
+    <p>The source code for all this is on <a href="https://github.com/jayblunt/esi-sso-quart">GitHub</a>. It is licensed
+        under the <a href="https://opensource.org/licenses/MIT">MIT</a> license.</p>
+    <p>Pull Requests are welcome and I am happy to include credit on the site. Issues .. are also welcome, but please
+        give as much information as possible.</p>
+</div>
+<div class="box">
+    <h3>"I have a question ..."</h3>
+    <p>.. contact Jay Blunt in-game ..</p>
+</div>
+<div class="box">
+    <h3>Technical Info</h3>
+    <p>This site is mostly async python with aiohttp and sqlalchemy.</p>
+    <p>The server is a <a href="https://www.vultr.com">www.vultr.com</a> virtual server.
+        It is running <a href="https://www.openbsd.org">OpenBSD</a>.
+        The framework used is <a href="https://quart.palletsprojects.com/en/latest/">Quart</a>.
+        The TLS reverse proxy is OpenBSD's <a href="https://man.openbsd.org/relayd">relayd</a>.</p>
+</div>
+<div class="box">
+    <h3>Credits</h3>
+    <p>Freeman Powell for the orignal inspiration, and for their patience. Thank you for fueling all of the structures.
+    </p>
+    <p>Meta Space for being the first (apart from Freeman!) to login as Contributor.</p>
+    <p>Ghost Buelle for understanding that developer requests are .. endless.</p>
+    <p>beer- thirty for, well, being beer- thirty..</p>
+    <p>GRRRvana for being the second (apart from Freeman!) to login as Contributor.</p>
+    <p>.. and everyone I have omitted. let me know ...</p>
+</div>
+{% endblock %}

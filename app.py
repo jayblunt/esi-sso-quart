@@ -1,6 +1,5 @@
 import asyncio
 import datetime
-import inspect
 import logging
 import os
 import uuid
@@ -36,6 +35,7 @@ app.config.from_mapping(
         "EVEONLINE_CLIENT_ID": os.getenv("EVEONLINE_CLIENT_ID", ""),
         "EVEONLINE_CLIENT_SECRET": os.getenv("EVEONLINE_CLIENT_SECRET", ""),
         "SQLALCHEMY_DB_URL": os.getenv("SQLALCHEMY_DB_URL", ""),
+        "SEND_FILE_MAX_AGE_DEFAULT": 300,
     }
 )
 
@@ -119,6 +119,12 @@ def _timestamp_age(dt: datetime.datetime) -> str:
 @otel
 def _datetime(dt: datetime.datetime) -> str:
     return dt.replace(tzinfo=None).isoformat(sep=" ", timespec="minutes")
+
+
+@app.route("/about/", methods=["GET"])
+@otel
+async def _about() -> quart.Response:
+    return await quart.render_template("about.html")
 
 
 @app.route("/", methods=["GET"])
