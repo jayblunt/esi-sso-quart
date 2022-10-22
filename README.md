@@ -22,9 +22,8 @@ Requires a valid [application](https://developers.eveonline.com/applications) se
 This example uses [Quart-Session](https://pypi.org/project/Quart-Session/) which requires a working backend. I used [Redis](https://redis.io) with a default configuration (listening on localhost).
 
 ```shell
-python3.10 -m venv python3.10-env
+python3.10 -m venv --upgrade-deps python3.10-env
 . python3.10-env/bin/activate
-pip install -U pip wheel setuptools
 pip install -r requirements.txt
 ```
 
@@ -33,12 +32,15 @@ pip install -r requirements.txt
 Create an ESI Application at [developers.eveonline.com](https://developers.eveonline.com).
 
 The application uses the following scopes:
-- `publicData`
-- `esi-characters.read_corporation_roles.v1`
-- `esi-corporations.read_structures.v1`
-- `esi-industry.read_corporation_mining.v1`
 
-`publicData` is used for all logins, the others are only requested for "Contributor" logins (to provide structure / extraction data).
+- As a User:
+  - `publicData`
+
+- As a Contributor (to provide structure / extraction data):
+  - `publicData`
+  - `esi-characters.read_corporation_roles.v1`
+  - `esi-corporations.read_structures.v1`
+  - `esi-industry.read_corporation_mining.v1`
 
 Set environent variables for the ClientID and ClientSecret:
 
@@ -62,6 +64,16 @@ createuser --pwprompt username
 createdb --encoding=UTF8 --owner=username database
 ```
 
+## Permissions / Access Controls
+
+This example includes a very basic permissions system.
+Alliances / Corporations / Characters can be included / excluded.
+The intent is to be similar / familiar to the way in-game ACLs behave.
+
+Permission is evaluated by checking Alliance then Corporation then Character id against the permission list. Check `AppFunctions.is_permitted` for the details.
+
+**You will want to adjust either the defaults in `tasks/app_access_control_tasks.py`, at a minimum to permit your Character(s) and/or exclude the Alliances and Corporations in my defaults.**
+
 ## Open Telemetry
 
 This example can be optionally configured to send telemetry to [honeycomb.io](https://www.honeycomb.io).
@@ -73,16 +85,6 @@ export OTEL_EXPORTER_OTLP_HEADERS="x-honeycomb-team=your-api-key"
 export OTEL_SERVICE_NAME="your-service-name"
 ```
 
-## Permissions
-
-This example includes a very basic permissions system.
-Alliances / Corporaations / Characters can be included / excluded.
-The intent of the implementation is to be similar to the way in-game ACLs behave.
-
-Permission is evaluated by checking Alliance then Corporation then Character id against the permission list. Check `AppFunctions.is_permitted` for the details.
-
-**You will want to adjust either the defaults in `tasks/app_access_control.py`, at a minimum to permit your Character(s) and/or exclude the Alliances and Corporations in my defaults.**
-
 ## Notes
 
 At startup the example will pull universe data from [ESI](https://esi.evetech.net/).
@@ -91,9 +93,7 @@ At startup the example will pull universe data from [ESI](https://esi.evetech.ne
 
 **Structure information will not populate until this universe data is collected (because of the ORM relationships that are defined between structures and systems and moons).**
 
-This example is almost entirely [asyncio](https://docs.python.org/3/library/asyncio.html), including the [SQLAlchemy](https://docs.sqlalchemy.org/en/14/orm/extensions/asyncio.html) usage.
-
-There are small "tasks" - coroutines - (via [asyncio.create_task()](https://docs.python.org/3/library/asyncio-task.html#asyncio.create_task) for collecting universe and structure data, and for refreshing jwt keys and access_tokens for users.
+There are small "tasks" - coroutines - (via [asyncio.create_task()](https://docs.python.org/3/library/asyncio-task.html#asyncio.create_task) for collecting universe and structure data, and for periodically refreshing jwt keys and access_tokens for users.
 
 -- Jay Blunt
 

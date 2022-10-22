@@ -5,20 +5,19 @@ import os
 import uuid
 from typing import Final
 
+import opentelemetry.instrumentation.asgi
 import quart
 import quart.sessions
 import quart_session
-import opentelemetry.instrumentation.asgi
 
 from app_functions import AppFunctions
 from db import EveDatabase, EveTables
 from sso import EveSSO
-from telemetry import otel, otel_initialize
 from tasks import (EveAccessControlTask, EveAllianceTask, EveMoonYieldTask,
                    EveStructurePollingTask, EveStructureTask, EveTask,
                    EveUniverseConstellationsTask, EveUniverseRegionsTask,
                    EveUniverseSystemsTask)
-
+from telemetry import otel, otel_initialize
 
 app: Final = quart.Quart(__name__)
 
@@ -36,6 +35,7 @@ app.config.from_mapping(
         "EVEONLINE_CLIENT_ID": os.getenv("EVEONLINE_CLIENT_ID", ""),
         "EVEONLINE_CLIENT_SECRET": os.getenv("EVEONLINE_CLIENT_SECRET", ""),
         "SQLALCHEMY_DB_URL": os.getenv("SQLALCHEMY_DB_URL", ""),
+        "SEND_FILE_MAX_AGE_DEFAULT": 300,
     }
 )
 
@@ -78,9 +78,20 @@ async def error_404(path: str) -> quart.Response:
     return quart.redirect("/")
 
 
+@app.template_filter("login_type")
+@otel
+def _login_type(input: str):
+    client_session: Final = quart.session
+    login_type = client_session.get(EveSSO.APP_SESSION_TYPE, "USER")
+    if login_type == "CONTRIBUTOR":
+        return "contributor"
+    else:
+        return "user"
+
+
 @app.template_filter("structure_state")
 @otel
-def _structure_state(state: str):
+def _structure_state(state: str) -> str:
     map: Final = {
         "deploy_vulnerable": "Deploy / Vulnerable",
         "anchoring": "Anchoring",
@@ -97,7 +108,7 @@ def _structure_state(state: str):
 
 @app.template_filter("timestamp_age")
 @otel
-def _timestamp_age(dt: datetime.datetime):
+def _timestamp_age(dt: datetime.datetime) -> str:
     age_days: Final = (datetime.datetime.now(datetime.timezone.utc) - dt.replace(tzinfo=datetime.timezone.utc)).days
     if age_days >= 3:
         return "stale"
@@ -106,8 +117,14 @@ def _timestamp_age(dt: datetime.datetime):
 
 @app.template_filter("datetime")
 @otel
-def _datetime(dt: datetime.datetime):
+def _datetime(dt: datetime.datetime) -> str:
     return dt.replace(tzinfo=None).isoformat(sep=" ", timespec="minutes")
+
+
+@app.route("/about/", methods=["GET"])
+@otel
+async def _about() -> quart.Response:
+    return await quart.render_template("about.html")
 
 
 @app.route("/", methods=["GET"])
@@ -164,6 +181,7 @@ async def root() -> quart.Response:
         )
 
     elif character_id > 0 and not character_permitted:
+        app.logger.warning(f"{character_id} not permitted")
         return await quart.render_template(
             "permission.html",
             character_id=character_id,
