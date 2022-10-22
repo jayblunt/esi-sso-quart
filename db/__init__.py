@@ -244,6 +244,17 @@ class EveTables:
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(id={self.id}, type={self.type}, permit={self.permit})"
 
+    class AccessHistory(Base):
+        __tablename__ = "app_access_history"
+        id = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.Sequence("app_access_history_id_seq", start=1), primary_key=True)
+        timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
+        character_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+        permitted = sqlalchemy.Column(sqlalchemy.Boolean)
+        path = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
+
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}(timestamp={self.timestamp}, character_id={self.character_id}, path={self.path})"
+
     class AuthLog(Base):
         __tablename__ = "app_auth_log"
         timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), primary_key=True, server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)

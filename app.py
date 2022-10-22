@@ -124,6 +124,17 @@ def _datetime(dt: datetime.datetime) -> str:
 @app.route("/about/", methods=["GET"])
 @otel
 async def _about() -> quart.Response:
+    client_session: Final = quart.session
+    character_id: Final = client_session.get(EveSSO.ESI_CHARACTER_ID, 0)
+    if character_id > 0:
+
+        corpporation_id: Final = client_session.get(EveSSO.ESI_CORPORATION_ID, 0)
+        alliance_id: Final = client_session.get(EveSSO.ESI_ALLIANCE_ID, 0)
+        character_permitted: Final = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id)
+        async with await evedb.sessionmaker() as db, db.begin():
+            db.add(EveTables.AccessHistory(character_id=character_id, permitted=bool(character_permitted), path=quart.request.path))
+            await db.commit()
+
     return await quart.render_template("about.html")
 
 
@@ -140,6 +151,13 @@ async def root() -> quart.Response:
     alliance_id: Final = client_session.get(EveSSO.ESI_ALLIANCE_ID, 0)
 
     character_permitted: Final = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id)
+
+    if character_id > 0:
+
+        async with await evedb.sessionmaker() as db, db.begin():
+
+            db.add(EveTables.AccessHistory(character_id=character_id, permitted=bool(character_permitted), path=quart.request.path))
+            await db.commit()
 
     if character_id > 0 and character_permitted:
 
