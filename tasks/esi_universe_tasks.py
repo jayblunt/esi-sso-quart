@@ -84,7 +84,7 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
 
             existing_query = sqlalchemy.select(self.object_class)
             existing_query_result = await db.execute(existing_query)
-            existing_obj_set: Final = {result for result in existing_query_result.scalars()}
+            existing_obj_set: Final = {x for x in existing_query_result.scalars()}
             existing_obj_id_set: Final = {self.object_id(x) for x in existing_obj_set}
 
             obj_set: Final = set()

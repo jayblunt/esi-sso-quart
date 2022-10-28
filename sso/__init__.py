@@ -214,7 +214,7 @@ class EveSSO:
                 query = await db.execute(
                     sqlalchemy.select(EveTables.PeriodicCredentials)
                     .where(EveTables.PeriodicCredentials.character_id == refresh_character_id))
-                update_character_obj_set: Final = {result for result in query.scalars()}
+                update_character_obj_set: Final = {x for x in query.scalars()}
 
                 refresh_character_obj: EveTables.PeriodicCredentials = None
                 if len(update_character_obj_set) == 1:
@@ -324,7 +324,7 @@ class EveSSO:
                 character_query = sqlalchemy.select(EveTables.PeriodicCredentials).where(
                     EveTables.PeriodicCredentials.character_id == character_id)
                 character_query_results = await db.execute(character_query)
-                character_set = {result for result in character_query_results.scalars()}
+                character_set = {x for x in character_query_results.scalars()}
                 obj = None
                 if len(character_set) > 0:
                     obj: EveTables.PeriodicCredentials = character_set.pop()
@@ -532,7 +532,7 @@ class EveSSO:
                         character_query = sqlalchemy.select(EveTables.Character).where(
                             EveTables.Character.character_id == character_id)
                         character_query_results = await db.execute(character_query)
-                        character_set = {result for result in character_query_results.scalars()}
+                        character_set = {x for x in character_query_results.scalars()}
 
                         if len(character_set) > 0:
                             [await db.delete(x) for x in character_set]
@@ -574,7 +574,7 @@ class EveSSO:
                     character_query = sqlalchemy.select(EveTables.PeriodicCredentials).where(
                         EveTables.PeriodicCredentials.character_id == character_id)
                     character_query_results = await db.execute(character_query)
-                    character_set = {result for result in character_query_results.scalars()}
+                    character_set = {x for x in character_query_results.scalars()}
                     obj = None
                     if len(character_set) > 0:
                         obj = character_set.pop()

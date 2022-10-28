@@ -1,4 +1,9 @@
-{% extends "base.html" %} {% block content %} {% include "character.html" %} {% if active_timers %}
+{% extends "base.html" %} {% block content %} {% include "character.html" %}
+<!-- <div class="box">
+    <h3>2022-10-28</h3>
+    <p>Looks like I still have some work to handle destroyed structures better ..</p>
+</div> -->
+{% if active_timers %}
 <div class="box">
     <h3>Active Structure Timers</h3>
     <table>

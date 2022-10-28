@@ -31,7 +31,7 @@ class EveAccessControlTask(EveTask):
             existing_acl_set: Final = set()
             existing_query = sqlalchemy.select(EveTables.AccessControls)
             existing_query_result = await db.execute(existing_query)
-            existing_acl_set |= {result for result in existing_query_result.scalars()}
+            existing_acl_set |= {x for x in existing_query_result.scalars()}
 
             if len(existing_acl_set) == 0:
                 db.add_all(acl_bootstrap_set)
