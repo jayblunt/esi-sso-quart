@@ -40,11 +40,11 @@ class EveMoonYieldTask(EveTask):
         if len(moon_data_list) > 0:
 
             try:
-                async with await self.db.sessionmaker() as db, db.begin():
+                async with await self.db.sessionmaker() as session, session.begin():
 
                     existing_obj_set: Final = set()
                     moon_yield_query: Final = sqlalchemy.select(EveTables.MoonYield)
-                    moon_yield_query_result = await db.execute(moon_yield_query)
+                    moon_yield_query_result = await session.execute(moon_yield_query)
                     existing_obj_set |= {x for x in moon_yield_query_result.scalars()}
                     existing_id_set: Final = {m.moon_id for m in existing_obj_set}
 
@@ -56,12 +56,12 @@ class EveMoonYieldTask(EveTask):
                         obj_set.add(obj)
 
                     if len(existing_obj_set) > 0:
-                        [await db.delete(x) for x in existing_obj_set]
+                        [await session.delete(x) for x in existing_obj_set]
 
                     if len(obj_set) > 0:
-                        db.add_all(obj_set)
+                        session.add_all(obj_set)
 
                     if any([len(existing_obj_set) > 0, len(obj_set) > 0]):
-                        await db.commit()
+                        await session.commit()
             except sqlalchemy.exc.StatementError as ex:
                 otel_add_exception(ex)

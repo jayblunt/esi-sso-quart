@@ -80,10 +80,10 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
         #     with open(cache_filename) as ifp:
         #         cache_dict |= {self.object_id(x): x for x in [self.object_class(**edict) for edict in json.load(ifp)]}
 
-        async with await self.db.sessionmaker() as db, db.begin():
+        async with await self.db.sessionmaker() as session, session.begin():
 
             existing_query = sqlalchemy.select(self.object_class)
-            existing_query_result = await db.execute(existing_query)
+            existing_query_result = await session.execute(existing_query)
             existing_obj_set: Final = {x for x in existing_query_result.scalars()}
             existing_obj_id_set: Final = {self.object_id(x) for x in existing_obj_set}
 
@@ -103,12 +103,12 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
                             obj_set.add(obj)
 
             if len(obj_set) > 0:
-                db.add_all(obj_set)
-                await db.commit()
+                session.add_all(obj_set)
+                await session.commit()
 
-        # async with await self.db.sessionmaker() as db, db.begin():
+        # async with await self.db.sessionmaker() as session, session.begin():
         #     existing_query = sqlalchemy.select(self.object_class)
-        #     existing_query_result = await db.execute(existing_query)
+        #     existing_query_result = await session.execute(existing_query)
         #     existing_obj_list: Final = [{x: getattr(result, x) for x in result.__table__.columns.keys()} for result in existing_query_result.scalars()]
         #     if len(existing_obj_list) > 0:
         #         with open(cache_filename, "w") as ofp:
