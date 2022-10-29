@@ -32,7 +32,7 @@ class AppFunctions:
             .options(sqlalchemy.orm.selectinload(EveTables.Structure.corporation))
         )
         timer_query_result = await db.execute(timer_query)
-        return [result for result in timer_query_result.scalars()]
+        return [x for x in timer_query_result.scalars()]
 
     @staticmethod
     @otel
@@ -50,9 +50,7 @@ class AppFunctions:
         )
 
         extraction_query_result = await db.execute(extraction_query)
-        return [
-            result for result in extraction_query_result.scalars()
-        ]
+        return [x for x in extraction_query_result.scalars()]
 
     @staticmethod
     @otel
@@ -70,9 +68,7 @@ class AppFunctions:
         )
 
         extraction_query_result = await db.execute(extraction_query)
-        return [
-            result for result in extraction_query_result.scalars()
-        ]
+        return [x for x in extraction_query_result.scalars()]
 
     @staticmethod
     @otel
@@ -93,7 +89,7 @@ class AppFunctions:
             .options(sqlalchemy.orm.selectinload(EveTables.Structure.corporation))
         )
         structure_query_result = await db.execute(structure_query)
-        return [result for result in structure_query_result.scalars()]
+        return [x for x in structure_query_result.scalars()]
 
     @staticmethod
     @otel
@@ -104,7 +100,7 @@ class AppFunctions:
         async with await evedb.sessionmaker() as db, db.begin():
             acl_query = sqlalchemy.select(EveTables.AccessControls)
             acl_query_result = await db.execute(acl_query)
-            acl_set |= {result for result in acl_query_result.scalars()}
+            acl_set |= {x for x in acl_query_result.scalars()}
 
         acl_pass = False
         acl_evaluations = [

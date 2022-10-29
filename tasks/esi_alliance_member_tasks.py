@@ -5,13 +5,14 @@ from typing import Final
 import aiohttp
 import aiohttp.client_exceptions
 import sqlalchemy
+import sqlalchemy.exc
 import sqlalchemy.ext.asyncio
 import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 from db import EveTables
 from sso import EveSSO
-from telemetry import otel, otel_add_error
+from telemetry import otel, otel_add_error, otel_add_exception
 
 from .task import EveTask
 
@@ -41,25 +42,28 @@ class EveEsiAlliancMemberTask(EveTask):
 
         if alliance_id > 0 and len(corporation_id_set) > 0:
 
-            async with await self.db.sessionmaker() as db, db.begin():
+            try:
+                async with await self.db.sessionmaker() as db, db.begin():
 
-                alliance_corporations_query: Final = sqlalchemy.select(EveTables.AllianceCorporation).where(EveTables.AllianceCorporation.alliance_id == alliance_id)
-                alliance_corporations_query_result = await db.execute(alliance_corporations_query)
-                existing_obj_set: Final = {result for result in alliance_corporations_query_result.scalars()}
+                    alliance_corporations_query: Final = sqlalchemy.select(EveTables.AllianceCorporation).where(EveTables.AllianceCorporation.alliance_id == alliance_id)
+                    alliance_corporations_query_result = await db.execute(alliance_corporations_query)
+                    existing_obj_set: Final = {x for x in alliance_corporations_query_result.scalars()}
 
-                obj_set = set()
-                for corporation_id in corporation_id_set:
-                    obj = EveTables.AllianceCorporation(alliance_id=alliance_id, corporation_id=corporation_id)
-                    obj_set.add(obj)
+                    obj_set = set()
+                    for corporation_id in corporation_id_set:
+                        obj = EveTables.AllianceCorporation(alliance_id=alliance_id, corporation_id=corporation_id)
+                        obj_set.add(obj)
 
-                if len(existing_obj_set) > 0:
-                    [await db.delete(x) for x in existing_obj_set]
+                    if len(existing_obj_set) > 0:
+                        [await db.delete(x) for x in existing_obj_set]
 
-                if len(obj_set) > 0:
-                    db.add_all(obj_set)
+                    if len(obj_set) > 0:
+                        db.add_all(obj_set)
 
-                if any([len(existing_obj_set) > 0, len(obj_set) > 0]):
-                    await db.commit()
+                    if any([len(existing_obj_set) > 0, len(obj_set) > 0]):
+                        await db.commit()
+            except sqlalchemy.exc.StatementError as ex:
+                otel_add_exception(ex)
 
         if len(corporation_id_set) > 0:
 
@@ -67,7 +71,7 @@ class EveEsiAlliancMemberTask(EveTask):
 
                 existing_corporations_query: Final = sqlalchemy.select(EveTables.Corporation)
                 existing_corporations_query_result = await db.execute(existing_corporations_query)
-                existing_corporation_set: Final = {result for result in existing_corporations_query_result.scalars()}
+                existing_corporation_set: Final = {x for x in existing_corporations_query_result.scalars()}
 
                 existing_corporation_id_set: Final = {x.corporation_id for x in existing_corporation_set}
 
@@ -101,6 +105,5 @@ class EveEsiAlliancMemberTask(EveTask):
                                 self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
 
                 if len(obj_set) > 0:
-                    print(obj_set)
                     db.add_all(obj_set)
                     await db.commit()

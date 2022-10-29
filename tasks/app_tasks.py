@@ -11,13 +11,15 @@ import aiohttp
 import aiohttp.client_exceptions
 import dateutil.parser
 import sqlalchemy
+import sqlalchemy.engine
+import sqlalchemy.exc
 import sqlalchemy.ext.asyncio
 import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 from db import EveTables
 from sso import EveSSO
-from telemetry import otel, otel_add_error, otel_add_event
+from telemetry import otel, otel_add_error, otel_add_event, otel_add_exception
 
 from .task import EveTask
 
@@ -93,7 +95,7 @@ class EveStructureTask(EveTask):
         async with await self.db.sessionmaker() as db, db.begin():
 
             existing_type_query = sqlalchemy.select(EveTables.UniverseType)
-            existing_type_query_result = await db.execute(existing_type_query)
+            existing_type_query_result: Final[sqlalchemy.engine.Result] = await db.execute(existing_type_query)
             existing_type_id_set: Final = {x.type_id for x in existing_type_query_result.scalars()}
 
             type_obj_set: Final = set()
@@ -118,7 +120,7 @@ class EveStructureTask(EveTask):
         async with await self.db.sessionmaker() as db, db.begin():
 
             existing_moon_query = sqlalchemy.select(EveTables.UniverseMoon)
-            existing_moon_query_result = await db.execute(existing_moon_query)
+            existing_moon_query_result: Final[sqlalchemy.engine.Result] = await db.execute(existing_moon_query)
             existing_moon_id_set: Final = {x.moon_id for x in existing_moon_query_result.scalars()}
 
             moon_obj_set: Final = set()
@@ -143,7 +145,7 @@ class EveStructureTask(EveTask):
         async with await self.db.sessionmaker() as db, db.begin():
 
             existing_corporation_query = sqlalchemy.select(EveTables.Corporation)
-            existing_corporation_query_result = await db.execute(existing_corporation_query)
+            existing_corporation_query_result: Final[sqlalchemy.engine.Result] = await db.execute(existing_corporation_query)
             existing_corporation_id_set: Final = {x.corporation_id for x in existing_corporation_query_result.scalars()}
 
             corporation_obj_set: Final = set()
@@ -174,6 +176,7 @@ class EveStructureTask(EveTask):
 
         type_id_set: Final = set()
         corporation_id_set: Final = set()
+        structure_id_set: Final = set()
         structure_obj_set: Final = set()
         structure_history_obj_set: Final = set()
 
@@ -197,6 +200,7 @@ class EveStructureTask(EveTask):
             structure_obj_set.add(obj)
             type_id_set.add(obj.type_id)
             corporation_id_set.add(obj.corporation_id)
+            structure_id_set.add(obj.structure_id)
 
             history_obj = EveTables.StructureHistory(character_id=character_id, structure_id=int(x.get("structure_id", 0)), json=x)
             structure_history_obj_set.add(history_obj)
@@ -214,19 +218,55 @@ class EveStructureTask(EveTask):
                 db.add_all(structure_history_obj_set)
                 await db.commit()
 
+        # Ugly hack to remove structures that no longer exist. If I was better with the ORM I would not have to do this ..
+        if len(corporation_id_set) > 0 and len(structure_id_set) > 0:
+
+            try:
+                async with await self.db.sessionmaker() as db, db.begin():
+                    completed_extraction_query: Final = sqlalchemy.select(EveTables.CompletedExtraction).where(
+                        EveTables.CompletedExtraction.corporation_id == corporation_id,
+                        EveTables.CompletedExtraction.structure_id.not_in(structure_id_set)
+                    )
+                    completed_extraction_query_result: Final[sqlalchemy.engine.Result] = await db.execute(completed_extraction_query)
+                    completed_extraction_obj_set: Final = {x for x in completed_extraction_query_result.scalars()}
+                    if len(completed_extraction_obj_set) > 0:
+                        [await db.delete(x) for x in completed_extraction_obj_set]
+                        await db.commit()
+            except sqlalchemy.exc.StatementError as ex:
+                otel_add_exception(ex)
+
+            try:
+                async with await self.db.sessionmaker() as db, db.begin():
+                    scheduled_extraction_query: Final = sqlalchemy.select(EveTables.ScheduledExtraction).where(
+                        EveTables.ScheduledExtraction.corporation_id == corporation_id,
+                        EveTables.ScheduledExtraction.structure_id.not_in(structure_id_set)
+                    )
+                    scheduled_extraction_query_result: Final[sqlalchemy.engine.Result] = await db.execute(scheduled_extraction_query)
+                    scheduled_extraction_obj_set: Final = {x for x in scheduled_extraction_query_result.scalars()}
+                    if len(scheduled_extraction_obj_set) > 0:
+                        [await db.delete(x) for x in scheduled_extraction_obj_set]
+                        await db.commit()
+            except sqlalchemy.exc.StatementError as ex:
+                otel_add_exception(ex)
+
         if len(structure_obj_set) > 0:
-            # Save current extractions
-            async with await self.db.sessionmaker() as db, db.begin():
-                all_structures_query: Final = sqlalchemy.select(EveTables.Structure).where(EveTables.Structure.corporation_id == corporation_id)
-                all_structures_query_result = await db.execute(all_structures_query)
-                existing_obj_set: Final = {result for result in all_structures_query_result.scalars()}
+            try:
+                async with await self.db.sessionmaker() as db, db.begin():
+                    all_structures_query: Final = sqlalchemy.select(EveTables.Structure).where(
+                        EveTables.Structure.corporation_id == corporation_id
+                    )
+                    all_structures_query_result: Final[sqlalchemy.engine.Result] = await db.execute(all_structures_query)
+                    existing_obj_set: Final = {x for x in all_structures_query_result.scalars()}
 
-                if len(existing_obj_set) > 0:
-                    [await db.delete(x) for x in existing_obj_set]
+                    if len(existing_obj_set) > 0:
+                        # this is broken because the structure_id may be present as a foreign key in another table
+                        [await db.delete(x) for x in existing_obj_set]
 
-                db.add_all(structure_obj_set)
+                    db.add_all(structure_obj_set)
 
-                await db.commit()
+                    await db.commit()
+            except sqlalchemy.exc.StatementError as ex:
+                otel_add_exception(ex)
 
     @otel
     async def run_extractions(self, now: datetime.datetime, character_id: int, corporation_id: int, access_token: str):
@@ -278,54 +318,57 @@ class EveStructureTask(EveTask):
 
         # Update Scheduled and Completed
         if len(fresh_extractions_obj_dict.keys()) > 0:
-            async with await self.db.sessionmaker() as db, db.begin():
+            try:
+                async with await self.db.sessionmaker() as db, db.begin():
 
-                completed_extractions_query: Final = sqlalchemy.select(EveTables.CompletedExtraction).where(EveTables.CompletedExtraction.corporation_id == corporation_id)
-                completed_extractions_query_result = await db.execute(completed_extractions_query)
-                completed_extractions_dict: Final = {x.structure_id: x for x in completed_extractions_query_result.scalars()}
+                    completed_extractions_query: Final = sqlalchemy.select(EveTables.CompletedExtraction).where(EveTables.CompletedExtraction.corporation_id == corporation_id)
+                    completed_extractions_query_result: Final[sqlalchemy.engine.Result] = await db.execute(completed_extractions_query)
+                    completed_extractions_dict: Final = {x.structure_id: x for x in completed_extractions_query_result.scalars()}
 
-                existing_extractions_query: Final = sqlalchemy.select(EveTables.ScheduledExtraction).where(EveTables.ScheduledExtraction.corporation_id == corporation_id)
-                existing_extractions_query_result = await db.execute(existing_extractions_query)
-                existing_extractions_obj_dict: Final = {x.structure_id: x for x in existing_extractions_query_result.scalars()}
+                    existing_extractions_query: Final = sqlalchemy.select(EveTables.ScheduledExtraction).where(EveTables.ScheduledExtraction.corporation_id == corporation_id)
+                    existing_extractions_query_result: Final[sqlalchemy.engine.Result] = await db.execute(existing_extractions_query)
+                    existing_extractions_obj_dict: Final = {x.structure_id: x for x in existing_extractions_query_result.scalars()}
 
-                for structure_id in set(fresh_extractions_obj_dict.keys()).intersection(set(existing_extractions_obj_dict.keys())):
+                    for structure_id in set(fresh_extractions_obj_dict.keys()).intersection(set(existing_extractions_obj_dict.keys())):
 
-                    existing_extraction: EveTables.ScheduledExtraction = existing_extractions_obj_dict[structure_id]
-                    if now >= existing_extraction.chunk_arrival_time:
+                        existing_extraction: EveTables.ScheduledExtraction = existing_extractions_obj_dict[structure_id]
+                        if now >= existing_extraction.chunk_arrival_time:
 
-                        # Remove the old / existing completed extraction
-                        if structure_id in completed_extractions_dict.keys():
-                            await db.delete(completed_extractions_dict[structure_id])
+                            # Remove the old / existing completed extraction
+                            if structure_id in completed_extractions_dict.keys():
+                                await db.delete(completed_extractions_dict[structure_id])
 
-                        belt_lifetime_estimate: Final = datetime.timedelta(days=2)
+                            belt_lifetime_estimate: Final = datetime.timedelta(days=2)
 
-                        modifier_query: Final = sqlalchemy.select(EveTables.StructureModifiers).where(EveTables.StructureModifiers.structure_id == structure_id).limit(1)
-                        modifier_query_result: Final = await db.execute(modifier_query)
-                        modifier_obj_dct: Final[dict[int, EveTables.StructureModifiers]] = {x.structure_id: x for x in modifier_query_result.scalars()}
+                            modifier_query: Final = sqlalchemy.select(EveTables.StructureModifiers).where(EveTables.StructureModifiers.structure_id == structure_id).limit(1)
+                            modifier_query_result: Final[sqlalchemy.engine.Result] = await db.execute(modifier_query)
+                            modifier_obj_dct: Final[dict[int, EveTables.StructureModifiers]] = {x.structure_id: x for x in modifier_query_result.scalars()}
 
-                        modifier_obj = modifier_obj_dct.get(structure_id)
-                        if modifier_obj is not None:
-                            belt_lifetime_estimate *= float(modifier_obj.belt_lifetime_modifier)
+                            modifier_obj = modifier_obj_dct.get(structure_id)
+                            if modifier_obj is not None:
+                                belt_lifetime_estimate *= float(modifier_obj.belt_lifetime_modifier)
 
-                        completed_extraction = EveTables.CompletedExtraction(
-                            character_id=existing_extraction.character_id,
-                            corporation_id=existing_extraction.corporation_id,
-                            structure_id=existing_extraction.structure_id,
-                            moon_id=existing_extraction.moon_id,
-                            extraction_start_time=existing_extraction.extraction_start_time,
-                            chunk_arrival_time=existing_extraction.chunk_arrival_time,
-                            natural_decay_time=existing_extraction.natural_decay_time,
-                            belt_decay_time=existing_extraction.chunk_arrival_time + belt_lifetime_estimate)
+                            completed_extraction = EveTables.CompletedExtraction(
+                                character_id=existing_extraction.character_id,
+                                corporation_id=existing_extraction.corporation_id,
+                                structure_id=existing_extraction.structure_id,
+                                moon_id=existing_extraction.moon_id,
+                                extraction_start_time=existing_extraction.extraction_start_time,
+                                chunk_arrival_time=existing_extraction.chunk_arrival_time,
+                                natural_decay_time=existing_extraction.natural_decay_time,
+                                belt_decay_time=existing_extraction.chunk_arrival_time + belt_lifetime_estimate)
 
-                        db.add(completed_extraction)
+                            db.add(completed_extraction)
 
-                # We wipe and re-insert to handle the case where a structure goes away between taaks
-                if len(existing_extractions_obj_dict.keys()) > 0:
-                    [await db.delete(x) for x in existing_extractions_obj_dict.values()]
+                    # We wipe and re-insert to handle the case where a structure goes away between taaks
+                    if len(existing_extractions_obj_dict.keys()) > 0:
+                        [await db.delete(x) for x in existing_extractions_obj_dict.values()]
 
-                db.add_all(fresh_extractions_obj_dict.values())
+                    db.add_all(fresh_extractions_obj_dict.values())
 
-                await db.commit()
+                    await db.commit()
+            except sqlalchemy.exc.StatementError as ex:
+                otel_add_exception(ex)
 
     @otel
     async def run(self, client_session: collections.abc.MutableMapping):
@@ -364,8 +407,8 @@ class EveStructurePollingTask(EveStructureTask):
             available_corporation_id_dict: Final[dict[int, EveTables.PeriodicCredentials]] = dict()
             async with await self.db.sessionmaker() as db, db.begin():
                 query = sqlalchemy.select(EveTables.PeriodicCredentials).where(EveTables.PeriodicCredentials.is_permitted.is_(True)).order_by(sqlalchemy.asc(EveTables.PeriodicCredentials.access_token_exiry))
-                results = await db.execute(query)
-                rl = [x for x in results.scalars()]
+                results: Final[sqlalchemy.engine.Result] = await db.execute(query)
+                rl: Final = [x for x in results.scalars()]
                 for obj in rl:
                     if isinstance(obj, EveTables.PeriodicCredentials):
                         if not obj.is_station_manager_role:
@@ -379,7 +422,7 @@ class EveStructurePollingTask(EveStructureTask):
             refresh_obj: EveTables.Structure = None
             async with await self.db.sessionmaker() as db, db.begin():
                 query = sqlalchemy.select(EveTables.Structure).where(EveTables.Structure.corporation_id.in_(available_corporation_id_dict.keys())).order_by(sqlalchemy.asc(EveTables.Structure.timestamp)).limit(1)
-                results = await db.execute(query)
+                results: Final[sqlalchemy.engine.Result] = await db.execute(query)
                 obj_set: Final = {x for x in results.scalars()}
                 if len(obj_set) > 0:
                     refresh_obj = obj_set.pop()
