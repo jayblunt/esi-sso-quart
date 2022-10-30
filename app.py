@@ -136,7 +136,8 @@ async def _usage() -> quart.Response:
         # alliance_id: Final = client_session.get(EveSSO.ESI_ALLIANCE_ID, 0)
         # character_permitted: Final = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id)
 
-        if character_id in [92923556]:
+        # if character_id in [92923556]:
+        if character_id in [92923556, 93692517, 96477045, 96602200, 96732252]:
             usage_data = None
             async with await evedb.sessionmaker() as session, session.begin():
                 usage_data = await AppFunctions.get_usage(session, now)
