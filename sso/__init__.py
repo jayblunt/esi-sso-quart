@@ -183,9 +183,9 @@ class EveSSO:
             now: Final = datetime.datetime.now(tz=datetime.timezone.utc)
 
             refresh_obj: EveTables.PeriodicCredentials = None
-            async with await self.db.sessionmaker() as db, db.begin():
+            async with await self.db.sessionmaker() as session, session.begin():
                 query = sqlalchemy.select(EveTables.PeriodicCredentials).where(EveTables.PeriodicCredentials.is_permitted.is_(True)).order_by(sqlalchemy.asc(EveTables.PeriodicCredentials.access_token_exiry)).limit(1)
-                results = await db.execute(query)
+                results = await session.execute(query)
                 obj_set = {x for x in results.scalars()}
                 if len(obj_set) > 0:
                     refresh_obj = obj_set.pop()
@@ -210,8 +210,8 @@ class EveSSO:
                 EveSSO.ESI_REFRESH_TOKEN: refresh_obj.refresh_token,
             })
 
-            async with await self.db.sessionmaker() as db, db.begin():
-                query = await db.execute(
+            async with await self.db.sessionmaker() as session, session.begin():
+                query = await session.execute(
                     sqlalchemy.select(EveTables.PeriodicCredentials)
                     .where(EveTables.PeriodicCredentials.character_id == refresh_character_id))
                 update_character_obj_set: Final = {x for x in query.scalars()}
@@ -244,12 +244,12 @@ class EveSSO:
 
                     refresh_character_obj.is_enabled = False
                     refresh_character_obj.is_permitted = False
-                await db.commit()
+                await session.commit()
 
-            async with await self.db.sessionmaker() as db, db.begin():
+            async with await self.db.sessionmaker() as session, session.begin():
                 authlog_obj = EveTables.AuthLog(character_id=client_session.get(EveSSO.ESI_CHARACTER_ID, 0), session_id=client_session.get(EveSSO.APP_SESSION_ID, ''), auth_type=EveAuthType.REFRESH)
-                db.add(authlog_obj)
-                await db.commit()
+                session.add(authlog_obj)
+                await session.commit()
 
     @otel
     async def esi_decode_token(self, client_session: collections.abc.MutableMapping, token_response: dict) -> dict:
@@ -320,22 +320,22 @@ class EveSSO:
 
         if character_id > 0 and len(session_id) > 0:
             # Disable periodic on explicit logout
-            async with await self.db.sessionmaker() as db, db.begin():
+            async with await self.db.sessionmaker() as session, session.begin():
                 character_query = sqlalchemy.select(EveTables.PeriodicCredentials).where(
                     EveTables.PeriodicCredentials.character_id == character_id)
-                character_query_results = await db.execute(character_query)
+                character_query_results = await session.execute(character_query)
                 character_set = {x for x in character_query_results.scalars()}
                 obj = None
                 if len(character_set) > 0:
                     obj: EveTables.PeriodicCredentials = character_set.pop()
                     obj.is_enabled = False
                     obj.is_permitted = False
-                    await db.commit()
+                    await session.commit()
 
-            async with await self.db.sessionmaker() as db, db.begin():
+            async with await self.db.sessionmaker() as session, session.begin():
                 authlog_obj = EveTables.AuthLog(character_id=character_id, session_id=session_id, auth_type=EveAuthType.LOGOUT)
-                db.add(authlog_obj)
-                await db.commit()
+                session.add(authlog_obj)
+                await session.commit()
 
         otel_add_event("logout", {"session_id": session_id})
 
@@ -389,15 +389,15 @@ class EveSSO:
 
         character_id: Final = client_session.get(EveSSO.ESI_CHARACTER_ID, 0)
 
-        async with await self.db.sessionmaker() as db, db.begin():
+        async with await self.db.sessionmaker() as session, session.begin():
 
             login_auth_type = EveAuthType.LOGIN_USER
             if len(client_session.get(EveSSO.APP_SESSION_SCOPES, [])) > 1:
                 login_auth_type = EveAuthType.LOGIN_CONTRIBUTOR
 
             authlog_obj = EveTables.AuthLog(character_id=character_id, session_id=session_id, auth_type=login_auth_type)
-            db.add(authlog_obj)
-            await db.commit()
+            session.add(authlog_obj)
+            await session.commit()
 
         otel_add_event("login", {"session_id": session_id})
 
@@ -528,14 +528,14 @@ class EveSSO:
                 # Save the character info - we re-do this on each cycle why?
                 if characters_result is not None:
 
-                    async with await self.db.sessionmaker() as db, db.begin():
+                    async with await self.db.sessionmaker() as session, session.begin():
                         character_query = sqlalchemy.select(EveTables.Character).where(
                             EveTables.Character.character_id == character_id)
-                        character_query_results = await db.execute(character_query)
+                        character_query_results = await session.execute(character_query)
                         character_set = {x for x in character_query_results.scalars()}
 
                         if len(character_set) > 0:
-                            [await db.delete(x) for x in character_set]
+                            [await session.delete(x) for x in character_set]
 
                         edict = dict({
                             "character_id": int(character_id)
@@ -551,11 +551,11 @@ class EveSSO:
 
                         obj = EveTables.Character(**edict)
                         if obj is not None:
-                            db.add(obj)
-                            await db.commit()
+                            session.add(obj)
+                            await session.commit()
 
                 # Setup / Update the periodic credentials record
-                async with await self.db.sessionmaker() as db, db.begin():
+                async with await self.db.sessionmaker() as session, session.begin():
                     periodic_credentials = {
                         "character_id": character_id,
                         "corporation_id": corporation_id,
@@ -573,7 +573,7 @@ class EveSSO:
 
                     character_query = sqlalchemy.select(EveTables.PeriodicCredentials).where(
                         EveTables.PeriodicCredentials.character_id == character_id)
-                    character_query_results = await db.execute(character_query)
+                    character_query_results = await session.execute(character_query)
                     character_set = {x for x in character_query_results.scalars()}
                     obj = None
                     if len(character_set) > 0:
@@ -585,5 +585,5 @@ class EveSSO:
                         new_periodic_credentials = {
                         }
                         obj = EveTables.PeriodicCredentials(**{**periodic_credentials, **new_periodic_credentials})
-                        db.add(obj)
-                    await db.commit()
+                        session.add(obj)
+                        await session.commit()

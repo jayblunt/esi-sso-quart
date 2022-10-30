@@ -6,7 +6,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-    :root {
+     :root {
         --background-color: #121212;
         --foreground-color: white;
         --input-background-color: #c0c0c0;
@@ -15,7 +15,7 @@
 }
 
 @media (prefers-color-scheme: light) {
-    :root {
+     :root {
         --background-color: #ededed;
         --foreground-color: black;
         --input-background-color: #c0c0c0;
@@ -55,12 +55,13 @@ h3 {
     /* width: 100vw; */
 }
 
-input {
+
+/* input {
     background-color: var(--input-background-color);
     width: 4vw;
-}
+} */
 
-table {
+.box table {
     width: 95%;
     font-size: 1vw;
     text-align: right;
@@ -68,32 +69,34 @@ table {
     -webkit-border-vertical-spacing: 0px;
 }
 
-thead {
+.box thead {
     font-weight: bold;
     width: min-content;
 }
 
-tbody {
+.box tbody {
     font-weight: normal;
     width: min-content;
 }
 
-tfoot {
+.box tfoot {
     font-weight: bold;
     width: min-content;
 }
 
-thead .align_left,
-tbody .align_left,
-tfoot .align_left {
+.box thead .align_left,
+.box tbody .align_left,
+.box tfoot .align_left {
     text-align: left;
 }
 
-tr .stale {
+.box tr .stale {
     opacity: 0.50;
 }
 
-tr .fresh {}
+.box tr .fresh {
+    /* */
+}
 
 .character {
     margin: 0.75vw;
@@ -125,8 +128,9 @@ tr .fresh {}
     height: auto;
 }
 
-.version {
-    font-size: 0.75vw;
+.about {
+    /* font-size: 0.75vw; */
+    font-size: 0.8rem;
     position: fixed;
     margin: 0.75vw;
     bottom: 0;
@@ -134,8 +138,14 @@ tr .fresh {}
     z-index: -1;
 }
 
+.about tr {
+    text-align: left;
+    vertical-align: bottom;
+}
+
 .copyright {
-    font-size: 0.75vw;
+    /* font-size: 0.75vw; */
+    font-size: 0.8rem;
     position: fixed;
     margin: 0.75vw;
     bottom: 0;
@@ -143,7 +153,12 @@ tr .fresh {}
     opacity: 0.5;
     z-index: -1;
     float: right;
+    /* text-align: right; */
+}
+
+.copyright tr {
     text-align: right;
+    vertical-align: bottom;
 }
 
 .heading {
@@ -168,7 +183,8 @@ tr .fresh {}
     opacity: 1;
 }
 
-.box a {
+.box a,
+.about a {
     color: var(--a-foreground-color);
 }
 

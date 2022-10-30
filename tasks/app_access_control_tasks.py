@@ -27,14 +27,14 @@ class EveAccessControlTask(EveTask):
             EveTables.AccessControls(type=EveAccessType.CORPORATION, id=98629865, permit=True),
         }
 
-        async with await self.db.sessionmaker() as db, db.begin():
+        async with await self.db.sessionmaker() as session, session.begin():
             existing_acl_set: Final = set()
             existing_query = sqlalchemy.select(EveTables.AccessControls)
-            existing_query_result = await db.execute(existing_query)
+            existing_query_result = await session.execute(existing_query)
             existing_acl_set |= {x for x in existing_query_result.scalars()}
 
             if len(existing_acl_set) == 0:
-                db.add_all(acl_bootstrap_set)
-                await db.commit()
+                session.add_all(acl_bootstrap_set)
+                await session.commit()
 
         self.logger.info(f"< {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")

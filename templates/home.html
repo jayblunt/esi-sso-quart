@@ -1,8 +1,8 @@
 {% extends "base.html" %} {% block content %} {% include "character.html" %}
-<!-- <div class="box">
-    <h3>2022-10-28</h3>
-    <p>Looks like I still have some work to handle destroyed structures better ..</p>
-</div> -->
+<div class="box">
+    <h3>2022-10-29</h3>
+    <p>Handle structure destruction / unanchoring better ..</p>
+</div>
 {% if active_timers %}
 <div class="box">
     <h3>Active Structure Timers</h3>
@@ -56,8 +56,7 @@
         <tbody>
             {% if completed_extractions %} {% for e in completed_extractions %}
             <tr class="{{e.timestamp|timestamp_age}}">
-                <td align="left" class="{{e.timestamp|timestamp_age}}"><a
-                        href="https://evewho.com/corporation/{{e.corporation_id}}" target="_blank"> {{
+                <td align="left" class="{{e.timestamp|timestamp_age}}"><a href="https://evewho.com/corporation/{{e.corporation_id}}" target="_blank"> {{
                         e.corporation.name }} </a></td>
                 <td align="left" class="{{e.timestamp|timestamp_age}}">{{ e.structure.name }}</td>
                 <td align="left" class="{{e.timestamp|timestamp_age}}">{{ e.moon.name }}</td>
@@ -76,8 +75,7 @@
             </tr>
             {% endif %} {% if scheduled_extractions %} {% for e in scheduled_extractions %}
             <tr class="{{e.timestamp|timestamp_age}}">
-                <td align="left" class="{{e.timestamp|timestamp_age}}"><a
-                        href="https://evewho.com/corporation/{{e.corporation_id}}" target="_blank"> {{
+                <td align="left" class="{{e.timestamp|timestamp_age}}"><a href="https://evewho.com/corporation/{{e.corporation_id}}" target="_blank"> {{
                         e.corporation.name }} </a></td>
                 <td align="left" class="{{e.timestamp|timestamp_age}}">{{ e.structure.name }}</td>
                 <td align="left" class="{{e.timestamp|timestamp_age}}">{{ e.moon.name }}</td>
@@ -114,12 +112,10 @@
         <tbody>
             {% for s in structure_fuel_expiries %}
             <tr class="{{s.timestamp|timestamp_age}}">
-                <td align="left" class="{{s.timestamp|timestamp_age}}"><a
-                        href="https://evewho.com/corporation/{{s.corporation_id}}" target="_blank">{{ s.corporation.name
+                <td align="left" class="{{s.timestamp|timestamp_age}}"><a href="https://evewho.com/corporation/{{s.corporation_id}}" target="_blank">{{ s.corporation.name
                         }}</a></td>
                 <td align="left" class="{{s.timestamp|timestamp_age}}">{{ s.name }}</td>
-                <td align="left" class="{{s.timestamp|timestamp_age}}"><a
-                        href="https://evemaps.dotlan.net/system/{{s.system.name}}" target="_blank">{{ s.system.name
+                <td align="left" class="{{s.timestamp|timestamp_age}}"><a href="https://evemaps.dotlan.net/system/{{s.system.name}}" target="_blank">{{ s.system.name
                         }}</a></td>
                 <td class="{{s.timestamp|timestamp_age}}">{{ s.fuel_expires|datetime }}</td>
             </tr>
@@ -148,8 +144,7 @@
         <tbody>
             {% for lu in last_update %}
             <tr class="{{lu.timestamp|timestamp_age}}">
-                <td align="left" class="{{lu.timestamp|timestamp_age}}"><a
-                        href="https://evewho.com/corporation/{{lu.corporation_id}}" target="_blank">{{
+                <td align="left" class="{{lu.timestamp|timestamp_age}}"><a href="https://evewho.com/corporation/{{lu.corporation_id}}" target="_blank">{{
                         lu.corporation.name }}</a></td>
                 <td class="{{lu.timestamp|timestamp_age}}">{{ lu.timestamp|datetime }}</td>
             </tr>
@@ -163,5 +158,4 @@
         </tfoot>
     </table>
 </div>
-{% endif %}
-{% endblock %}
+{% endif %} {% endblock %}

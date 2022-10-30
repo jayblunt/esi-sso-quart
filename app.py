@@ -121,6 +121,35 @@ def _datetime(dt: datetime.datetime) -> str:
     return dt.replace(tzinfo=None).isoformat(sep=" ", timespec="minutes")
 
 
+@app.route("/usage/", methods=["GET"])
+@otel
+async def _usage() -> quart.Response:
+
+    client_session: Final = quart.session
+
+    now: Final = datetime.datetime.now(tz=datetime.timezone.utc)
+
+    character_id: Final = client_session.get(EveSSO.ESI_CHARACTER_ID, 0)
+    if character_id > 0:
+
+        # corpporation_id: Final = client_session.get(EveSSO.ESI_CORPORATION_ID, 0)
+        # alliance_id: Final = client_session.get(EveSSO.ESI_ALLIANCE_ID, 0)
+        # character_permitted: Final = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id)
+
+        if character_id in [92923556]:
+            usage_data = None
+            async with await evedb.sessionmaker() as session, session.begin():
+                usage_data = await AppFunctions.get_usage(session, now)
+
+            return await quart.render_template(
+                "usage.html",
+                character_name=client_session.get(EveSSO.ESI_CHARACTER_NAME),
+                character_id=client_session.get(EveSSO.ESI_CHARACTER_ID),
+                usage=usage_data)
+
+    return quart.redirect("/")
+
+
 @app.route("/about/", methods=["GET"])
 @otel
 async def _about() -> quart.Response:
@@ -131,9 +160,9 @@ async def _about() -> quart.Response:
         corpporation_id: Final = client_session.get(EveSSO.ESI_CORPORATION_ID, 0)
         alliance_id: Final = client_session.get(EveSSO.ESI_ALLIANCE_ID, 0)
         character_permitted: Final = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id)
-        async with await evedb.sessionmaker() as db, db.begin():
-            db.add(EveTables.AccessHistory(character_id=character_id, permitted=bool(character_permitted), path=quart.request.path))
-            await db.commit()
+        async with await evedb.sessionmaker() as session, session.begin():
+            session.add(EveTables.AccessHistory(character_id=character_id, permitted=bool(character_permitted), path=quart.request.path))
+            await session.commit()
 
     return await quart.render_template("about.html")
 
@@ -154,10 +183,10 @@ async def root() -> quart.Response:
 
     if character_id > 0:
 
-        async with await evedb.sessionmaker() as db, db.begin():
+        async with await evedb.sessionmaker() as session, session.begin():
 
-            db.add(EveTables.AccessHistory(character_id=character_id, permitted=bool(character_permitted), path=quart.request.path))
-            await db.commit()
+            session.add(EveTables.AccessHistory(character_id=character_id, permitted=bool(character_permitted), path=quart.request.path))
+            await session.commit()
 
     if character_id > 0 and character_permitted:
 
@@ -170,12 +199,12 @@ async def root() -> quart.Response:
         structure_fuel_results: Final = list()
         last_update_results: Final = list()
 
-        async with await evedb.sessionmaker() as db, db.begin():
+        async with await evedb.sessionmaker() as session, session.begin():
 
-            active_timer_results += await AppFunctions.get_active_timers(db, now)
-            completed_extraction_results += await AppFunctions.get_completed_extractions(db, now)
-            scheduled_extraction_results += await AppFunctions.get_scheduled_extractions(db, now)
-            structure_fuel_results += await AppFunctions.get_structure_fuel_expiries(db, now)
+            active_timer_results += await AppFunctions.get_active_timers(session, now)
+            completed_extraction_results += await AppFunctions.get_completed_extractions(session, now)
+            scheduled_extraction_results += await AppFunctions.get_scheduled_extractions(session, now)
+            structure_fuel_results += await AppFunctions.get_structure_fuel_expiries(session, now)
 
             last_update_dict: Final = dict()
             for obj in structure_fuel_results:
