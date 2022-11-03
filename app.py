@@ -36,6 +36,9 @@ app.config.from_mapping(
         "EVEONLINE_CLIENT_SECRET": os.getenv("EVEONLINE_CLIENT_SECRET", ""),
         "SQLALCHEMY_DB_URL": os.getenv("SQLALCHEMY_DB_URL", ""),
         "SEND_FILE_MAX_AGE_DEFAULT": 300,
+        "MAX_CONTENT_LENGTH": 512 * 1024,
+        "BODY_TIMEOUT": 15,
+        "RESPONSE_TIMEOUT": 15,
     }
 )
 
