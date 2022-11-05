@@ -19,7 +19,7 @@ def otel_initialize() -> opentelemetry.sdk.trace.Tracer:
     global _OTEL_INITIALIZED
     if not _OTEL_INITIALIZED:
 
-        # opentelemetry.instrumentation.aiohttp_client.AioHttpClientInstrumentor().instrument()
+        opentelemetry.instrumentation.aiohttp_client.AioHttpClientInstrumentor().instrument()
         opentelemetry.instrumentation.asyncpg.AsyncPGInstrumentor().instrument()
 
         provider: typing.Final = opentelemetry.sdk.trace.TracerProvider()
@@ -47,28 +47,14 @@ def otel(func: typing.Callable):
             async def async_wrapper(*args, **kwargs):
                 tracer = opentelemetry.trace.get_tracer_provider().get_tracer(func.__module__)
                 with tracer.start_as_current_span(func.__qualname__):
-                    try:
-                        return await func(*args, **kwargs)
-                    except Exception as ex:
-                        span = opentelemetry.trace.get_current_span()
-                        if span.is_recording():
-                            span.record_exception(ex)
-                            span.set_status(opentelemetry.trace.Status(opentelemetry.trace.StatusCode.ERROR))
-                        raise
+                    return await func(*args, **kwargs)
             return async_wrapper
         else:
             @functools.wraps(func)
             def wrapper(*args, **kwargs):
                 tracer = opentelemetry.trace.get_tracer_provider().get_tracer(func.__module__)
                 with tracer.start_as_current_span(func.__qualname__):
-                    try:
-                        return func(*args, **kwargs)
-                    except Exception as ex:
-                        span = opentelemetry.trace.get_current_span()
-                        if span.is_recording():
-                            span.record_exception(ex)
-                            span.set_status(opentelemetry.trace.Status(opentelemetry.trace.StatusCode.ERROR))
-                        raise
+                    return func(*args, **kwargs)
             return wrapper
     else:
         if asyncio.iscoroutinefunction(func):
