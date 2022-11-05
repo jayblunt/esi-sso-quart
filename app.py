@@ -12,6 +12,7 @@ import quart_session
 
 from app_functions import AppFunctions
 from db import EveDatabase, EveTables
+from middleware import RateLimiterMiddleware
 from sso import EveSSO
 from tasks import (EveAccessControlTask, EveAllianceTask, EveMoonYieldTask,
                    EveStructurePollingTask, EveStructureTask, EveTask,
@@ -276,6 +277,11 @@ if __name__ == "__main__":
 
             app.asgi_app = opentelemetry.instrumentation.asgi.OpenTelemetryMiddleware(
                 app.asgi_app
+            )
+
+            app.asgi_app = RateLimiterMiddleware(
+                app.asgi_app,
+                threshold=32
             )
 
             app.asgi_app = ProxyHeadersMiddleware(
