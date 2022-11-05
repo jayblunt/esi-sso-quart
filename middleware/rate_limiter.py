@@ -10,7 +10,7 @@ class RateLimiterMiddleware:
         self,
         app: asgiref.typing.ASGI3Application,
         threshold: int = 16,
-        interval: float = 0.25,
+        interval: float = 1,
     ) -> None:
         self.app: typing.Final = app
         self.threshold: typing.Final = threshold
@@ -47,20 +47,16 @@ class RateLimiterMiddleware:
 
 
     async def nope(self, scope: asgiref.typing.Scope, receive: asgiref.typing.ASGIReceiveCallable, send: asgiref.typing.ASGISendCallable):
-        await asyncio.sleep(self.interval * self.threshold)
         await send({
-            'type': 'http.disconnect',
+            'type': 'http.response.start',
+            'status': 400,
+            'headers': [(b'content-length', b'0')],
         })
-        # await send({
-        #     'type': 'http.response.start',
-        #     'status': 400,
-        #     'headers': [(b'content-length', b'0')],
-        # })
-        # await send({
-        #     'type': 'http.response.body',
-        #     'body': b'',
-        #     'more_body': False,
-        # })
+        await send({
+            'type': 'http.response.body',
+            'body': b'',
+            'more_body': False,
+        })
 
 
     async def __call__(

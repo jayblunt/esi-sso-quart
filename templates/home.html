@@ -1,9 +1,4 @@
-{% extends "base.html" %} {% block content %} {% include "character.html" %}
-<div class="box">
-    <h3>2022-11-04</h3>
-    <p>Basic rate limiter .. bots .. let me know if it stops working for you ..</p>
-</div>
-{% if active_timers %}
+{% extends "base.html" %} {% block content %} {% include "character.html" %} {% if active_timers %}
 <div class="box">
     <h3>Active Structure Timers</h3>
     <table>

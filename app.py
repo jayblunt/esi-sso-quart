@@ -136,12 +136,7 @@ async def _usage() -> quart.Response:
     character_id: Final = client_session.get(EveSSO.ESI_CHARACTER_ID, 0)
     if character_id > 0:
 
-        # corpporation_id: Final = client_session.get(EveSSO.ESI_CORPORATION_ID, 0)
-        # alliance_id: Final = client_session.get(EveSSO.ESI_ALLIANCE_ID, 0)
-        # character_permitted: Final = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id)
-
-        # if character_id in [92923556]:
-        if character_id in [92923556, 93692517, 96477045, 96602200, 96732252]:
+        if character_id in [92923556]:
             usage_data = None
             async with await evedb.sessionmaker() as session, session.begin():
                 usage_data = await AppFunctions.get_usage(session, now)
@@ -271,7 +266,6 @@ if __name__ == "__main__":
         config.bind = [f"{app_host}:{app_port}"]
         config.accesslog = "-"
 
-        @otel
         async def async_main():
             await evedb._initialize()
 
