@@ -12,6 +12,7 @@ import quart_session
 
 from app_functions import AppFunctions
 from db import EveDatabase, EveTables
+from middleware import RateLimiterMiddleware
 from sso import EveSSO
 from tasks import (EveAccessControlTask, EveAllianceTask, EveMoonYieldTask,
                    EveStructurePollingTask, EveStructureTask, EveTask,
@@ -36,6 +37,9 @@ app.config.from_mapping(
         "EVEONLINE_CLIENT_SECRET": os.getenv("EVEONLINE_CLIENT_SECRET", ""),
         "SQLALCHEMY_DB_URL": os.getenv("SQLALCHEMY_DB_URL", ""),
         "SEND_FILE_MAX_AGE_DEFAULT": 300,
+        "MAX_CONTENT_LENGTH": 512 * 1024,
+        "BODY_TIMEOUT": 15,
+        "RESPONSE_TIMEOUT": 15,
     }
 )
 
@@ -131,10 +135,6 @@ async def _usage() -> quart.Response:
 
     character_id: Final = client_session.get(EveSSO.ESI_CHARACTER_ID, 0)
     if character_id > 0:
-
-        # corpporation_id: Final = client_session.get(EveSSO.ESI_CORPORATION_ID, 0)
-        # alliance_id: Final = client_session.get(EveSSO.ESI_ALLIANCE_ID, 0)
-        # character_permitted: Final = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id)
 
         if character_id in [92923556]:
             usage_data = None
@@ -248,6 +248,13 @@ if __name__ == "__main__":
     app_port = app.config.get("PORT", 5050)
     app_host = app.config.get("HOST", "127.0.0.1")
 
+    # app_log_file: Final = os.path.join(app.config.get('BASEDIR', os.path.basename(os.path.abspath(os.path.splitext(__file__)[0]))), "logs", "app.log")
+    # app_log_dir: Final = os.path.dirname(app_log_file)
+    # if not os.path.isdir(app_log_dir):
+    #     os.makedirs(app_log_dir, 0o755)
+
+    # logging.basicConfig(level=logging.INFO, filename=app_log_file)
+
     if app_debug:
         app.run(host=app_host, port=app_port, debug=app_debug)
     else:
@@ -259,12 +266,16 @@ if __name__ == "__main__":
         config.bind = [f"{app_host}:{app_port}"]
         config.accesslog = "-"
 
-        @otel
         async def async_main():
             await evedb._initialize()
 
             app.asgi_app = opentelemetry.instrumentation.asgi.OpenTelemetryMiddleware(
                 app.asgi_app
+            )
+
+            app.asgi_app = RateLimiterMiddleware(
+                app.asgi_app,
+                threshold=32
             )
 
             app.asgi_app = ProxyHeadersMiddleware(

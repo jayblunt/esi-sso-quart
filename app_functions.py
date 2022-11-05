@@ -95,9 +95,16 @@ class AppFunctions:
         from app_access_history
         join esi_characters on app_access_history.character_id = esi_characters.character_id
         group by esi_characters.name
-        order by last desc;
+        order by last desc
+        limit 25;
         """
-        timer_query: Final = sqlalchemy.select((EveTables.Character.name, sqlalchemy.func.count(EveTables.AccessHistory.timestamp).label("count"), sqlalchemy.func.max(EveTables.AccessHistory.timestamp).label("last"))).join(EveTables.Character, EveTables.AccessHistory.character_id == EveTables.Character.character_id).group_by(EveTables.Character.name).order_by(sqlalchemy.desc(sqlalchemy.func.max(EveTables.AccessHistory.timestamp)))
+        timer_query: Final = (
+            sqlalchemy.select((EveTables.Character.name, sqlalchemy.func.count(EveTables.AccessHistory.timestamp).label("count"), sqlalchemy.func.max(EveTables.AccessHistory.timestamp).label("last")))
+            .join(EveTables.Character, EveTables.AccessHistory.character_id == EveTables.Character.character_id)
+            .group_by(EveTables.Character.name)
+            .order_by(sqlalchemy.desc(sqlalchemy.func.max(EveTables.AccessHistory.timestamp)))
+            .limit(25)
+        )
         timer_query_result: Final[sqlalchemy.engine.Result] = await session.execute(timer_query)
         colnames: Final = ["name", "count", "last"]
         return [dict(zip(colnames, x)) for x in timer_query_result.all()]
