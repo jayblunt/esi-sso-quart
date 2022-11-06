@@ -3,6 +3,7 @@ import collections
 import collections.abc
 import datetime
 import inspect
+import random
 import zoneinfo
 from typing import Final
 
@@ -173,7 +174,7 @@ class EveStructureTask(EveTask):
         structures: Final = await self.get_pages(url, access_token)
 
         if len(structures) == 0:
-            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: structures: {structures}")
+            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: corporation_id: {corporation_id}, structures: {structures}")
             return
 
         type_id_set: Final = set()
@@ -209,8 +210,8 @@ class EveStructureTask(EveTask):
             history_obj = EveTables.StructureHistory(character_id=character_id, structure_id=int(x.get("structure_id", 0)), json=x)
             structure_history_obj_set.add(history_obj)
 
-        self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: corporation_id_set: {sorted(list(corporation_id_set))}")
-        self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: structure_id_set: {sorted(list(structure_id_set))}")
+        # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: corporation_id_set: {sorted(list(corporation_id_set))}")
+        # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: structure_id_set: {sorted(list(structure_id_set))}")
 
         # Add missing types
         if len(type_id_set) > 0:
@@ -238,7 +239,7 @@ class EveStructureTask(EveTask):
                 completed_extraction_query_result: Final[sqlalchemy.engine.Result] = await session.execute(completed_extraction_query)
                 completed_extraction_obj_list: Final[list[EveTables.CompletedExtraction]] = [x for x in completed_extraction_query_result.scalars()]
                 if len(completed_extraction_obj_list) > 0:
-                    self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: completed_extraction_obj_list: {sorted(list(map(lambda x: x.structure_id, completed_extraction_obj_list)))}")
+                    # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: completed_extraction_obj_list: {sorted(list(map(lambda x: x.structure_id, completed_extraction_obj_list)))}")
                     [await session.delete(x) for x in completed_extraction_obj_list]
                     await session.commit()
         except sqlalchemy.exc.StatementError as ex:
@@ -254,7 +255,7 @@ class EveStructureTask(EveTask):
                 scheduled_extraction_query_result: Final[sqlalchemy.engine.Result] = await session.execute(scheduled_extraction_query)
                 scheduled_extraction_obj_list: Final[list[EveTables.ScheduledExtraction]] = [x for x in scheduled_extraction_query_result.scalars()]
                 if len(scheduled_extraction_obj_list) > 0:
-                    self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: scheduled_extraction_obj_list: {sorted(list(map(lambda x: x.structure_id, scheduled_extraction_obj_list)))}")
+                    # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: scheduled_extraction_obj_list: {sorted(list(map(lambda x: x.structure_id, scheduled_extraction_obj_list)))}")
                     [await session.delete(x) for x in scheduled_extraction_obj_list]
                     await session.commit()
         except sqlalchemy.exc.StatementError as ex:
@@ -270,7 +271,7 @@ class EveStructureTask(EveTask):
                 existing_obj_list: Final[list[EveTables.Structure]] = [x for x in all_structures_query_result.scalars()]
 
                 if len(existing_obj_list) > 0:
-                    self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: existing_obj_list: {sorted(list(map(lambda x: x.structure_id, existing_obj_list)))}")
+                    # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: existing_obj_list: {sorted(list(map(lambda x: x.structure_id, existing_obj_list)))}")
                     [await session.delete(x) for x in existing_obj_list]
 
                 if len(structure_obj_set) > 0:
@@ -288,7 +289,7 @@ class EveStructureTask(EveTask):
         extractions: Final = await self.get_pages(url, access_token)
 
         if len(extractions) == 0:
-            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: extractions: {extractions}")
+            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: corporation_id: {corporation_id}, extractions: {extractions}")
             return
 
         moon_id_set: Final = set()
@@ -407,7 +408,7 @@ class EveStructurePollingTask(EveStructureTask):
     @otel
     async def run_once(self, client_session: collections.abc.MutableSet):
         # refresh_buffer: Final = datetime.timedelta(seconds=30)
-        refresh_buffer: Final = datetime.timedelta(seconds=30)
+        refresh_buffer: Final = datetime.timedelta(seconds=20)
         refresh_interval: Final = datetime.timedelta(seconds=300) - refresh_buffer
 
         now: Final = datetime.datetime.now(tz=datetime.timezone.utc)
@@ -419,6 +420,7 @@ class EveStructurePollingTask(EveStructureTask):
                 query = (
                     sqlalchemy.select(EveTables.PeriodicCredentials)
                     .where(EveTables.PeriodicCredentials.is_permitted.is_(True))
+                    .where(EveTables.PeriodicCredentials.access_token_exiry > now)
                     .order_by(sqlalchemy.asc(EveTables.PeriodicCredentials.access_token_exiry))
                 )
                 results: sqlalchemy.engine.Result = await session.execute(query)
@@ -436,75 +438,85 @@ class EveStructurePollingTask(EveStructureTask):
             otel_add_exception(ex)
             self.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
 
-        self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: available_corporation_id_dict: {sorted(available_corporation_id_dict.keys())}")
+        # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: available_corporation_id_dict: {sorted(available_corporation_id_dict.keys())}")
 
         # Throw this in for now, need something cleaner.
         refresh_history_dict: Final = {x: datetime.datetime(2000, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc) for x in available_corporation_id_dict.keys()}
         try:
             async with await self.db.sessionmaker() as session:
                 query = (
-                    sqlalchemy.select(EveTables.RefreshHistory)
-                    .where(EveTables.RefreshHistory.corporation_id.in_(available_corporation_id_dict.keys()))
+                    sqlalchemy.select(EveTables.PeriodicTimestamp)
+                    .where(EveTables.PeriodicTimestamp.corporation_id.in_(available_corporation_id_dict.keys()))
                 )
                 results: sqlalchemy.engine.Result = await session.execute(query)
                 obj_list = [x for x in results.scalars()]
                 if len(obj_list) > 0:
                     for x in obj_list:
-                        if isinstance(x, EveTables.RefreshHistory):
+                        if isinstance(x, EveTables.PeriodicTimestamp):
                             refresh_history_dict[x.corporation_id] = x.timestamp
         except Exception as ex:
             otel_add_exception(ex)
             self.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
 
-        self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh_history_dict: {str(refresh_history_dict)}")
+        # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh_history_dict: {str(refresh_history_dict)}")
 
-        refresh_corporation_id = sorted(refresh_history_dict.keys(), key=lambda x: refresh_history_dict[x])[0]
-        refresh_timestamp = refresh_history_dict[refresh_corporation_id]
+        oldest_corporation_id = sorted(refresh_history_dict.keys(), key=lambda x: refresh_history_dict[x])[0]
+        oldest_timestamp = refresh_history_dict[oldest_corporation_id]
 
-        self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh_corporation_id: {refresh_corporation_id}, refresh_timestamp: {refresh_timestamp}")
+        # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: oldest_corporation_id: {oldest_corporation_id}, oldest_timestamp: {oldest_timestamp}")
 
-        corporation_id: Final = refresh_corporation_id
-
-        if refresh_timestamp + refresh_interval > now:
-            remaining_interval: Final[datetime.timedelta] = refresh_timestamp + refresh_interval + refresh_buffer - now
-            otel_add_event(inspect.currentframe().f_code.co_name, {"remaining_interval": remaining_interval.total_seconds(), "corporation_id": corporation_id})
-            remaining_sleep_interval: Final = int(min(refresh_interval.total_seconds(), remaining_interval.total_seconds()))
-            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: remaining_interval: {remaining_interval.total_seconds()}, remaining_sleep_interval: {remaining_sleep_interval}")
+        if oldest_timestamp + refresh_interval > now:
+            remaining_interval: Final[datetime.timedelta] = oldest_timestamp + refresh_interval + refresh_buffer - now
+            otel_add_event(inspect.currentframe().f_code.co_name, {"remaining_interval": remaining_interval.total_seconds(), "refresh_corporation_id": oldest_corporation_id})
+            remaining_sleep_interval: Final = min(refresh_interval.total_seconds(), remaining_interval.total_seconds())
+            # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: remaining_interval: {remaining_interval.total_seconds()}, remaining_sleep_interval: {remaining_sleep_interval}")
             await asyncio.sleep(remaining_sleep_interval)
             return
 
-        character_id: Final = available_corporation_id_dict[refresh_corporation_id].character_id
-        access_token: Final = available_corporation_id_dict[refresh_corporation_id].access_token
+        # Should make these asyncio tasks ...
+        refresh_count = 0
+        for corporation_id, oldest_timestamp in refresh_history_dict.items():
+            if oldest_timestamp + refresh_interval > now:
+                continue
 
-        otel_add_event(inspect.currentframe().f_code.co_name, {"character_id": character_id, "corporation_id": corporation_id})
-        self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: updating corporation_id:{corporation_id} with character_id:{character_id}")
+            character_id: Final = available_corporation_id_dict[corporation_id].character_id
+            access_token: Final = available_corporation_id_dict[corporation_id].access_token
 
-        # XXX: fixme
-        # need structures first, because of the db relationships .. urgh
-        await self.run_structures(now, character_id, corporation_id, access_token)
-        await self.run_extractions(now, character_id, corporation_id, access_token)
+            otel_add_event(inspect.currentframe().f_code.co_name, {"character_id": character_id, "corporation_id": corporation_id})
+            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: updating corporation_id: {corporation_id} with character_id: {character_id}")
 
-        try:
-            async with await self.db.sessionmaker() as session, session.begin():
-                query = (
-                    sqlalchemy.select(EveTables.RefreshHistory)
-                    .where(EveTables.RefreshHistory.corporation_id == corporation_id)
-                )
-                results: sqlalchemy.engine.Result = await session.execute(query)
-                obj_list = [x for x in results.scalars()]
-                if len(obj_list) > 0:
-                    for x in obj_list:
-                        if isinstance(x, EveTables.RefreshHistory):
-                            x.timestamp = datetime.datetime.now(tz=datetime.timezone.utc)
-                            x.character_id = character_id
-                else:
-                    session.add(EveTables.RefreshHistory(corporation_id=corporation_id, character_id=character_id))
-                await session.commit()
-        except Exception as ex:
-            otel_add_exception(ex)
-            self.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
+            # XXX: fixme
+            # need structures first, because of the db relationships .. urgh
+            await self.run_structures(now, character_id, corporation_id, access_token)
+            await self.run_extractions(now, character_id, corporation_id, access_token)
 
-        await asyncio.sleep(int(refresh_buffer.total_seconds()))
+            refresh_count += 1
+            refresh_wobble: Final = datetime.timedelta(seconds=random.randrange(refresh_interval.total_seconds())) - refresh_interval / 2
+            # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh_wobble: {refresh_wobble.total_seconds()}")
+
+            try:
+                async with await self.db.sessionmaker() as session, session.begin():
+                    query = (
+                        sqlalchemy.select(EveTables.PeriodicTimestamp)
+                        .where(EveTables.PeriodicTimestamp.corporation_id == corporation_id)
+                    )
+                    results: sqlalchemy.engine.Result = await session.execute(query)
+                    obj_list = [x for x in results.scalars()]
+                    if len(obj_list) > 0:
+                        for x in obj_list:
+                            if isinstance(x, EveTables.PeriodicTimestamp):
+                                x.timestamp = now + refresh_wobble
+                                x.character_id = character_id
+                    else:
+                        session.add(EveTables.PeriodicTimestamp(corporation_id=corporation_id, character_id=character_id))
+                    await session.commit()
+            except Exception as ex:
+                otel_add_exception(ex)
+                self.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
+
+        otel_add_event(inspect.currentframe().f_code.co_name, {"refresh_count": refresh_count})
+        # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh_count {refresh_count}")
+        # await asyncio.sleep(int(refresh_buffer.total_seconds()))
 
     async def run(self, client_session: collections.abc.MutableSet):
         tracer: Final = opentelemetry.trace.get_tracer_provider().get_tracer(inspect.currentframe().f_code.co_name)

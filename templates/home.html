@@ -1,4 +1,12 @@
-{% extends "base.html" %} {% block content %} {% include "character.html" %} {% if active_timers %}
+{% extends "base.html" %} {% block content %} {% include "character.html" %}
+<div class="box">
+    <h3>2022-11-06</h3>
+    <p>Update: Should be fixed now - but completed extractions will take a while to catch up. Thanks Aaben for letting me know!</p>
+    <p>If the information here is missing or wrong, let me know in game.</p>
+    <!-- <h3>2022-11-05</h3>
+    <p>I did not handle the case where all the structures in a corporation got wiped out. I do now. Sorry GRRRvana, I'm sure they will be replaced ..</p> -->
+</div>
+{% if active_timers %}
 <div class="box">
     <h3>Active Structure Timers</h3>
     <table>
