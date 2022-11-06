@@ -3,8 +3,6 @@ import asyncio
 import collections
 import collections.abc
 import inspect
-import json
-import os
 from typing import Any, Final
 
 import aiohttp
@@ -14,6 +12,7 @@ import sqlalchemy.ext.asyncio
 import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
+
 from db import EveTables
 from sso import EveSSO
 from telemetry import otel, otel_add_error

@@ -6,22 +6,23 @@ import inspect
 import logging
 import urllib.parse
 import uuid
-import zoneinfo
-from typing import Final, Optional
+from typing import Final
 
 import aiohttp
 import aiohttp.client_exceptions
 import dateutil.parser
 import jose.exceptions
 import jose.jwt
+import opentelemetry.trace
 import quart
 import sqlalchemy
 import sqlalchemy.ext.asyncio
 import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
-from db import EveAccessType, EveAuthType, EveDatabase, EveTables
-from telemetry import otel, otel_add_event, otel_add_error, otel_add_exception
+
+from db import EveAuthType, EveDatabase, EveTables
+from telemetry import otel, otel_add_error, otel_add_event, otel_add_exception
 
 
 class EveSSO:
@@ -163,7 +164,6 @@ class EveSSO:
         payload: Final = await self._get_json(url)
         return payload.get("keys", [])
 
-    @otel
     async def _refresh_jwks_task(self) -> None:
         while True:
             await asyncio.sleep(300)
@@ -175,7 +175,6 @@ class EveSSO:
                 otel_add_exception(ex)
                 self.app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
 
-    @otel
     async def _refresh_token_task(self) -> None:
         refresh_buffer: Final = datetime.timedelta(seconds=15)
         refresh_interval: Final = datetime.timedelta(seconds=60) - refresh_buffer
@@ -186,9 +185,9 @@ class EveSSO:
             async with await self.db.sessionmaker() as session, session.begin():
                 query = sqlalchemy.select(EveTables.PeriodicCredentials).where(EveTables.PeriodicCredentials.is_permitted.is_(True)).order_by(sqlalchemy.asc(EveTables.PeriodicCredentials.access_token_exiry)).limit(1)
                 results = await session.execute(query)
-                obj_set = {x for x in results.scalars()}
-                if len(obj_set) > 0:
-                    refresh_obj = obj_set.pop()
+                obj_list = [x for x in results.scalars()]
+                if len(obj_list) > 0:
+                    refresh_obj = obj_list.pop(0)
 
             if refresh_obj is None:
                 await asyncio.sleep(refresh_interval.total_seconds())

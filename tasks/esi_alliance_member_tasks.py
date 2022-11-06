@@ -10,6 +10,7 @@ import sqlalchemy.ext.asyncio
 import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
+
 from db import EveTables
 from sso import EveSSO
 from telemetry import otel, otel_add_error, otel_add_exception
@@ -64,6 +65,7 @@ class EveEsiAlliancMemberTask(EveTask):
                         await session.commit()
             except sqlalchemy.exc.StatementError as ex:
                 otel_add_exception(ex)
+                self.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
 
         if len(corporation_id_set) > 0:
 

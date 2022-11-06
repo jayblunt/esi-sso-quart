@@ -1,6 +1,7 @@
 import collections
 import collections.abc
 import dataclasses
+import inspect
 import json
 import os
 from typing import Final
@@ -11,6 +12,7 @@ import sqlalchemy.ext.asyncio
 import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
+
 from db import EveTables
 from telemetry import otel, otel_add_exception
 
@@ -65,3 +67,4 @@ class EveMoonYieldTask(EveTask):
                         await session.commit()
             except sqlalchemy.exc.StatementError as ex:
                 otel_add_exception(ex)
+                self.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")

@@ -8,6 +8,7 @@ import typing
 
 import aiohttp
 import aiohttp.client_exceptions
+
 from db import EveDatabase
 from telemetry import otel, otel_add_error
 

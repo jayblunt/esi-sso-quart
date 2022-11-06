@@ -138,7 +138,8 @@ async def _usage() -> quart.Response:
 
         if character_id in [92923556]:
             usage_data = None
-            async with await evedb.sessionmaker() as session, session.begin():
+            # async with await evedb.sessionmaker() as session, session.begin():
+            async with await evedb.sessionmaker() as session:
                 usage_data = await AppFunctions.get_usage(session, now)
 
             return await quart.render_template(
@@ -199,7 +200,8 @@ async def root() -> quart.Response:
         structure_fuel_results: Final = list()
         last_update_results: Final = list()
 
-        async with await evedb.sessionmaker() as session, session.begin():
+        # async with await evedb.sessionmaker() as session, session.begin():
+        async with await evedb.sessionmaker() as session:
 
             active_timer_results += await AppFunctions.get_active_timers(session, now)
             completed_extraction_results += await AppFunctions.get_completed_extractions(session, now)

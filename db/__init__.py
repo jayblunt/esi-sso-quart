@@ -255,6 +255,16 @@ class EveTables:
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(timestamp={self.timestamp}, character_id={self.character_id}, path={self.path})"
 
+    class RefreshHistory(Base):
+        __tablename__ = "app_refresh_history"
+        id = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.Sequence("app_refresh_history_id_srq", start=1), primary_key=True)
+        timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
+        character_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+        corporation_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}(timestamp={self.timestamp}, character_id={self.character_id}, corporation_id={self.corporation_id})"
+
     class AuthLog(Base):
         __tablename__ = "app_auth_log"
         timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), primary_key=True, server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
