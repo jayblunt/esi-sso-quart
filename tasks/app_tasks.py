@@ -467,7 +467,7 @@ class EveStructurePollingTask(EveStructureTask):
 
         if oldest_timestamp + refresh_interval > now:
             remaining_interval: Final[datetime.timedelta] = oldest_timestamp + refresh_interval + refresh_buffer - now
-            otel_add_event(inspect.currentframe().f_code.co_name, {"remaining_interval": remaining_interval.total_seconds(), "refresh_corporation_id": oldest_corporation_id})
+            # otel_add_event(inspect.currentframe().f_code.co_name, {"remaining_interval": remaining_interval.total_seconds(), "refresh_corporation_id": oldest_corporation_id})
             remaining_sleep_interval: Final = min(refresh_interval.total_seconds(), remaining_interval.total_seconds())
             # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: remaining_interval: {remaining_interval.total_seconds()}, remaining_sleep_interval: {remaining_sleep_interval}")
             await asyncio.sleep(remaining_sleep_interval)
@@ -482,7 +482,7 @@ class EveStructurePollingTask(EveStructureTask):
             character_id: Final = available_corporation_id_dict[corporation_id].character_id
             access_token: Final = available_corporation_id_dict[corporation_id].access_token
 
-            otel_add_event(inspect.currentframe().f_code.co_name, {"character_id": character_id, "corporation_id": corporation_id})
+            # otel_add_event(inspect.currentframe().f_code.co_name, {"character_id": character_id, "corporation_id": corporation_id})
             self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: updating corporation_id: {corporation_id} with character_id: {character_id}")
 
             # XXX: fixme
@@ -514,7 +514,7 @@ class EveStructurePollingTask(EveStructureTask):
                 otel_add_exception(ex)
                 self.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
 
-        otel_add_event(inspect.currentframe().f_code.co_name, {"refresh_count": refresh_count})
+        # otel_add_event(inspect.currentframe().f_code.co_name, {"refresh_count": refresh_count})
         # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh_count {refresh_count}")
         # await asyncio.sleep(int(refresh_buffer.total_seconds()))
 

@@ -19,7 +19,7 @@ def otel_initialize() -> opentelemetry.sdk.trace.Tracer:
     global _OTEL_INITIALIZED
     if not _OTEL_INITIALIZED:
 
-        opentelemetry.instrumentation.aiohttp_client.AioHttpClientInstrumentor().instrument()
+        # opentelemetry.instrumentation.aiohttp_client.AioHttpClientInstrumentor().instrument()
         opentelemetry.instrumentation.asyncpg.AsyncPGInstrumentor().instrument()
 
         provider: typing.Final = opentelemetry.sdk.trace.TracerProvider()
@@ -76,7 +76,7 @@ def otel_add_event(name: str, attributes: dict | None = None) -> None:
 
     span = opentelemetry.trace.get_current_span()
     if span.is_recording():
-        span.add_event(name, attributes=attributes)
+        span.add_event(name, attributes={f"event.{k}": v for k, v in attributes.items()})
 
 
 def otel_add_error(description: str | None = None) -> None:
