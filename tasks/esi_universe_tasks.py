@@ -15,7 +15,7 @@ import sqlalchemy.sql
 
 from db import EveTables
 from sso import EveSSO
-from telemetry import otel, otel_add_error
+from telemetry import otel, otel_add_error, otel_add_exception
 
 from .task import EveTask
 
@@ -79,31 +79,36 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
         #     with open(cache_filename) as ifp:
         #         cache_dict |= {self.object_id(x): x for x in [self.object_class(**edict) for edict in json.load(ifp)]}
 
-        async with await self.db.sessionmaker() as session, session.begin():
+        try:
+            async with await self.db.sessionmaker() as session, session.begin():
 
-            existing_query = sqlalchemy.select(self.object_class)
-            existing_query_result = await session.execute(existing_query)
-            existing_obj_set: Final = {x for x in existing_query_result.scalars()}
-            existing_obj_id_set: Final = {self.object_id(x) for x in existing_obj_set}
+                existing_query = sqlalchemy.select(self.object_class)
+                existing_query_result = await session.execute(existing_query)
+                existing_obj_set: Final = {x for x in existing_query_result.scalars()}
+                existing_obj_id_set: Final = {self.object_id(x) for x in existing_obj_set}
 
-            obj_set: Final = set()
-            missing_obj_id_set = obj_id_set - existing_obj_id_set
-            if len(missing_obj_id_set) > 0:
-                async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as http_session:
-                    task_list: Final = list()
-                    for obj_id in missing_obj_id_set:
-                        self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{str(self.object_class.__name__)}({obj_id})"))
-                        task_list.append(asyncio.ensure_future(self._get_item(obj_id, http_session)))
+                obj_set: Final = set()
+                missing_obj_id_set = obj_id_set - existing_obj_id_set
+                if len(missing_obj_id_set) > 0:
+                    async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as http_session:
+                        task_list: Final = list()
+                        for obj_id in missing_obj_id_set:
+                            self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{str(self.object_class.__name__)}({obj_id})"))
+                            task_list.append(asyncio.ensure_future(self._get_item(obj_id, http_session)))
 
-                    if len(task_list) > 0:
-                        for obj in await asyncio.gather(*task_list):
-                            if obj is None:
-                                continue
-                            obj_set.add(obj)
+                        if len(task_list) > 0:
+                            for obj in await asyncio.gather(*task_list):
+                                if obj is None:
+                                    continue
+                                obj_set.add(obj)
 
-            if len(obj_set) > 0:
-                session.add_all(obj_set)
-                await session.commit()
+                if len(obj_set) > 0:
+                    session.add_all(obj_set)
+                    await session.commit()
+
+        except Exception as ex:
+            otel_add_exception(ex)
+            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
 
         # async with await self.db.sessionmaker() as session, session.begin():
         #     existing_query = sqlalchemy.select(self.object_class)

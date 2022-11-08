@@ -9,7 +9,7 @@ import sqlalchemy.orm
 import sqlalchemy.sql
 
 from db import EveAccessType, EveTables
-from telemetry import otel
+from telemetry import otel, otel_add_exception
 
 from .task import EveTask
 
@@ -28,14 +28,20 @@ class EveAccessControlTask(EveTask):
             EveTables.AccessControls(type=EveAccessType.CORPORATION, id=98629865, permit=True),
         }
 
-        async with await self.db.sessionmaker() as session, session.begin():
-            existing_acl_set: Final = set()
-            existing_query = sqlalchemy.select(EveTables.AccessControls)
-            existing_query_result = await session.execute(existing_query)
-            existing_acl_set |= {x for x in existing_query_result.scalars()}
+        try:
+            async with await self.db.sessionmaker() as session, session.begin():
 
-            if len(existing_acl_set) == 0:
-                session.add_all(acl_bootstrap_set)
-                await session.commit()
+                existing_acl_set: Final = set()
+                existing_query = sqlalchemy.select(EveTables.AccessControls)
+                existing_query_result = await session.execute(existing_query)
+                existing_acl_set |= {x for x in existing_query_result.scalars()}
+
+                if len(existing_acl_set) == 0:
+                    session.add_all(acl_bootstrap_set)
+                    await session.commit()
+
+        except Exception as ex:
+            otel_add_exception(ex)
+            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
 
         self.logger.info(f"< {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")

@@ -65,6 +65,7 @@ class EveMoonYieldTask(EveTask):
 
                     if any([len(existing_obj_set) > 0, len(obj_set) > 0]):
                         await session.commit()
-            except sqlalchemy.exc.StatementError as ex:
+
+            except Exception as ex:
                 otel_add_exception(ex)
                 self.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")

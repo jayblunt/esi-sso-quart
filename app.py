@@ -1,9 +1,10 @@
 import asyncio
 import datetime
+import inspect
 import logging
 import os
 import uuid
-from typing import Final
+import typing
 
 import opentelemetry.instrumentation.asgi
 import quart
@@ -20,7 +21,7 @@ from tasks import (EveAccessControlTask, EveAllianceTask, EveMoonYieldTask,
                    EveUniverseSystemsTask)
 from telemetry import otel, otel_initialize
 
-app: Final = quart.Quart(__name__)
+app: typing.Final = quart.Quart(__name__)
 
 app.logger.setLevel(logging.INFO)
 
@@ -43,19 +44,19 @@ app.config.from_mapping(
     }
 )
 
-evesso_config: Final = {
+evesso_config: typing.Final = {
     "client_id": app.config.get("EVEONLINE_CLIENT_ID"),
     "client_secret": app.config.get("EVEONLINE_CLIENT_SECRET"),
     "scopes": ["publicData", "esi-characters.read_corporation_roles.v1",
                "esi-corporations.read_structures.v1", "esi-industry.read_corporation_mining.v1"]
 }
 
-evedb: Final = EveDatabase(
+evedb: typing.Final = EveDatabase(
     app.config.get("SQLALCHEMY_DB_URL", "sqlite+pysqlite://"),
 )
 quart_session.Session(app)
-evesso: Final = EveSSO(app, evedb, **evesso_config)
-evesession: Final = app.session_interface.session_class(sid="global", permanent=False)
+evesso: typing.Final = EveSSO(app, evedb, **evesso_config)
+evesession: typing.Final = app.session_interface.session_class(sid="global", permanent=False)
 evesession[EveTask.CONFIGDIR] = os.path.abspath(os.path.join(app.config.get("BASEDIR", "."), "data"))
 
 
@@ -85,7 +86,7 @@ async def error_404(path: str) -> quart.Response:
 @app.template_filter("login_type")
 @otel
 def _login_type(input: str):
-    client_session: Final = quart.session
+    client_session: typing.Final = quart.session
     login_type = client_session.get(EveSSO.APP_SESSION_TYPE, "USER")
     if login_type == "CONTRIBUTOR":
         return "contributor"
@@ -96,7 +97,7 @@ def _login_type(input: str):
 @app.template_filter("structure_state")
 @otel
 def _structure_state(state: str) -> str:
-    map: Final = {
+    map: typing.Final = {
         "deploy_vulnerable": "Deploy / Vulnerable",
         "anchoring": "Anchoring",
         "anchor_vulnerable": "Anchoring / Vulnerable",
@@ -113,7 +114,7 @@ def _structure_state(state: str) -> str:
 @app.template_filter("timestamp_age")
 @otel
 def _timestamp_age(dt: datetime.datetime) -> str:
-    age_days: Final = (datetime.datetime.now(datetime.timezone.utc) - dt.replace(tzinfo=datetime.timezone.utc)).days
+    age_days: typing.Final = (datetime.datetime.now(datetime.timezone.utc) - dt.replace(tzinfo=datetime.timezone.utc)).days
     if age_days >= 3:
         return "stale"
     return "fresh"
@@ -129,19 +130,28 @@ def _datetime(dt: datetime.datetime) -> str:
 @otel
 async def _usage() -> quart.Response:
 
-    client_session: Final = quart.session
+    client_session: typing.Final = quart.session
 
-    now: Final = datetime.datetime.now(tz=datetime.timezone.utc)
+    now: typing.Final = datetime.datetime.now(tz=datetime.timezone.utc)
 
-    character_id: Final = client_session.get(EveSSO.ESI_CHARACTER_ID, 0)
+    character_id: typing.Final = client_session.get(EveSSO.ESI_CHARACTER_ID, 0)
     if character_id > 0:
 
         # if character_id in [92923556]:
-        if character_id in [92923556, 93692517, 96477045, 96602200, 96732252]:
-            usage_data = None
-            # async with await evedb.sessionmaker() as session, session.begin():
-            async with await evedb.sessionmaker() as session:
-                usage_data = await AppFunctions.get_usage(session, now)
+        permitted_character_ids = {92923556}
+        permitted_character_ids = permitted_character_ids.union({2115300524})
+        permitted_character_ids = permitted_character_ids.union({2113162721})
+        permitted_character_ids = permitted_character_ids.union({93692517, 96477045, 96602200, 96732252})
+        if character_id in permitted_character_ids:
+            usage_data = list()
+
+            try:
+                async with await evedb.sessionmaker() as session:
+
+                    usage_data = await AppFunctions.get_usage(session, now)
+
+            except Exception as ex:
+                app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
 
             return await quart.render_template(
                 "usage.html",
@@ -155,16 +165,22 @@ async def _usage() -> quart.Response:
 @app.route("/about/", methods=["GET"])
 @otel
 async def _about() -> quart.Response:
-    client_session: Final = quart.session
-    character_id: Final = client_session.get(EveSSO.ESI_CHARACTER_ID, 0)
+    client_session: typing.Final = quart.session
+    character_id: typing.Final = client_session.get(EveSSO.ESI_CHARACTER_ID, 0)
     if character_id > 0:
 
-        corpporation_id: Final = client_session.get(EveSSO.ESI_CORPORATION_ID, 0)
-        alliance_id: Final = client_session.get(EveSSO.ESI_ALLIANCE_ID, 0)
-        character_permitted: Final = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id)
-        async with await evedb.sessionmaker() as session, session.begin():
-            session.add(EveTables.AccessHistory(character_id=character_id, permitted=bool(character_permitted), path=quart.request.path))
-            await session.commit()
+        corpporation_id: typing.Final = client_session.get(EveSSO.ESI_CORPORATION_ID, 0)
+        alliance_id: typing.Final = client_session.get(EveSSO.ESI_ALLIANCE_ID, 0)
+        character_permitted: typing.Final = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id)
+
+        try:
+            async with await evedb.sessionmaker() as session, session.begin():
+
+                session.add(EveTables.AccessHistory(character_id=character_id, permitted=bool(character_permitted), path=quart.request.path))
+                await session.commit()
+
+        except Exception as ex:
+            app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
 
     return await quart.render_template("about.html")
 
@@ -173,51 +189,58 @@ async def _about() -> quart.Response:
 @otel
 async def root() -> quart.Response:
 
-    client_session: Final = quart.session
+    client_session: typing.Final = quart.session
 
-    now: Final = datetime.datetime.now(tz=datetime.timezone.utc)
+    now: typing.Final = datetime.datetime.now(tz=datetime.timezone.utc)
 
-    character_id: Final = client_session.get(EveSSO.ESI_CHARACTER_ID, 0)
-    corpporation_id: Final = client_session.get(EveSSO.ESI_CORPORATION_ID, 0)
-    alliance_id: Final = client_session.get(EveSSO.ESI_ALLIANCE_ID, 0)
+    character_id: typing.Final = client_session.get(EveSSO.ESI_CHARACTER_ID, 0)
+    corpporation_id: typing.Final = client_session.get(EveSSO.ESI_CORPORATION_ID, 0)
+    alliance_id: typing.Final = client_session.get(EveSSO.ESI_ALLIANCE_ID, 0)
 
-    character_permitted: Final = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id)
+    character_permitted: typing.Final = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id)
 
     if character_id > 0:
 
-        async with await evedb.sessionmaker() as session, session.begin():
+        try:
+            async with await evedb.sessionmaker() as session, session.begin():
 
-            session.add(EveTables.AccessHistory(character_id=character_id, permitted=bool(character_permitted), path=quart.request.path))
-            await session.commit()
+                session.add(EveTables.AccessHistory(character_id=character_id, permitted=bool(character_permitted), path=quart.request.path))
+                await session.commit()
+
+        except Exception as ex:
+            app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
 
     if character_id > 0 and character_permitted:
 
         if bool(client_session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)):
             EveStructureTask(client_session, evedb, app.logger)
 
-        active_timer_results: Final = list()
-        completed_extraction_results: Final = list()
-        scheduled_extraction_results: Final = list()
-        structure_fuel_results: Final = list()
-        last_update_results: Final = list()
+        active_timer_results: typing.Final = list()
+        completed_extraction_results: typing.Final = list()
+        scheduled_extraction_results: typing.Final = list()
+        structure_fuel_results: typing.Final = list()
+        last_update_results: typing.Final = list()
 
-        # async with await evedb.sessionmaker() as session, session.begin():
-        async with await evedb.sessionmaker() as session:
+        try:
+            async with await evedb.sessionmaker() as session:
 
-            active_timer_results += await AppFunctions.get_active_timers(session, now)
-            completed_extraction_results += await AppFunctions.get_completed_extractions(session, now)
-            scheduled_extraction_results += await AppFunctions.get_scheduled_extractions(session, now)
-            structure_fuel_results += await AppFunctions.get_structure_fuel_expiries(session, now)
+                active_timer_results += await AppFunctions.get_active_timers(session, now)
+                completed_extraction_results += await AppFunctions.get_completed_extractions(session, now)
+                scheduled_extraction_results += await AppFunctions.get_scheduled_extractions(session, now)
+                structure_fuel_results += await AppFunctions.get_structure_fuel_expiries(session, now)
 
-            last_update_dict: Final = dict()
-            for obj in structure_fuel_results:
-                if isinstance(obj, EveTables.Structure):
-                    if obj.corporation_id not in last_update_dict.keys():
-                        last_update_dict[obj.corporation_id] = obj
-                    elif obj.timestamp > last_update_dict[obj.corporation_id].timestamp:
-                        last_update_dict[obj.corporation_id] = obj
+                last_update_dict: typing.Final = dict()
+                for obj in structure_fuel_results:
+                    if isinstance(obj, EveTables.Structure):
+                        if obj.corporation_id not in last_update_dict.keys():
+                            last_update_dict[obj.corporation_id] = obj
+                        elif obj.timestamp > last_update_dict[obj.corporation_id].timestamp:
+                            last_update_dict[obj.corporation_id] = obj
 
-            last_update_results += sorted(last_update_dict.values(), reverse=False, key=lambda x: x.timestamp)
+                last_update_results += sorted(last_update_dict.values(), reverse=False, key=lambda x: x.timestamp)
+
+        except Exception as ex:
+            app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
 
         return await quart.render_template(
             "home.html",
@@ -251,8 +274,8 @@ if __name__ == "__main__":
     app_port = app.config.get("PORT", 5050)
     app_host = app.config.get("HOST", "127.0.0.1")
 
-    # app_log_file: Final = os.path.join(app.config.get('BASEDIR', os.path.basename(os.path.abspath(os.path.splitext(__file__)[0]))), "logs", "app.log")
-    # app_log_dir: Final = os.path.dirname(app_log_file)
+    # app_log_file: typing.Final = os.path.join(app.config.get('BASEDIR', os.path.basename(os.path.abspath(os.path.splitext(__file__)[0]))), "logs", "app.log")
+    # app_log_dir: typing.Final = os.path.dirname(app_log_file)
     # if not os.path.isdir(app_log_dir):
     #     os.makedirs(app_log_dir, 0o755)
 

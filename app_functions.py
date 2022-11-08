@@ -115,8 +115,8 @@ class AppFunctions:
         acl_pass = False
 
         acl_set: Final = set()
-        # async with await evedb.sessionmaker() as session, session.begin():
         async with await evedb.sessionmaker() as session:
+
             acl_query = sqlalchemy.select(EveTables.AccessControls)
             acl_query_result = await session.execute(acl_query)
             acl_set |= {x for x in acl_query_result.scalars()}

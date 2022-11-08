@@ -182,12 +182,19 @@ class EveSSO:
             now: Final = datetime.datetime.now(tz=datetime.timezone.utc)
 
             refresh_obj: EveTables.PeriodicCredentials = None
-            async with await self.db.sessionmaker() as session, session.begin():
-                query = sqlalchemy.select(EveTables.PeriodicCredentials).where(EveTables.PeriodicCredentials.is_permitted.is_(True)).order_by(sqlalchemy.asc(EveTables.PeriodicCredentials.access_token_exiry)).limit(1)
-                results = await session.execute(query)
-                obj_list = [x for x in results.scalars()]
-                if len(obj_list) > 0:
-                    refresh_obj = obj_list.pop(0)
+            try:
+                async with await self.db.sessionmaker() as session, session.begin():
+
+                    query = sqlalchemy.select(EveTables.PeriodicCredentials).where(EveTables.PeriodicCredentials.is_permitted.is_(True)).order_by(sqlalchemy.asc(EveTables.PeriodicCredentials.access_token_exiry)).limit(1)
+                    results = await session.execute(query)
+                    obj_list = [x for x in results.scalars()]
+
+                    if len(obj_list) > 0:
+                        refresh_obj = obj_list.pop(0)
+
+            except Exception as ex:
+                otel_add_exception(ex)
+                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
 
             if refresh_obj is None:
                 await asyncio.sleep(refresh_interval.total_seconds())
@@ -209,46 +216,58 @@ class EveSSO:
                 EveSSO.ESI_REFRESH_TOKEN: refresh_obj.refresh_token,
             })
 
-            async with await self.db.sessionmaker() as session, session.begin():
-                query = await session.execute(
-                    sqlalchemy.select(EveTables.PeriodicCredentials)
-                    .where(EveTables.PeriodicCredentials.character_id == refresh_character_id))
-                update_character_obj_set: Final = {x for x in query.scalars()}
+            try:
+                async with await self.db.sessionmaker() as session, session.begin():
 
-                refresh_character_obj: EveTables.PeriodicCredentials = None
-                if len(update_character_obj_set) == 1:
-                    refresh_character_obj = update_character_obj_set.pop()
+                    query = await session.execute(
+                        sqlalchemy.select(EveTables.PeriodicCredentials)
+                        .where(EveTables.PeriodicCredentials.character_id == refresh_character_id))
+                    update_character_obj_set: Final = {x for x in query.scalars()}
 
-                if refresh_character_obj is None:
-                    await asyncio.sleep(int(refresh_interval.total_seconds()))
-                    continue
+                    refresh_character_obj: EveTables.PeriodicCredentials = None
+                    if len(update_character_obj_set) == 1:
+                        refresh_character_obj = update_character_obj_set.pop()
 
-                if await self.esi_sso_refresh(client_session):
+                    if refresh_character_obj is None:
+                        await asyncio.sleep(int(refresh_interval.total_seconds()))
+                        continue
 
-                    update_dict = {
-                        "access_token_exiry": datetime.datetime.fromtimestamp(client_session.get(EveSSO.ESI_ACCESS_TOKEN_EXPIRY, 0), tz=datetime.timezone.utc),
-                        "access_token_issued": datetime.datetime.fromtimestamp(client_session.get(EveSSO.ESI_ACCESS_TOKEN_ISSUED, 0), tz=datetime.timezone.utc),
-                        "access_token": client_session.get(EveSSO.ESI_ACCESS_TOKEN, ''),
-                        "refresh_token": client_session.get(EveSSO.ESI_REFRESH_TOKEN, '')
-                    }
+                    if await self.esi_sso_refresh(client_session):
 
-                    for k, v in update_dict.items():
-                        if hasattr(refresh_character_obj, k):
-                            setattr(refresh_character_obj, k, v)
+                        update_dict = {
+                            "access_token_exiry": datetime.datetime.fromtimestamp(client_session.get(EveSSO.ESI_ACCESS_TOKEN_EXPIRY, 0), tz=datetime.timezone.utc),
+                            "access_token_issued": datetime.datetime.fromtimestamp(client_session.get(EveSSO.ESI_ACCESS_TOKEN_ISSUED, 0), tz=datetime.timezone.utc),
+                            "access_token": client_session.get(EveSSO.ESI_ACCESS_TOKEN, ''),
+                            "refresh_token": client_session.get(EveSSO.ESI_REFRESH_TOKEN, '')
+                        }
 
-                    self.logger.info("- {}.{}: {} {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  refresh_obj.character_id, "token refreshed"))
-                else:
-                    otel_add_error("token refreshed failed")
-                    self.logger.error("- {}.{}: {} {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  refresh_obj.character_id, "token refreshed failed"))
+                        for k, v in update_dict.items():
+                            if hasattr(refresh_character_obj, k):
+                                setattr(refresh_character_obj, k, v)
 
-                    refresh_character_obj.is_enabled = False
-                    refresh_character_obj.is_permitted = False
-                await session.commit()
+                        self.logger.info("- {}.{}: {} {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  refresh_obj.character_id, "token refreshed"))
+                    else:
+                        otel_add_error("token refreshed failed")
+                        self.logger.error("- {}.{}: {} {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  refresh_obj.character_id, "token refreshed failed"))
 
-            async with await self.db.sessionmaker() as session, session.begin():
-                authlog_obj = EveTables.AuthLog(character_id=client_session.get(EveSSO.ESI_CHARACTER_ID, 0), session_id=client_session.get(EveSSO.APP_SESSION_ID, ''), auth_type=EveAuthType.REFRESH)
-                session.add(authlog_obj)
-                await session.commit()
+                        refresh_character_obj.is_enabled = False
+                        refresh_character_obj.is_permitted = False
+                    await session.commit()
+
+            except Exception as ex:
+                otel_add_exception(ex)
+                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+
+            try:
+                async with await self.db.sessionmaker() as session, session.begin():
+
+                    authlog_obj = EveTables.AuthLog(character_id=client_session.get(EveSSO.ESI_CHARACTER_ID, 0), session_id=client_session.get(EveSSO.APP_SESSION_ID, ''), auth_type=EveAuthType.REFRESH)
+                    session.add(authlog_obj)
+                    await session.commit()
+
+            except Exception as ex:
+                otel_add_exception(ex)
+                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
 
     @otel
     async def esi_decode_token(self, client_session: collections.abc.MutableMapping, token_response: dict) -> dict:
@@ -318,23 +337,37 @@ class EveSSO:
         session_id: Final = client_session.get(EveSSO.APP_SESSION_ID, '')
 
         if character_id > 0 and len(session_id) > 0:
-            # Disable periodic on explicit logout
-            async with await self.db.sessionmaker() as session, session.begin():
-                character_query = sqlalchemy.select(EveTables.PeriodicCredentials).where(
-                    EveTables.PeriodicCredentials.character_id == character_id)
-                character_query_results = await session.execute(character_query)
-                character_set = {x for x in character_query_results.scalars()}
-                obj = None
-                if len(character_set) > 0:
-                    obj: EveTables.PeriodicCredentials = character_set.pop()
-                    obj.is_enabled = False
-                    obj.is_permitted = False
+
+            try:
+                # Disable periodic on explicit logout
+                async with await self.db.sessionmaker() as session, session.begin():
+
+                    character_query = sqlalchemy.select(EveTables.PeriodicCredentials).where(
+                        EveTables.PeriodicCredentials.character_id == character_id)
+                    character_query_results = await session.execute(character_query)
+                    character_set = {x for x in character_query_results.scalars()}
+                    obj = None
+
+                    if len(character_set) > 0:
+                        obj: EveTables.PeriodicCredentials = character_set.pop()
+                        obj.is_enabled = False
+                        obj.is_permitted = False
+                        await session.commit()
+
+            except Exception as ex:
+                otel_add_exception(ex)
+                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+
+            try:
+                async with await self.db.sessionmaker() as session, session.begin():
+
+                    authlog_obj = EveTables.AuthLog(character_id=character_id, session_id=session_id, auth_type=EveAuthType.LOGOUT)
+                    session.add(authlog_obj)
                     await session.commit()
 
-            async with await self.db.sessionmaker() as session, session.begin():
-                authlog_obj = EveTables.AuthLog(character_id=character_id, session_id=session_id, auth_type=EveAuthType.LOGOUT)
-                session.add(authlog_obj)
-                await session.commit()
+            except Exception as ex:
+                otel_add_exception(ex)
+                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
 
         otel_add_event("logout", {"session_id": session_id})
 
@@ -388,15 +421,20 @@ class EveSSO:
 
         character_id: Final = client_session.get(EveSSO.ESI_CHARACTER_ID, 0)
 
-        async with await self.db.sessionmaker() as session, session.begin():
+        try:
+            async with await self.db.sessionmaker() as session, session.begin():
 
-            login_auth_type = EveAuthType.LOGIN_USER
-            if len(client_session.get(EveSSO.APP_SESSION_SCOPES, [])) > 1:
-                login_auth_type = EveAuthType.LOGIN_CONTRIBUTOR
+                login_auth_type = EveAuthType.LOGIN_USER
+                if len(client_session.get(EveSSO.APP_SESSION_SCOPES, [])) > 1:
+                    login_auth_type = EveAuthType.LOGIN_CONTRIBUTOR
 
-            authlog_obj = EveTables.AuthLog(character_id=character_id, session_id=session_id, auth_type=login_auth_type)
-            session.add(authlog_obj)
-            await session.commit()
+                authlog_obj = EveTables.AuthLog(character_id=character_id, session_id=session_id, auth_type=login_auth_type)
+                session.add(authlog_obj)
+                await session.commit()
+
+        except Exception as ex:
+            otel_add_exception(ex)
+            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
 
         otel_add_event("login", {"session_id": session_id})
 
@@ -527,62 +565,76 @@ class EveSSO:
                 # Save the character info - we re-do this on each cycle why?
                 if characters_result is not None:
 
+                    try:
+                        async with await self.db.sessionmaker() as session, session.begin():
+
+                            character_query = (
+                                sqlalchemy.select(EveTables.Character)
+                                .where(EveTables.Character.character_id == character_id)
+                            )
+                            character_query_results = await session.execute(character_query)
+                            character_set = {x for x in character_query_results.scalars()}
+
+                            if len(character_set) > 0:
+                                [await session.delete(x) for x in character_set]
+
+                            edict = dict({
+                                "character_id": int(character_id)
+                            })
+                            for k, v in characters_result.items():
+                                if k in ["corporation_id", "alliance_id"]:
+                                    v = int(v)
+                                elif k in ["birthday"]:
+                                    v = dateutil.parser.parse(v).replace(tzinfo=datetime.timezone.utc)
+                                elif k not in ["name"]:
+                                    continue
+                                edict[k] = v
+
+                            obj = EveTables.Character(**edict)
+                            if obj is not None:
+                                session.add(obj)
+                                await session.commit()
+
+                    except Exception as ex:
+                        otel_add_exception(ex)
+                        self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+
+                try:
+                    # Setup / Update the periodic credentials record
                     async with await self.db.sessionmaker() as session, session.begin():
-                        character_query = sqlalchemy.select(EveTables.Character).where(
-                            EveTables.Character.character_id == character_id)
+
+                        periodic_credentials = {
+                            "character_id": character_id,
+                            "corporation_id": corporation_id,
+                            "session_id": client_session.get(EveSSO.APP_SESSION_ID, ''),
+                            "access_token_issued": datetime.datetime.fromtimestamp(client_session.get(EveSSO.ESI_ACCESS_TOKEN_ISSUED, 0), tz=datetime.timezone.utc),
+                            "access_token_exiry": datetime.datetime.fromtimestamp(client_session.get(EveSSO.ESI_ACCESS_TOKEN_EXPIRY, 0), tz=datetime.timezone.utc),
+                            "access_token": client_session.get(EveSSO.ESI_ACCESS_TOKEN, ''),
+                            "refresh_token": client_session.get(EveSSO.ESI_REFRESH_TOKEN, ''),
+                            "is_station_manager_role": bool(client_session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)),
+                            "is_director_role": bool(client_session.get(EveSSO.ESI_CHARACTER_HAS_DIRECTOR_ROLE, False)),
+                            "is_accountant_role": bool(client_session.get(EveSSO.ESI_CHARACTER_HAS_ACCOUNTANT_ROLE, False)),
+                            "is_permitted": bool(client_session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)),
+                            "is_enabled": bool(client_session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)),
+                        }
+
+                        character_query = sqlalchemy.select(EveTables.PeriodicCredentials).where(
+                            EveTables.PeriodicCredentials.character_id == character_id)
                         character_query_results = await session.execute(character_query)
                         character_set = {x for x in character_query_results.scalars()}
-
+                        obj = None
                         if len(character_set) > 0:
-                            [await session.delete(x) for x in character_set]
-
-                        edict = dict({
-                            "character_id": int(character_id)
-                        })
-                        for k, v in characters_result.items():
-                            if k in ["corporation_id", "alliance_id"]:
-                                v = int(v)
-                            elif k in ["birthday"]:
-                                v = dateutil.parser.parse(v).replace(tzinfo=datetime.timezone.utc)
-                            elif k not in ["name"]:
-                                continue
-                            edict[k] = v
-
-                        obj = EveTables.Character(**edict)
-                        if obj is not None:
+                            obj = character_set.pop()
+                            for k, v in periodic_credentials.items():
+                                if hasattr(obj, k):
+                                    setattr(obj, k, v)
+                        else:
+                            new_periodic_credentials = {
+                            }
+                            obj = EveTables.PeriodicCredentials(**{**periodic_credentials, **new_periodic_credentials})
                             session.add(obj)
                             await session.commit()
 
-                # Setup / Update the periodic credentials record
-                async with await self.db.sessionmaker() as session, session.begin():
-                    periodic_credentials = {
-                        "character_id": character_id,
-                        "corporation_id": corporation_id,
-                        "session_id": client_session.get(EveSSO.APP_SESSION_ID, ''),
-                        "access_token_issued": datetime.datetime.fromtimestamp(client_session.get(EveSSO.ESI_ACCESS_TOKEN_ISSUED, 0), tz=datetime.timezone.utc),
-                        "access_token_exiry": datetime.datetime.fromtimestamp(client_session.get(EveSSO.ESI_ACCESS_TOKEN_EXPIRY, 0), tz=datetime.timezone.utc),
-                        "access_token": client_session.get(EveSSO.ESI_ACCESS_TOKEN, ''),
-                        "refresh_token": client_session.get(EveSSO.ESI_REFRESH_TOKEN, ''),
-                        "is_station_manager_role": bool(client_session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)),
-                        "is_director_role": bool(client_session.get(EveSSO.ESI_CHARACTER_HAS_DIRECTOR_ROLE, False)),
-                        "is_accountant_role": bool(client_session.get(EveSSO.ESI_CHARACTER_HAS_ACCOUNTANT_ROLE, False)),
-                        "is_permitted": bool(client_session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)),
-                        "is_enabled": bool(client_session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)),
-                    }
-
-                    character_query = sqlalchemy.select(EveTables.PeriodicCredentials).where(
-                        EveTables.PeriodicCredentials.character_id == character_id)
-                    character_query_results = await session.execute(character_query)
-                    character_set = {x for x in character_query_results.scalars()}
-                    obj = None
-                    if len(character_set) > 0:
-                        obj = character_set.pop()
-                        for k, v in periodic_credentials.items():
-                            if hasattr(obj, k):
-                                setattr(obj, k, v)
-                    else:
-                        new_periodic_credentials = {
-                        }
-                        obj = EveTables.PeriodicCredentials(**{**periodic_credentials, **new_periodic_credentials})
-                        session.add(obj)
-                        await session.commit()
+                except Exception as ex:
+                    otel_add_exception(ex)
+                    self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
