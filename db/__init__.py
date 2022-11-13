@@ -5,6 +5,7 @@ import sqlalchemy.ext.asyncio
 import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
+
 from telemetry import otel
 
 
@@ -24,7 +25,9 @@ class EveAuthType(enum.Enum):
 
 class EveTables:
 
+
     Base = sqlalchemy.orm.declarative_base()
+
 
     class Character(Base):
         __tablename__ = "esi_characters"
@@ -36,6 +39,7 @@ class EveTables:
 
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(character_id={self.character_id}, name={self.name})"
+
 
     class Corporation(Base):
         __tablename__ = "esi_corporations"
@@ -51,6 +55,7 @@ class EveTables:
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(corporation_id={self.corporation_id}, name={self.name})"
 
+
     class Alliance(Base):
         __tablename__ = "esi_alliances"
         alliance_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=True)
@@ -60,10 +65,12 @@ class EveTables:
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(alliance_id={self.alliance_id}, name={self.name})"
 
+
     class AllianceCorporation(Base):
         __tablename__ = "esi_alliances_corporations"
         alliance_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         corporation_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+
 
     class UniverseSystem(Base):
         __tablename__ = "esi_universe_systems"
@@ -76,6 +83,7 @@ class EveTables:
 
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(constellation_id={self.constellation_id}, system_id={self.system_id}, name={self.name})"
+
 
     class UniverseMoon(Base):
         __tablename__ = "esi_universe_moons"
@@ -90,6 +98,7 @@ class EveTables:
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(system_id={self.system_id}, moon_id={self.moon_id}, name={self.name})"
 
+
     class UniversePlanet(Base):
         __tablename__ = "esi_universe_planets"
         planet_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
@@ -100,6 +109,7 @@ class EveTables:
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(system_id={self.system_id}, planet_id={self.planet_id}, name={self.name})"
 
+
     class UniverseConstellation(Base):
         __tablename__ = "esi_universe_constellations"
         constellation_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
@@ -109,6 +119,7 @@ class EveTables:
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(region_id={self.region_id}, constellation_id={self.constellation_id}, name={self.name})"
 
+
     class UniverseRegion(Base):
         __tablename__ = "esi_universe_regions"
         region_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
@@ -116,6 +127,7 @@ class EveTables:
 
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(region_id={self.region_id}, name={self.name})"
+
 
     class UniverseType(Base):
         __tablename__ = "esi_universe_types"
@@ -126,6 +138,7 @@ class EveTables:
 
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(type_id={self.type_id}, name={self.name})"
+
 
     class Structure(Base):
         __tablename__ = "app_structure"
@@ -152,17 +165,59 @@ class EveTables:
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(structure_id={self.structure_id}, system_id={self.system_id}, name={self.name})"
 
+
     class StructureHistory(Base):
         __tablename__ = "app_structure_history"
+        id = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.Sequence("app_structure_history_id_seq", start=1), primary_key=True)
+        exists = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
+        timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
+        character_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+        corporation_id = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.ForeignKey("esi_corporations.corporation_id"), nullable=False)
+        system_id = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.ForeignKey("esi_universe_systems.system_id"), nullable=False)
+        type_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+        structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        name = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
+        state = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=True)
+        state_timer_start = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=True)
+        state_timer_end = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=True)
+        fuel_expires = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
+        unanchors_at = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=True)
+        has_moon_drill = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
+
+        corporation = sqlalchemy.orm.relationship("Corporation", viewonly=True)
+        system = sqlalchemy.orm.relationship("UniverseSystem", viewonly=True)
+
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}(exists={self.exists}, structure_id={self.structure_id}, system_id={self.system_id}, name={self.name})"
+
+
+    class StructureArchive(Base):
+        __tablename__ = "app_structure_archive"
         timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), primary_key=True, server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
         character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
 
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}(timestamp={self.timestamp}, character_id={self.character_id}, structure_id={self.structure_id})"
+
+
+    class StructurQueryLog(Base):
+        __tablename__ = "app_structure_query_log"
+        timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), primary_key=True, server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
+        corporation_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}(timestamp={self.timestamp}, corporation_id={self.corporation_id}, character_id={self.character_id}), len={len(self.json)})"
+
+
     class StructureModifiers(Base):
         __tablename__ = "app_structure_modifiers"
         structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         belt_lifetime_modifier = sqlalchemy.Column(sqlalchemy.Numeric, default=1.0, nullable=False)
+
 
     class ScheduledExtraction(Base):
         __tablename__ = "app_scheduled_extraction"
@@ -181,6 +236,7 @@ class EveTables:
 
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(structure_id={self.structure_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time})"
+
 
     class CompletedExtraction(Base):
         __tablename__ = "app_completed_extraction"
@@ -203,10 +259,43 @@ class EveTables:
 
     class ExtractionHistory(Base):
         __tablename__ = "app_extraction_history"
+        id = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.Sequence("app_extraction_history_id_seq", start=1), primary_key=True)
+        exists = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
+        timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
+        character_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+        corporation_id = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.ForeignKey("esi_corporations.corporation_id"), nullable=False)
+        structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        moon_id = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.ForeignKey("esi_universe_moons.moon_id"), nullable=False)
+        extraction_start_time = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
+        chunk_arrival_time = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
+        natural_decay_time = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
+
+        corporation = sqlalchemy.orm.relationship("Corporation", viewonly=True)
+        moon = sqlalchemy.orm.relationship("UniverseMoon", viewonly=True)
+
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}(exists={self.exists}, structure_id={self.structure_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time})"
+
+    class ExtractionArchive(Base):
+        __tablename__ = "app_extraction_archive"
         timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), primary_key=True, server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
         character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}(timestamp={self.timestamp}, structure_id={self.structure_id}, character_id={self.character_id})"
+
+
+    class ExtractionQueryLog(Base):
+        __tablename__ = "app_extraction_query_log"
+        timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), primary_key=True, server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
+        corporation_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}(timestamp={self.timestamp}, corporation_id={self.corporation_id}, character_id={self.character_id}), len={len(self.json)})"
 
     class MoonYield(Base):
         __tablename__ = "app_moon_yields"
@@ -215,6 +304,7 @@ class EveTables:
         system_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
         type_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         yield_percent = sqlalchemy.Column(sqlalchemy.Float, nullable=False)
+
 
     class PeriodicCredentials(Base):
         __tablename__ = "app_periodic_credentials"
@@ -235,14 +325,28 @@ class EveTables:
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(character_id={self.character_id}, corporation_id={self.corporation_id}, is_permitted={self.is_permitted}, is_enabled={self.is_enabled}, access_token_issued={self.access_token_issued}, access_token_exiry={self.access_token_exiry})"
 
+
+    class PeriodicTaskTimestamp(Base):
+        __tablename__ = "app_periodic_task_timestamp"
+        # id = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.Sequence("app_refresh_history_id_srq", start=1), primary_key=True)
+        timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
+        corporation_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        character_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}(timestamp={self.timestamp}, corporation_id={self.corporation_id}, character_id={self.character_id})"
+
+
     class AccessControls(Base):
         __tablename__ = "app_access_control"
         id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         type = sqlalchemy.Column(sqlalchemy.Enum(EveAccessType), primary_key=True, nullable=False)
         permit = sqlalchemy.Column(sqlalchemy.Boolean, primary_key=True, nullable=False)
+        trust = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
 
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(id={self.id}, type={self.type}, permit={self.permit})"
+
 
     class AccessHistory(Base):
         __tablename__ = "app_access_history"
@@ -255,15 +359,6 @@ class EveTables:
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(timestamp={self.timestamp}, character_id={self.character_id}, path={self.path})"
 
-    class RefreshHistory(Base):
-        __tablename__ = "app_refresh_history"
-        id = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.Sequence("app_refresh_history_id_srq", start=1), primary_key=True)
-        timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
-        character_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
-        corporation_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
-
-        def __repr__(self) -> str:
-            return f"{self.__class__.__name__}(timestamp={self.timestamp}, character_id={self.character_id}, corporation_id={self.corporation_id})"
 
     class AuthLog(Base):
         __tablename__ = "app_auth_log"

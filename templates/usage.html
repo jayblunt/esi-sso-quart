@@ -1,6 +1,11 @@
-{% extends "base.html" %} {% block content %} {% include "character.html" %} {% if usage %}
+{% extends "base.html" %} {% block content %} {% include "character.html" %}
 <div class="box">
-    <h3>Usage</h3>
+    <h3>2022-11-05</h3>
+    <p>Limit to most recent 25 users - quicker query</p>
+</div>
+{% if permitted_usage %}
+<div class="box">
+    <h3>Permitted Usage</h3>
     <table>
         <thead>
             <tr>
@@ -10,9 +15,9 @@
             </tr>
         </thead>
         <tbody>
-            {% for u in usage %}
+            {% for u in permitted_usage %}
             <tr>
-                <td align="left">{{ u.name }}</td>
+                <td align="left"><a href="{{ u.id|zkillboard }}" target="_blank">{{ u.id|character_name }}</a></td>
                 <td>{{ u.count }}</td>
                 <td>{{ u.last|datetime }}</td>
             </tr>
@@ -20,6 +25,36 @@
         </tbody>
         <tfoot>
             <tr>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+{% endif %} {% if denied_usage %}
+<div class="box">
+    <h3>Denied Usage</h3>
+    <table>
+        <thead>
+            <tr>
+                <th align="left">User</th>
+                <th>Count</th>
+                <th>Last</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for u in denied_usage %}
+            <tr>
+                <td align="left"><a href="{{ u.id|zkillboard }}" target="_blank">{{ u.id|character_name }}</a></td>
+                <td>{{ u.count }}</td>
+                <td>{{ u.last|datetime }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td></td>
                 <td></td>
                 <td></td>
             </tr>

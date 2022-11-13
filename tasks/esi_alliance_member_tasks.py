@@ -63,49 +63,55 @@ class EveEsiAlliancMemberTask(EveTask):
 
                     if any([len(existing_obj_set) > 0, len(obj_set) > 0]):
                         await session.commit()
-            except sqlalchemy.exc.StatementError as ex:
+
+            except Exception as ex:
                 otel_add_exception(ex)
-                self.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
+                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
 
         if len(corporation_id_set) > 0:
 
-            async with await self.db.sessionmaker() as session, session.begin():
+            try:
+                async with await self.db.sessionmaker() as session, session.begin():
 
-                existing_corporations_query: Final = sqlalchemy.select(EveTables.Corporation)
-                existing_corporations_query_result = await session.execute(existing_corporations_query)
-                existing_corporation_set: Final = {x for x in existing_corporations_query_result.scalars()}
+                    existing_corporations_query: Final = sqlalchemy.select(EveTables.Corporation)
+                    existing_corporations_query_result = await session.execute(existing_corporations_query)
+                    existing_corporation_set: Final = {x for x in existing_corporations_query_result.scalars()}
 
-                existing_corporation_id_set: Final = {x.corporation_id for x in existing_corporation_set}
+                    existing_corporation_id_set: Final = {x.corporation_id for x in existing_corporation_set}
 
-                obj_set = set()
+                    obj_set = set()
 
-                # print(f"existing_corporation_id_set: {existing_corporation_id_set}")
-                async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as http_session:
+                    # print(f"existing_corporation_id_set: {existing_corporation_id_set}")
+                    async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as http_session:
 
-                    for corporation_id in corporation_id_set - existing_corporation_id_set:
-                        # print(f"corporation_id: {corporation_id}")
+                        for corporation_id in corporation_id_set - existing_corporation_id_set:
+                            # print(f"corporation_id: {corporation_id}")
 
-                        url = f"https://esi.evetech.net/latest/corporations/{corporation_id}/"
-                        async with await http_session.get(url, params=self.common_params) as response:
-                            # print(f"{response.url} -> {response.status}")
-                            if response.status in [200]:
-                                edict: Final = dict({
-                                    "corporation_id": corporation_id
-                                })
+                            url = f"https://esi.evetech.net/latest/corporations/{corporation_id}/"
+                            async with await http_session.get(url, params=self.common_params) as response:
+                                # print(f"{response.url} -> {response.status}")
+                                if response.status in [200]:
+                                    edict: Final = dict({
+                                        "corporation_id": corporation_id
+                                    })
 
-                                for k, v in dict(await response.json()).items():
-                                    if k in ["alliance_id"]:
-                                        v = int(v)
-                                    elif k not in ["name", "ticker"]:
-                                        continue
-                                    edict[k] = v
+                                    for k, v in dict(await response.json()).items():
+                                        if k in ["alliance_id"]:
+                                            v = int(v)
+                                        elif k not in ["name", "ticker"]:
+                                            continue
+                                        edict[k] = v
 
-                                obj = EveTables.Corporation(**edict)
-                                obj_set.add(obj)
-                            else:
-                                otel_add_error(f"{response.url} -> {response.status}")
-                                self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
+                                    obj = EveTables.Corporation(**edict)
+                                    obj_set.add(obj)
+                                else:
+                                    otel_add_error(f"{response.url} -> {response.status}")
+                                    self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
 
-                if len(obj_set) > 0:
-                    session.add_all(obj_set)
-                    await session.commit()
+                    if len(obj_set) > 0:
+                        session.add_all(obj_set)
+                        await session.commit()
+
+            except Exception as ex:
+                otel_add_exception(ex)
+                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
