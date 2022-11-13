@@ -5,6 +5,7 @@ import sqlalchemy.ext.asyncio
 import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
+
 from telemetry import otel
 
 
@@ -197,6 +198,9 @@ class EveTables:
         structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
 
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}(timestamp={self.timestamp}, character_id={self.character_id}, structure_id={self.structure_id})"
+
 
     class StructurQueryLog(Base):
         __tablename__ = "app_structure_query_log"
@@ -204,6 +208,9 @@ class EveTables:
         corporation_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}(timestamp={self.timestamp}, corporation_id={self.corporation_id}, character_id={self.character_id}), len={len(self.json)})"
 
 
     class StructureModifiers(Base):
@@ -250,6 +257,24 @@ class EveTables:
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(structure_id={self.structure_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time})"
 
+    class ExtractionHistory(Base):
+        __tablename__ = "app_extraction_history"
+        id = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.Sequence("app_extraction_history_id_seq", start=1), primary_key=True)
+        exists = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
+        timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
+        character_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+        corporation_id = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.ForeignKey("esi_corporations.corporation_id"), nullable=False)
+        structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+        moon_id = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.ForeignKey("esi_universe_moons.moon_id"), nullable=False)
+        extraction_start_time = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
+        chunk_arrival_time = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
+        natural_decay_time = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
+
+        corporation = sqlalchemy.orm.relationship("Corporation", viewonly=True)
+        moon = sqlalchemy.orm.relationship("UniverseMoon", viewonly=True)
+
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}(exists={self.exists}, structure_id={self.structure_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time})"
 
     class ExtractionArchive(Base):
         __tablename__ = "app_extraction_archive"
@@ -257,6 +282,9 @@ class EveTables:
         character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}(timestamp={self.timestamp}, structure_id={self.structure_id}, character_id={self.character_id})"
 
 
     class ExtractionQueryLog(Base):
@@ -266,6 +294,8 @@ class EveTables:
         character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
 
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}(timestamp={self.timestamp}, corporation_id={self.corporation_id}, character_id={self.character_id}), len={len(self.json)})"
 
     class MoonYield(Base):
         __tablename__ = "app_moon_yields"

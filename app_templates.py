@@ -81,6 +81,8 @@ class AppTemplates:
         return dt.replace(tzinfo=None).isoformat(sep=" ", timespec="minutes")
 
 
+    @staticmethod
+    @otel
     def add_templates(app: quart.Quart, evedb: EveDatabase) -> None:
         global _EVEDB
         _EVEDB = evedb

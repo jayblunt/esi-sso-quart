@@ -27,13 +27,16 @@ from telemetry import otel, otel_add_error, otel_add_exception
 from .task import EveTask
 
 
-class EveStructureState:
+class EveCommonState:
 
 
     def __init__(self, db: EveDatabase, logger: logging.Logger = logging.getLogger()) -> None:
         self.db: typing.Final = db
         self.logger: typing.Final = logger
         self.name: typing.Final = self.__class__.__name__
+
+
+class EveStructureState(EveCommonState):
 
 
     async def structure_ids(self, corporation_id: int) -> set[int]:
@@ -47,7 +50,16 @@ class EveStructureState:
                     .where(
                         sqlalchemy.and_(
                             EveTables.StructureHistory.corporation_id == corporation_id,
-                            EveTables.StructureHistory.exists == sqlalchemy.sql.expression.true()
+                            EveTables.StructureHistory.exists == sqlalchemy.sql.expression.true(),
+                            EveTables.StructureHistory.structure_id.not_in(
+                                sqlalchemy.select(sqlalchemy.distinct(EveTables.StructureHistory.structure_id))
+                                .where(
+                                    sqlalchemy.and_(
+                                        EveTables.StructureHistory.corporation_id == corporation_id,
+                                        EveTables.StructureHistory.exists == sqlalchemy.sql.expression.false()
+                                    )
+                                )
+                            )
                         )
                     )
                 )
@@ -55,20 +67,20 @@ class EveStructureState:
                 for x in result.scalars():
                     corporation_structure_ids.add(x)
 
-                # Remove the exists=False structures
-                query = (
-                    sqlalchemy.select(sqlalchemy.distinct(EveTables.StructureHistory.structure_id))
-                    .where(
-                        sqlalchemy.and_(
-                            EveTables.StructureHistory.corporation_id == corporation_id,
-                            EveTables.StructureHistory.exists == sqlalchemy.sql.expression.false()
-                        )
-                    )
-                )
-                result: sqlalchemy.engine.Result = await session.execute(query)
-                for x in result.scalars():
-                    if x in corporation_structure_ids:
-                        corporation_structure_ids.discard(x)
+                # # Remove the exists=False structures
+                # query = (
+                #     sqlalchemy.select(sqlalchemy.distinct(EveTables.StructureHistory.structure_id))
+                #     .where(
+                #         sqlalchemy.and_(
+                #             EveTables.StructureHistory.corporation_id == corporation_id,
+                #             EveTables.StructureHistory.exists == sqlalchemy.sql.expression.false()
+                #         )
+                #     )
+                # )
+                # result: sqlalchemy.engine.Result = await session.execute(query)
+                # for x in result.scalars():
+                #     if x in corporation_structure_ids:
+                #         corporation_structure_ids.discard(x)
 
         except Exception as ex:
             otel_add_exception(ex)
@@ -133,6 +145,114 @@ class EveStructureState:
             self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
 
 
+class EveSExtractionState(EveCommonState):
+
+
+    async def structure_ids(self, corporation_id: int) -> set[int]:
+        corporation_structure_ids = set()
+        try:
+            async with await self.db.sessionmaker() as session:
+
+                # Collect the exists=True structures
+                query = (
+                    sqlalchemy.select(sqlalchemy.distinct(EveTables.ExtractionHistory.structure_id))
+                    .where(
+                        sqlalchemy.and_(
+                            EveTables.ExtractionHistory.corporation_id == corporation_id,
+                            EveTables.ExtractionHistory.exists == sqlalchemy.sql.expression.true(),
+                            EveTables.ExtractionHistory.structure_id.not_in(
+                                sqlalchemy.select(sqlalchemy.distinct(EveTables.ExtractionHistory.structure_id))
+                                .where(
+                                    sqlalchemy.and_(
+                                        EveTables.ExtractionHistory.corporation_id == corporation_id,
+                                        EveTables.ExtractionHistory.exists == sqlalchemy.sql.expression.false()
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+                result: sqlalchemy.engine.Result = await session.execute(query)
+                for x in result.scalars():
+                    corporation_structure_ids.add(x)
+
+                # # Remove the exists=False structures
+                # query = (
+                #     sqlalchemy.select(sqlalchemy.distinct(EveTables.ExtractionHistory.structure_id))
+                #     .where(
+                #         sqlalchemy.and_(
+                #             EveTables.ExtractionHistory.corporation_id == corporation_id,
+                #             EveTables.ExtractionHistory.exists == sqlalchemy.sql.expression.false()
+                #         )
+                #     )
+                # )
+                # result: sqlalchemy.engine.Result = await session.execute(query)
+                # for x in result.scalars():
+                #     if x in corporation_structure_ids:
+                #         corporation_structure_ids.discard(x)
+
+        except Exception as ex:
+            otel_add_exception(ex)
+            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+
+        return corporation_structure_ids
+
+
+    async def get(self, structure_id: int) -> EveTables.ExtractionHistory | None:
+        structure_obj = None
+        try:
+            async with await self.db.sessionmaker() as session:
+                query = (
+                    sqlalchemy.select(EveTables.ExtractionHistory)
+                    .where(
+                        EveTables.ExtractionHistory.structure_id == structure_id
+                    )
+                    .order_by(sqlalchemy.desc(EveTables.ExtractionHistory.id))
+                    .limit(1)
+                )
+                result: sqlalchemy.engine.Result = await session.execute(query)
+                row: sqlalchemy.engine.Row = result.fetchone()
+                if row:
+                    structure_obj: EveTables.ExtractionHistory = row[0]
+
+        except Exception as ex:
+            otel_add_exception(ex)
+            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+
+        return structure_obj
+
+
+    async def set(self, structure_id: int, edict: dict, exists: bool) -> None:
+        try:
+            structure_changed = exists and edict
+            structure_obj = await self.get(structure_id)
+            if structure_obj:
+                structure_changed = False
+                if not exists:
+
+                    if structure_obj.exists:
+                        structure_changed = True
+                        edict = {x: getattr(structure_obj, x) for x in structure_obj.__table__.columns.keys() if x not in ['id', 'exists', 'timestamp']}
+
+                else:
+
+                    if edict:
+                        for k, v in edict.items():
+                            if hasattr(structure_obj, k):
+                                if getattr(structure_obj, k) != v:
+                                    structure_changed = True
+                                    break
+
+            if structure_changed and edict:
+                structure_obj = EveTables.ExtractionHistory(exists=exists, **edict)
+                async with await self.db.sessionmaker() as session, session.begin():
+                    session.add(structure_obj)
+                    await session.commit()
+
+        except Exception as ex:
+            otel_add_exception(ex)
+            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+
 
 class EveStructureTask(EveTask):
 
@@ -140,6 +260,7 @@ class EveStructureTask(EveTask):
     def __init__(self, client_session: collections.abc.MutableMapping, db: EveDatabase, logger: logging.Logger = logging.getLogger()):
         super().__init__(client_session, db, logger)
         self.structure_state: typing.Final = EveStructureState(db, logger)
+        self.extraction_state: typing.Final = EveSExtractionState(db, logger)
 
     @otel
     async def _get_url(self, url: str, http_session: aiohttp.ClientSession) -> dict | None:
@@ -222,9 +343,7 @@ class EveStructureTask(EveTask):
 
                     if len(type_task_list) > 0:
                         result_list = await asyncio.gather(*type_task_list)
-                        for obj in result_list:
-                            if obj is None:
-                                continue
+                        for obj in [obj for obj in result_list if obj]:
                             type_obj_set.add(obj)
 
                 if len(type_obj_set) > 0:
@@ -252,9 +371,7 @@ class EveStructureTask(EveTask):
 
                     if len(task_list) > 0:
                         result_list = await asyncio.gather(*task_list)
-                        for obj in result_list:
-                            if obj is None:
-                                continue
+                        for obj in [obj for obj in result_list if obj]:
                             moon_obj_set.add(obj)
 
                 if len(moon_obj_set) > 0:
@@ -282,9 +399,7 @@ class EveStructureTask(EveTask):
 
                     if len(corporation_task_list) > 0:
                         result_list = await asyncio.gather(*corporation_task_list)
-                        for obj in result_list:
-                            if obj is None:
-                                continue
+                        for obj in [obj for obj in result_list if obj]:
                             corporation_obj_set.add(obj)
 
                 if len(corporation_obj_set) > 0:
@@ -314,13 +429,14 @@ class EveStructureTask(EveTask):
             self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
 
         if len(structures) == 0:
+            for structure_id in prior_structure_id_set:
+                await self.structure_state.set(structure_id, None, exists=False)
             self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: corporation_id: {corporation_id}, structures: {structures}")
             return
 
 
         backfill_type_id_set: typing.Final = set()
         backfill_corporation_id_set: typing.Final = set({corporation_id})
-        archive_structure_obj_set: typing.Final = set()
 
         structure_id_set: typing.Final = set()
         structure_obj_set: typing.Final = set()
@@ -347,15 +463,11 @@ class EveStructureTask(EveTask):
             backfill_corporation_id_set.add(obj.corporation_id)
             structure_id_set.add(obj.structure_id)
 
-            archive_obj = EveTables.StructureArchive(character_id=character_id, structure_id=int(x.get("structure_id", 0)), json=x)
-            archive_structure_obj_set.add(archive_obj)
-
             await self.structure_state.set(obj.structure_id, edict, exists=True)
 
         # Remove deleted
         for structure_id in set(prior_structure_id_set) - set(structure_id_set):
             await self.structure_state.set(structure_id, None, exists=False)
-
 
         # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: corporation_id_set: {sorted(list(corporation_id_set))}")
         # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: structure_id_set: {sorted(list(structure_id_set))}")
@@ -368,19 +480,7 @@ class EveStructureTask(EveTask):
         if len(backfill_corporation_id_set) > 0:
             await self.backfill_corporations(backfill_corporation_id_set)
 
-        # Add structures and history
-        if len(archive_structure_obj_set) > 0:
-            try:
-                async with await self.db.sessionmaker() as session, session.begin():
-                    session.add_all(archive_structure_obj_set)
-                    await session.commit()
-
-            except Exception as ex:
-                otel_add_exception(ex)
-                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
-
         # Ugly hack to remove structures that no longer exist. If I was better with the ORM I would not have to do this ..
-
         try:
             async with await self.db.sessionmaker() as session, session.begin():
 
@@ -419,27 +519,6 @@ class EveStructureTask(EveTask):
             otel_add_exception(ex)
             self.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
 
-        # try:
-        #     # select * from app_structure_history ash inner join lateral ( select * from app_structure_history where id = ash.id order by id desc limit 1 ) ijl on true order by ash.id desc
-        #     # async with await self.db.sessionmaker() as session, session.begin():
-        #     p2: typing.Final = (
-        #         sqlalchemy.select(EveTables.StructureHistory.id)
-        #         # .where(EveTables.StructureHistory.c.id == EveTables.StructureHistory.c.id)
-        #         .order_by(sqlalchemy.desc(EveTables.StructureHistory.id))
-        #         .limit(1)
-        #         .lateral()
-        #     )
-        #     q: typing.Final = (
-        #         sqlalchemy.select(EveTables.StructureHistory)
-        #         .join_from(EveTables.StructureHistory, p2)
-        #     )
-        #     print(str(q))
-        #         # await session.commit()
-        # # except Exception as ex:
-        # except Exception as ex:
-        #     otel_add_exception(ex)
-        #     self.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
-
         try:
             async with await self.db.sessionmaker() as session, session.begin():
 
@@ -465,6 +544,8 @@ class EveStructureTask(EveTask):
     @otel
     async def run_extractions(self, now: datetime.datetime, character_id: int, corporation_id: int, access_token: str):
 
+        # prior_structure_id_set: typing.Final = await self.extraction_state.structure_ids(corporation_id)
+
         url = f"https://esi.evetech.net/latest/corporation/{corporation_id}/mining/extractions/"
         extractions: typing.Final = await self.get_pages(url, access_token)
 
@@ -477,15 +558,17 @@ class EveStructureTask(EveTask):
             otel_add_exception(ex)
             self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
 
-
         if len(extractions) == 0:
+            # for structure_id in prior_structure_id_set:
+            #     await self.extraction_state.set(structure_id, None, exists=False)
             self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: corporation_id: {corporation_id}, extractions: {extractions}")
             return
 
+
         moon_id_set: typing.Final = set()
+        structure_id_set: typing.Final = set()
         corporation_id_set: typing.Final = set()
         fresh_extractions_obj_dict: typing.Final = dict()
-        extraction_archive_obj_set: typing.Final = set()
 
         for x in extractions:
             edict = dict({
@@ -504,28 +587,20 @@ class EveStructureTask(EveTask):
             obj = EveTables.ScheduledExtraction(**edict)
             fresh_extractions_obj_dict[obj.structure_id] = obj
             moon_id_set.add(obj.moon_id)
+            structure_id_set.add(obj.structure_id)
             corporation_id_set.add(obj.corporation_id)
 
-            archive_obj: typing.Final = EveTables.ExtractionArchive(character_id=character_id, structure_id=int(x.get("structure_id", 0)), json=x)
-            extraction_archive_obj_set.add(archive_obj)
+            await self.extraction_state.set(obj.structure_id, edict, exists=True)
+
+        # # Remove deleted
+        # for structure_id in set(prior_structure_id_set) - set(structure_id_set):
+        #     await self.extraction_state.set(structure_id, None, exists=False)
 
         # Add missing moons
         await self.backfill_moons(moon_id_set)
 
         # Add missing corporations
         await self.backfill_corporations(corporation_id_set)
-
-        # Append History
-        if len(extraction_archive_obj_set) > 0:
-            try:
-                async with await self.db.sessionmaker() as session, session.begin():
-
-                    session.add_all(extraction_archive_obj_set)
-                    await session.commit()
-
-            except Exception as ex:
-                otel_add_exception(ex)
-                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
 
         # Update Scheduled and Completed
         if len(fresh_extractions_obj_dict.keys()) > 0:
