@@ -1,10 +1,11 @@
 import asyncio
 import datetime
+import functools
 import inspect
 import logging
 import os
-import uuid
 import typing
+import uuid
 
 import opentelemetry.instrumentation.asgi
 import quart
@@ -58,6 +59,7 @@ quart_session.Session(app)
 evesso: typing.Final = EveSSO(app, evedb, **evesso_config)
 evesession: typing.Final = app.session_interface.session_class(sid="global", permanent=False)
 evesession[EveTask.CONFIGDIR] = os.path.abspath(os.path.join(app.config.get("BASEDIR", "."), "data"))
+evesession[EveSSO.ESI_CHARACTER_NAME] = dict()
 
 
 @app.before_serving
@@ -92,6 +94,25 @@ def _login_type(input: str):
         return "contributor"
     else:
         return "user"
+
+
+@app.template_filter("character_name")
+@otel
+async def _character_name(input: str):
+    character_id = int(input)
+    character_name = evesession[EveSSO.ESI_CHARACTER_NAME].get(character_id)
+    if not character_name:
+        character_name = await AppFunctions.get_character_name(evedb, character_id)
+        if character_name:
+            evesession[EveSSO.ESI_CHARACTER_NAME][character_id] = character_name
+    return character_name
+
+
+@app.template_filter("zkillboard")
+@otel
+async def _zkillboard(input: str):
+    character_id = int(input)
+    return f"https://zkillboard.com/character/{character_id}/"
 
 
 @app.template_filter("structure_state")
@@ -143,12 +164,13 @@ async def _usage() -> quart.Response:
         permitted_character_ids = permitted_character_ids.union({2113162721})
         permitted_character_ids = permitted_character_ids.union({93692517, 96477045, 96602200, 96732252})
         if character_id in permitted_character_ids:
-            usage_data = list()
+            permitted_data = list()
+            denied_data = list()
 
             try:
                 async with await evedb.sessionmaker() as session:
-
-                    usage_data = await AppFunctions.get_usage(session, now)
+                    permitted_data = await AppFunctions.get_usage(session, True, now)
+                    denied_data = await AppFunctions.get_usage(session, False, now)
 
             except Exception as ex:
                 app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
@@ -157,7 +179,7 @@ async def _usage() -> quart.Response:
                 "usage.html",
                 character_name=client_session.get(EveSSO.ESI_CHARACTER_NAME),
                 character_id=client_session.get(EveSSO.ESI_CHARACTER_ID),
-                usage=usage_data)
+                permitted_usage=permitted_data, denied_usage=denied_data)
 
     return quart.redirect("/")
 
