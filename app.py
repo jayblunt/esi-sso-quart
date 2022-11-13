@@ -98,30 +98,28 @@ async def _usage() -> quart.Response:
     now: typing.Final = datetime.datetime.now(tz=datetime.timezone.utc)
 
     character_id: typing.Final = client_session.get(EveSSO.ESI_CHARACTER_ID, 0)
-    if character_id > 0:
+    corpporation_id: typing.Final = client_session.get(EveSSO.ESI_CORPORATION_ID, 0)
+    alliance_id: typing.Final = client_session.get(EveSSO.ESI_ALLIANCE_ID, 0)
 
-        # if character_id in [92923556]:
-        permitted_character_ids = {92923556}
-        permitted_character_ids = permitted_character_ids.union({2115300524})
-        permitted_character_ids = permitted_character_ids.union({2113162721})
-        permitted_character_ids = permitted_character_ids.union({93692517, 96477045, 96602200, 96732252})
-        if character_id in permitted_character_ids:
-            permitted_data = list()
-            denied_data = list()
+    trusted: typing.Final = await AppFunctions.is_trusted(evedb, character_id, corpporation_id, alliance_id)
+    if trusted:
 
-            try:
-                async with await evedb.sessionmaker() as session:
-                    permitted_data = await AppFunctions.get_usage(session, True, now)
-                    denied_data = await AppFunctions.get_usage(session, False, now)
+        permitted_data = list()
+        denied_data = list()
 
-            except Exception as ex:
-                app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
+        try:
+            async with await evedb.sessionmaker() as session:
+                permitted_data = await AppFunctions.get_usage(session, True, now)
+                denied_data = await AppFunctions.get_usage(session, False, now)
 
-            return await quart.render_template(
-                "usage.html",
-                character_name=client_session.get(EveSSO.ESI_CHARACTER_NAME),
-                character_id=client_session.get(EveSSO.ESI_CHARACTER_ID),
-                permitted_usage=permitted_data, denied_usage=denied_data)
+        except Exception as ex:
+            app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
+
+        return await quart.render_template(
+            "usage.html",
+            character_name=client_session.get(EveSSO.ESI_CHARACTER_NAME),
+            character_id=client_session.get(EveSSO.ESI_CHARACTER_ID),
+            permitted_usage=permitted_data, denied_usage=denied_data)
 
     return quart.redirect("/")
 
@@ -162,6 +160,7 @@ async def root() -> quart.Response:
     alliance_id: typing.Final = client_session.get(EveSSO.ESI_ALLIANCE_ID, 0)
 
     character_permitted: typing.Final = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id)
+    character_trusted: typing.Final = await AppFunctions.is_trusted(evedb, character_id, corpporation_id, alliance_id)
 
     if character_id > 0:
 
@@ -191,17 +190,18 @@ async def root() -> quart.Response:
                 active_timer_results += await AppFunctions.get_active_timers(session, now)
                 completed_extraction_results += await AppFunctions.get_completed_extractions(session, now)
                 scheduled_extraction_results += await AppFunctions.get_scheduled_extractions(session, now)
-                structure_fuel_results += await AppFunctions.get_structure_fuel_expiries(session, now)
+                if character_trusted:
+                    structure_fuel_results += await AppFunctions.get_structure_fuel_expiries(session, now)
 
-                last_update_dict: typing.Final = dict()
-                for obj in structure_fuel_results:
-                    if isinstance(obj, EveTables.Structure):
-                        if obj.corporation_id not in last_update_dict.keys():
-                            last_update_dict[obj.corporation_id] = obj
-                        elif obj.timestamp > last_update_dict[obj.corporation_id].timestamp:
-                            last_update_dict[obj.corporation_id] = obj
+                    last_update_dict: typing.Final = dict()
+                    for obj in structure_fuel_results:
+                        if isinstance(obj, EveTables.Structure):
+                            if obj.corporation_id not in last_update_dict.keys():
+                                last_update_dict[obj.corporation_id] = obj
+                            elif obj.timestamp > last_update_dict[obj.corporation_id].timestamp:
+                                last_update_dict[obj.corporation_id] = obj
 
-                last_update_results += sorted(last_update_dict.values(), reverse=False, key=lambda x: x.timestamp)
+                    last_update_results += sorted(last_update_dict.values(), reverse=False, key=lambda x: x.timestamp)
 
         except Exception as ex:
             app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")

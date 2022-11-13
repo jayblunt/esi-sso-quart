@@ -342,6 +342,7 @@ class EveTables:
         id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         type = sqlalchemy.Column(sqlalchemy.Enum(EveAccessType), primary_key=True, nullable=False)
         permit = sqlalchemy.Column(sqlalchemy.Boolean, primary_key=True, nullable=False)
+        trust = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
 
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(id={self.id}, type={self.type}, permit={self.permit})"

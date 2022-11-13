@@ -122,7 +122,7 @@ class AppFunctions:
 
     @staticmethod
     @otel
-    async def is_permitted(evedb: EveDatabase, character_id: int, corpporation_id: int, alliance_id: int) -> bool:
+    async def is_permitted(evedb: EveDatabase, character_id: int, corpporation_id: int, alliance_id: int, check_trust: bool = False) -> bool:
         acl_pass = False
 
         acl_set: typing.Final = set()
@@ -145,5 +145,30 @@ class AppFunctions:
                     continue
                 if acl_id == acl.id:
                     acl_pass = acl.permit
+                    if check_trust:
+                        acl_pass = acl_pass and acl.trust
 
         return acl_pass
+
+    @staticmethod
+    @otel
+    async def is_trusted(evedb: EveDatabase, character_id: int, corpporation_id: int, alliance_id: int) -> bool:
+        is_permitted = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id, check_trust=False)
+        is_trusted = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id, check_trust=True)
+        if is_permitted and not is_trusted:
+            async with await evedb.sessionmaker() as session:
+                query = (
+                    sqlalchemy.select(EveTables.PeriodicCredentials)
+                    .where(
+                        sqlalchemy.and_(
+                            EveTables.PeriodicCredentials.is_enabled == sqlalchemy.sql.expression.true(),
+                            EveTables.PeriodicCredentials.character_id == character_id,
+                        )
+                    )
+                )
+                result: sqlalchemy.engine.Result = await session.execute(query)
+                obj = result.scalar_one_or_none()
+                if obj is not None:
+                    is_trusted = True
+        return is_trusted
+

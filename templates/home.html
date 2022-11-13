@@ -1,7 +1,8 @@
 {% extends "base.html" %} {% block content %} {% include "character.html" %}
 <div class="box">
     <h3>2022-11-13</h3>
-    <p>Update: looks like the ESI api lags is still reporting an old timer on a structure that I know has changed state ..</p>
+    <p>Update: looks like the ESI api lags is still reporting an old timer on a structure that I know has changed state
+        ..</p>
     <p>If the information here is missing or wrong, let me know in game.</p>
     <!-- <h3>2022-11-05</h3>
     <p>I did not handle the case where all the structures in a corporation got wiped out. I do now. Sorry GRRRvana, I'm sure they will be replaced ..</p> -->
@@ -59,7 +60,8 @@
         <tbody>
             {% if completed_extractions %} {% for e in completed_extractions %}
             <tr class="{{e.timestamp|timestamp_age}}">
-                <td align="left" class="{{e.timestamp|timestamp_age}}"><a href="https://evewho.com/corporation/{{e.corporation_id}}" target="_blank"> {{
+                <td align="left" class="{{e.timestamp|timestamp_age}}"><a
+                        href="https://evewho.com/corporation/{{e.corporation_id}}" target="_blank"> {{
                         e.corporation.name }} </a></td>
                 <td align="left" class="{{e.timestamp|timestamp_age}}">{{ e.structure.name }}</td>
                 <td align="left" class="{{e.timestamp|timestamp_age}}">{{ e.moon.name }}</td>
@@ -78,7 +80,8 @@
             </tr>
             {% endif %} {% if scheduled_extractions %} {% for e in scheduled_extractions %}
             <tr class="{{e.timestamp|timestamp_age}}">
-                <td align="left" class="{{e.timestamp|timestamp_age}}"><a href="https://evewho.com/corporation/{{e.corporation_id}}" target="_blank"> {{
+                <td align="left" class="{{e.timestamp|timestamp_age}}"><a
+                        href="https://evewho.com/corporation/{{e.corporation_id}}" target="_blank"> {{
                         e.corporation.name }} </a></td>
                 <td align="left" class="{{e.timestamp|timestamp_age}}">{{ e.structure.name }}</td>
                 <td align="left" class="{{e.timestamp|timestamp_age}}">{{ e.moon.name }}</td>
@@ -115,10 +118,12 @@
         <tbody>
             {% for s in structure_fuel_expiries %}
             <tr class="{{s.timestamp|timestamp_age}}">
-                <td align="left" class="{{s.timestamp|timestamp_age}}"><a href="https://evewho.com/corporation/{{s.corporation_id}}" target="_blank">{{ s.corporation.name
+                <td align="left" class="{{s.timestamp|timestamp_age}}"><a
+                        href="https://evewho.com/corporation/{{s.corporation_id}}" target="_blank">{{ s.corporation.name
                         }}</a></td>
                 <td align="left" class="{{s.timestamp|timestamp_age}}">{{ s.name }}</td>
-                <td align="left" class="{{s.timestamp|timestamp_age}}"><a href="https://evemaps.dotlan.net/system/{{s.system.name}}" target="_blank">{{ s.system.name
+                <td align="left" class="{{s.timestamp|timestamp_age}}"><a
+                        href="https://evemaps.dotlan.net/system/{{s.system.name}}" target="_blank">{{ s.system.name
                         }}</a></td>
                 <td class="{{s.timestamp|timestamp_age}}">{{ s.fuel_expires|datetime }}</td>
             </tr>
@@ -136,6 +141,9 @@
 </div>
 {% endif %} {% if last_update %}
 <div class="box">
+    <h3>Recent Usage</h3>
+    <p>Recent <a href="/usage/">usage information</a> is available to contributors and to explicity trusted characters.
+    </p>
     <h3>Most Recent Structure Update</h3>
     <table>
         <thead>
@@ -147,7 +155,8 @@
         <tbody>
             {% for lu in last_update %}
             <tr class="{{lu.timestamp|timestamp_age}}">
-                <td align="left" class="{{lu.timestamp|timestamp_age}}"><a href="https://evewho.com/corporation/{{lu.corporation_id}}" target="_blank">{{
+                <td align="left" class="{{lu.timestamp|timestamp_age}}"><a
+                        href="https://evewho.com/corporation/{{lu.corporation_id}}" target="_blank">{{
                         lu.corporation.name }}</a></td>
                 <td class="{{lu.timestamp|timestamp_age}}">{{ lu.timestamp|datetime }}</td>
             </tr>
