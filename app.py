@@ -13,6 +13,7 @@ import quart.sessions
 import quart_session
 
 from app_functions import AppFunctions
+from app_templates import AppTemplates
 from db import EveDatabase, EveTables
 from middleware import RateLimiterMiddleware
 from sso import EveSSO
@@ -85,66 +86,7 @@ async def error_404(path: str) -> quart.Response:
     return quart.redirect("/")
 
 
-@app.template_filter("login_type")
-@otel
-def _login_type(input: str):
-    client_session: typing.Final = quart.session
-    login_type = client_session.get(EveSSO.APP_SESSION_TYPE, "USER")
-    if login_type == "CONTRIBUTOR":
-        return "contributor"
-    else:
-        return "user"
 
-
-@app.template_filter("character_name")
-@otel
-async def _character_name(input: str):
-    character_id = int(input)
-    character_name = evesession[EveSSO.ESI_CHARACTER_NAME].get(character_id)
-    if not character_name:
-        character_name = await AppFunctions.get_character_name(evedb, character_id)
-        if character_name:
-            evesession[EveSSO.ESI_CHARACTER_NAME][character_id] = character_name
-    return character_name
-
-
-@app.template_filter("zkillboard")
-@otel
-async def _zkillboard(input: str):
-    character_id = int(input)
-    return f"https://zkillboard.com/character/{character_id}/"
-
-
-@app.template_filter("structure_state")
-@otel
-def _structure_state(state: str) -> str:
-    map: typing.Final = {
-        "deploy_vulnerable": "Deploy / Vulnerable",
-        "anchoring": "Anchoring",
-        "anchor_vulnerable": "Anchoring / Vulnerable",
-        "onlining_vulnerable": "Onlining / Vulnerable",
-        "shield_vulnerable": "Shield / Vulnerable",
-        "hull_reinforce": "Hull Reinforced",
-        "hull_vulnerable": "Hull / Vulnerable",
-        "armor_reinforce": "Armor Reinforced",
-        "armor_vulnerable": "Armor / Vulnerable",
-    }
-    return map.get(state, "Unknown")
-
-
-@app.template_filter("timestamp_age")
-@otel
-def _timestamp_age(dt: datetime.datetime) -> str:
-    age_days: typing.Final = (datetime.datetime.now(datetime.timezone.utc) - dt.replace(tzinfo=datetime.timezone.utc)).days
-    if age_days >= 3:
-        return "stale"
-    return "fresh"
-
-
-@app.template_filter("datetime")
-@otel
-def _datetime(dt: datetime.datetime) -> str:
-    return dt.replace(tzinfo=None).isoformat(sep=" ", timespec="minutes")
 
 
 @app.route("/usage/", methods=["GET"])
@@ -291,6 +233,8 @@ if __name__ == "__main__":
 
     # logging.basicConfig(level=logging.DEBUG)
     otel_initialize()
+
+    AppTemplates.add_templates(app, evedb)
 
     app_debug = app.config.get("DEBUG", False)
     app_port = app.config.get("PORT", 5050)
