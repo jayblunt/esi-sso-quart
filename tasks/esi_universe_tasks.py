@@ -3,7 +3,7 @@ import asyncio
 import collections
 import collections.abc
 import inspect
-from typing import Any, Final
+import typing
 
 import aiohttp
 import aiohttp.client_exceptions
@@ -24,14 +24,14 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
 
     @property
     @abc.abstractmethod
-    def object_class(self) -> Any:
+    def object_class(self) -> typing.Any:
         pass
 
-    def object_valid(self, obj: Any) -> bool:
+    def object_valid(self, obj: typing.Any) -> bool:
         return isinstance(obj, self.object_class)
 
     @abc.abstractmethod
-    def object_id(self, obj: Any) -> int:
+    def object_id(self, obj: typing.Any) -> int:
         pass
 
     @abc.abstractmethod
@@ -47,13 +47,13 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
         pass
 
     @otel
-    async def _get_item(self, id: int, http_session: aiohttp.ClientSession) -> Any:
-        url: Final = self.item_url(id)
+    async def _get_item(self, id: int, http_session: aiohttp.ClientSession) -> typing.Any | None:
+        url: typing.Final = self.item_url(id)
         attempts_remaining = self.ERROR_RETRY_COUNT
         while attempts_remaining > 0:
             async with await http_session.get(url, params=self.common_params) as response:
                 if response.status in [200]:
-                    edict: Final = self.item_dict(id, await response.json())
+                    edict: typing.Final = self.item_dict(id, await response.json())
                     if len(edict) > 0:
                         return self.object_class(**edict)
                 else:
@@ -70,11 +70,11 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
         self.logger.info(f"> {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
 
         url = self.index_url()
-        access_token: Final = client_session.get(EveSSO.ESI_ACCESS_TOKEN, '')
-        obj_id_set: Final = set(await self.get_pages(url, access_token))
+        access_token: typing.Final = client_session.get(EveSSO.ESI_ACCESS_TOKEN, '')
+        obj_id_set: typing.Final = set(await self.get_pages(url, access_token))
 
-        # cache_dict: Final = dict()
-        # cache_filename: Final = os.path.join(self.configdir, f"{self.__class__.__name__}.json")
+        # cache_dict: typing.Final = dict()
+        # cache_filename: typing.Final = os.path.join(self.configdir, f"{self.__class__.__name__}.json")
         # if os.path.exists(cache_filename):
         #     with open(cache_filename) as ifp:
         #         cache_dict |= {self.object_id(x): x for x in [self.object_class(**edict) for edict in json.load(ifp)]}
@@ -84,14 +84,14 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
 
                 existing_query = sqlalchemy.select(self.object_class)
                 existing_query_result = await session.execute(existing_query)
-                existing_obj_set: Final = {x for x in existing_query_result.scalars()}
-                existing_obj_id_set: Final = {self.object_id(x) for x in existing_obj_set}
+                existing_obj_set: typing.Final = {x for x in existing_query_result.scalars()}
+                existing_obj_id_set: typing.Final = {self.object_id(x) for x in existing_obj_set}
 
-                obj_set: Final = set()
+                obj_set: typing.Final = set()
                 missing_obj_id_set = obj_id_set - existing_obj_id_set
                 if len(missing_obj_id_set) > 0:
                     async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as http_session:
-                        task_list: Final = list()
+                        task_list: typing.Final = list()
                         for obj_id in missing_obj_id_set:
                             self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{str(self.object_class.__name__)}({obj_id})"))
                             task_list.append(asyncio.ensure_future(self._get_item(obj_id, http_session)))
@@ -113,7 +113,7 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
         # async with await self.db.sessionmaker() as session, session.begin():
         #     existing_query = sqlalchemy.select(self.object_class)
         #     existing_query_result = await session.execute(existing_query)
-        #     existing_obj_list: Final = [{x: getattr(result, x) for x in result.__table__.columns.keys()} for result in existing_query_result.scalars()]
+        #     existing_obj_list: typing.Final = [{x: getattr(result, x) for x in result.__table__.columns.keys()} for result in existing_query_result.scalars()]
         #     if len(existing_obj_list) > 0:
         #         with open(cache_filename, "w") as ofp:
         #             json.dump(existing_obj_list, ofp, indent=4)
@@ -124,10 +124,10 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
 class EveUniverseRegionsTask(EveBackfillTask):
 
     @property
-    def object_class(self) -> Any:
+    def object_class(self) -> typing.Any:
         return EveTables.UniverseRegion
 
-    def object_id(self, obj: Any) -> int:
+    def object_id(self, obj: typing.Any) -> int:
         if isinstance(obj, self.object_class):
             return obj.region_id
         return 0
@@ -136,12 +136,12 @@ class EveUniverseRegionsTask(EveBackfillTask):
         return "https://esi.evetech.net/latest/universe/regions/"
 
     def item_url(self, id: int) -> str:
-        url: Final = f"https://esi.evetech.net/latest/universe/regions/{id}/"
+        url: typing.Final = f"https://esi.evetech.net/latest/universe/regions/{id}/"
         # print(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url}")
         return url
 
     def item_dict(self, id: int, input: dict) -> dict:
-        edict: Final = dict({
+        edict: typing.Final = dict({
             "region_id": id
         })
         for k, v in input.items():
@@ -158,10 +158,10 @@ class EveUniverseRegionsTask(EveBackfillTask):
 class EveUniverseConstellationsTask(EveBackfillTask):
 
     @property
-    def object_class(self) -> Any:
+    def object_class(self) -> typing.Any:
         return EveTables.UniverseConstellation
 
-    def object_id(self, obj: Any) -> int:
+    def object_id(self, obj: typing.Any) -> int:
         if isinstance(obj, self.object_class):
             return obj.constellation_id
         return 0
@@ -170,12 +170,12 @@ class EveUniverseConstellationsTask(EveBackfillTask):
         return "https://esi.evetech.net/latest/universe/constellations/"
 
     def item_url(self, id: int) -> str:
-        url: Final = f"https://esi.evetech.net/latest/universe/constellations/{id}/"
+        url: typing.Final = f"https://esi.evetech.net/latest/universe/constellations/{id}/"
         # print(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url}")
         return url
 
     def item_dict(self, id: int, input: dict) -> dict:
-        edict: Final = dict({
+        edict: typing.Final = dict({
             "constellation_id": id
         })
         for k, v in input.items():
@@ -192,10 +192,10 @@ class EveUniverseConstellationsTask(EveBackfillTask):
 class EveUniverseSystemsTask(EveBackfillTask):
 
     @property
-    def object_class(self) -> Any:
+    def object_class(self) -> typing.Any:
         return EveTables.UniverseSystem
 
-    def object_id(self, obj: Any) -> int:
+    def object_id(self, obj: typing.Any) -> int:
         if isinstance(obj, self.object_class):
             return obj.system_id
         return 0
@@ -204,12 +204,12 @@ class EveUniverseSystemsTask(EveBackfillTask):
         return "https://esi.evetech.net/latest/universe/systems/"
 
     def item_url(self, id: int) -> str:
-        url: Final = f"https://esi.evetech.net/latest/universe/systems/{id}/"
+        url: typing.Final = f"https://esi.evetech.net/latest/universe/systems/{id}/"
         # print(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url}")
         return url
 
     def item_dict(self, id: int, input: dict) -> dict:
-        edict: Final = dict({
+        edict: typing.Final = dict({
             "system_id": id
         })
         for k, v in input.items():
@@ -226,10 +226,10 @@ class EveUniverseSystemsTask(EveBackfillTask):
 class EveAllianceTask(EveBackfillTask):
 
     @property
-    def object_class(self) -> Any:
+    def object_class(self) -> typing.Any:
         return EveTables.Alliance
 
-    def object_id(self, obj: Any) -> int:
+    def object_id(self, obj: typing.Any) -> int:
         if isinstance(obj, self.object_class):
             return obj.alliance_id
         return 0
@@ -238,12 +238,12 @@ class EveAllianceTask(EveBackfillTask):
         return "https://esi.evetech.net/latest/alliances/"
 
     def item_url(self, id: int) -> str:
-        url: Final = f"https://esi.evetech.net/latest/alliances/{id}/"
+        url: typing.Final = f"https://esi.evetech.net/latest/alliances/{id}/"
         # print(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url}")
         return url
 
     def item_dict(self, id: int, input: dict) -> dict:
-        edict: Final = dict({
+        edict: typing.Final = dict({
             "alliance_id": id
         })
         for k, v in input.items():

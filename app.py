@@ -1,6 +1,4 @@
 import asyncio
-import datetime
-import functools
 import inspect
 import logging
 import os
@@ -31,7 +29,6 @@ app.config.from_mapping(
     {
         "DEBUG": False,
         "PORT": 5050,
-        "HOST": "127.0.0.1",
         "SECRET_KEY": uuid.uuid4().hex,
         "SESSION_TYPE": "redis",
         "SESSION_REVERSE_PROXY": True,
@@ -39,6 +36,7 @@ app.config.from_mapping(
         "EVEONLINE_CLIENT_ID": os.getenv("EVEONLINE_CLIENT_ID", ""),
         "EVEONLINE_CLIENT_SECRET": os.getenv("EVEONLINE_CLIENT_SECRET", ""),
         "SQLALCHEMY_DB_URL": os.getenv("SQLALCHEMY_DB_URL", ""),
+        "TEMPLATES_AUTO_RELOAD": True,
         "SEND_FILE_MAX_AGE_DEFAULT": 300,
         "MAX_CONTENT_LENGTH": 512 * 1024,
         "BODY_TIMEOUT": 15,
@@ -86,39 +84,27 @@ async def error_404(path: str) -> quart.Response:
     return quart.redirect("/")
 
 
-
-
-
 @app.route("/usage/", methods=["GET"])
 @otel
 async def _usage() -> quart.Response:
 
-    client_session: typing.Final = quart.session
-
-    now: typing.Final = datetime.datetime.now(tz=datetime.timezone.utc)
-
-    character_id: typing.Final = client_session.get(EveSSO.ESI_CHARACTER_ID, 0)
-    corpporation_id: typing.Final = client_session.get(EveSSO.ESI_CORPORATION_ID, 0)
-    alliance_id: typing.Final = client_session.get(EveSSO.ESI_ALLIANCE_ID, 0)
-
-    trusted: typing.Final = await AppFunctions.is_trusted(evedb, character_id, corpporation_id, alliance_id)
-    if trusted:
+    ar: typing.Final = await AppFunctions.get_app_request(evedb, quart.session, quart.request)
+    if ar.trusted:
 
         permitted_data = list()
         denied_data = list()
 
         try:
             async with await evedb.sessionmaker() as session:
-                permitted_data = await AppFunctions.get_usage(session, True, now)
-                denied_data = await AppFunctions.get_usage(session, False, now)
+                permitted_data = await AppFunctions.get_usage(session, True, ar.ts)
+                denied_data = await AppFunctions.get_usage(session, False, ar.ts)
 
         except Exception as ex:
             app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
 
         return await quart.render_template(
             "usage.html",
-            character_name=client_session.get(EveSSO.ESI_CHARACTER_NAME),
-            character_id=client_session.get(EveSSO.ESI_CHARACTER_ID),
+            character_id=ar.character_id,
             permitted_usage=permitted_data, denied_usage=denied_data)
 
     return quart.redirect("/")
@@ -127,56 +113,54 @@ async def _usage() -> quart.Response:
 @app.route("/about/", methods=["GET"])
 @otel
 async def _about() -> quart.Response:
-    client_session: typing.Final = quart.session
-    character_id: typing.Final = client_session.get(EveSSO.ESI_CHARACTER_ID, 0)
-    if character_id > 0:
 
-        corpporation_id: typing.Final = client_session.get(EveSSO.ESI_CORPORATION_ID, 0)
-        alliance_id: typing.Final = client_session.get(EveSSO.ESI_ALLIANCE_ID, 0)
-        character_permitted: typing.Final = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id)
+    _: typing.Final = await AppFunctions.get_app_request(evedb, quart.session, quart.request)
+
+    return await quart.render_template("about.html")
+
+
+@app.route('/moon', defaults={'moon_id': 0})
+@app.route('/moon/<int:moon_id>')
+@otel
+async def page(moon_id: int) -> quart.Response:
+
+    ar: typing.Final = await AppFunctions.get_app_request(evedb, quart.session, quart.request)
+    if ar.character_id > 0 and ar.permitted:
+        moon_history: typing.Final = list()
+        moon_yield: typing.Final = list()
 
         try:
-            async with await evedb.sessionmaker() as session, session.begin():
-
-                session.add(EveTables.AccessHistory(character_id=character_id, permitted=bool(character_permitted), path=quart.request.path))
-                await session.commit()
-
+            async with await evedb.sessionmaker() as session:
+                moon_history += await AppFunctions.get_moon_history(session, moon_id, ar.ts)
+                moon_yield += await AppFunctions.get_moon_yield(session, moon_id, ar.ts)
+                
         except Exception as ex:
             app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
 
-    return await quart.render_template("about.html")
+        time_chunking = 3
+        return await quart.render_template(
+            "moon.html",
+            character_id=ar.character_id,
+            moon_id=moon_id,
+            moon_history=moon_history,
+            moon_yield=moon_yield,
+            weekday_names=['M', 'T', 'W', 'T', 'F', 'S', 'S'],
+            timeofday_names=[f"{(x-time_chunking):02d}-{(x):02d}" for x in range(time_chunking, 24 + time_chunking) if x % time_chunking == 0],
+        )
+
+    return quart.redirect("/")
+
 
 
 @app.route("/", methods=["GET"])
 @otel
 async def root() -> quart.Response:
 
-    client_session: typing.Final = quart.session
+    ar: typing.Final = await AppFunctions.get_app_request(evedb, quart.session, quart.request)
+    if ar.character_id > 0 and ar.permitted:
 
-    now: typing.Final = datetime.datetime.now(tz=datetime.timezone.utc)
-
-    character_id: typing.Final = client_session.get(EveSSO.ESI_CHARACTER_ID, 0)
-    corpporation_id: typing.Final = client_session.get(EveSSO.ESI_CORPORATION_ID, 0)
-    alliance_id: typing.Final = client_session.get(EveSSO.ESI_ALLIANCE_ID, 0)
-
-    character_permitted: typing.Final = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id)
-    character_trusted: typing.Final = await AppFunctions.is_trusted(evedb, character_id, corpporation_id, alliance_id)
-
-    if character_id > 0:
-
-        try:
-            async with await evedb.sessionmaker() as session, session.begin():
-
-                session.add(EveTables.AccessHistory(character_id=character_id, permitted=bool(character_permitted), path=quart.request.path))
-                await session.commit()
-
-        except Exception as ex:
-            app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
-
-    if character_id > 0 and character_permitted:
-
-        if bool(client_session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)):
-            EveStructureTask(client_session, evedb, app.logger)
+        if bool(ar.session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)):
+            EveStructureTask(ar.session, evedb, app.logger)
 
         active_timer_results: typing.Final = list()
         completed_extraction_results: typing.Final = list()
@@ -187,46 +171,43 @@ async def root() -> quart.Response:
         try:
             async with await evedb.sessionmaker() as session:
 
-                active_timer_results += await AppFunctions.get_active_timers(session, now)
-                completed_extraction_results += await AppFunctions.get_completed_extractions(session, now)
-                scheduled_extraction_results += await AppFunctions.get_scheduled_extractions(session, now)
-                if character_trusted:
-                    structure_fuel_results += await AppFunctions.get_structure_fuel_expiries(session, now)
+                active_timer_results += await AppFunctions.get_active_timers(session, ar.ts)
+                completed_extraction_results += await AppFunctions.get_completed_extractions(session, ar.ts)
+                scheduled_extraction_results += await AppFunctions.get_scheduled_extractions(session, ar.ts)
+                structure_fuel_results += await AppFunctions.get_structure_fuel_expiries(session, ar.ts)
 
-                    last_update_dict: typing.Final = dict()
-                    for obj in structure_fuel_results:
-                        if isinstance(obj, EveTables.Structure):
-                            if obj.corporation_id not in last_update_dict.keys():
-                                last_update_dict[obj.corporation_id] = obj
-                            elif obj.timestamp > last_update_dict[obj.corporation_id].timestamp:
-                                last_update_dict[obj.corporation_id] = obj
+                last_update_dict: typing.Final = dict()
+                for obj in structure_fuel_results:
+                    if isinstance(obj, EveTables.Structure):
+                        if obj.corporation_id not in last_update_dict.keys():
+                            last_update_dict[obj.corporation_id] = obj
+                        elif obj.timestamp > last_update_dict[obj.corporation_id].timestamp:
+                            last_update_dict[obj.corporation_id] = obj
 
-                    last_update_results += sorted(last_update_dict.values(), reverse=False, key=lambda x: x.timestamp)
+                last_update_results += sorted(last_update_dict.values(), reverse=False, key=lambda x: x.timestamp)
 
         except Exception as ex:
             app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
 
         return await quart.render_template(
             "home.html",
-            character_name=client_session.get(EveSSO.ESI_CHARACTER_NAME),
-            character_id=client_session.get(EveSSO.ESI_CHARACTER_ID),
+            character_id=ar.character_id,
             active_timers=active_timer_results,
             completed_extractions=completed_extraction_results,
             scheduled_extractions=scheduled_extraction_results,
             structure_fuel_expiries=structure_fuel_results,
             last_update=last_update_results,
+            character_trusted=ar.trusted,
         )
 
-    elif character_id > 0 and not character_permitted:
-        app.logger.warning(f"{character_id} not permitted")
+    elif ar.character_id > 0 and not ar.permitted:
+        app.logger.warning(f"{ar.character_id} not permitted")
         return await quart.render_template(
             "permission.html",
-            character_id=character_id,
-            character_name=client_session.get(EveSSO.ESI_CHARACTER_NAME),
+            character_id=ar.character_id,
         )
 
-    else:
-        return await quart.render_template("login.html")
+    return await quart.render_template("login.html")
 
 
 if __name__ == "__main__":
@@ -236,9 +217,9 @@ if __name__ == "__main__":
 
     AppTemplates.add_templates(app, evedb)
 
-    app_debug = app.config.get("DEBUG", False)
-    app_port = app.config.get("PORT", 5050)
-    app_host = app.config.get("HOST", "127.0.0.1")
+    app_debug: typing.Final = app.config.get("DEBUG", False)
+    app_port: typing.Final = app.config.get("PORT", 5050)
+    app_host: typing.Final = app.config.get("HOST", "127.0.0.1")
 
     # app_log_file: typing.Final = os.path.join(app.config.get('BASEDIR', os.path.basename(os.path.abspath(os.path.splitext(__file__)[0]))), "logs", "app.log")
     # app_log_dir: typing.Final = os.path.dirname(app_log_file)
@@ -254,8 +235,19 @@ if __name__ == "__main__":
         import hypercorn.config
         from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-        config = hypercorn.config.Config()
-        config.bind = [f"{app_host}:{app_port}"]
+        trusted_hosts: typing.Final = ["127.0.0.1", "::1"]
+
+        # is_development = False
+        # development_flag_file = os.path.join(app.config.get("BASEDIR", "."), "development.txt")
+        # if os.path.exists(development_flag_file):
+        #     with open(development_flag_file) as ifp:
+        #         is_development = True
+        #         for line in [line.strip() for line in ifp.readlines()]:
+        #             trusted_hosts.append(line)
+        # app.logger.info(f"{inspect.currentframe().f_code.co_name}: trusted_hosts:{sorted(trusted_hosts)}")
+
+        config: typing.Final = hypercorn.config.Config()
+        config.bind = [f"{host}:{app_port}" for host in trusted_hosts]
         config.accesslog = "-"
 
         async def async_main():
@@ -265,13 +257,13 @@ if __name__ == "__main__":
                 app.asgi_app
             )
 
-            app.asgi_app = RateLimiterMiddleware(
-                app.asgi_app,
-                threshold=32
-            )
+            # app.asgi_app = RateLimiterMiddleware(
+            #     app.asgi_app,
+            #     threshold=32
+            # )
 
             app.asgi_app = ProxyHeadersMiddleware(
-                app.asgi_app, trusted_hosts=["127.0.0.1"]
+                app.asgi_app, trusted_hosts=trusted_hosts
             )
 
             await hypercorn.asyncio.serve(app, config)

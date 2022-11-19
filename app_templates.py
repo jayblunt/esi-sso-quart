@@ -1,16 +1,27 @@
 import datetime
+import enum
 import typing
 
 import quart
 import quart.sessions
 
 from app_functions import AppFunctions
-from sso import EveSSO
 from db import EveDatabase
+from sso import EveSSO
 from telemetry import otel
 
+
+class TemplateIdCacheEnum(enum.Enum):
+
+    CHARACTER_NAME = 0
+    MOON_NAME = 1
+    TYPE_NAME = 2
+
+
 _CACHE = {
-    EveSSO.ESI_CHARACTER_NAME: dict()
+    TemplateIdCacheEnum.CHARACTER_NAME: dict(),
+    TemplateIdCacheEnum.MOON_NAME: dict(),
+    TemplateIdCacheEnum.TYPE_NAME: dict(),
 }
 _EVEDB = None
 
@@ -34,17 +45,43 @@ class AppTemplates:
     async def _character_name(input: str):
         global _CACHE, _EVEDB
         character_id = int(input)
-        character_name = _CACHE[EveSSO.ESI_CHARACTER_NAME].get(character_id)
+        character_name = _CACHE[TemplateIdCacheEnum.CHARACTER_NAME].get(character_id)
         if not character_name:
             character_name = await AppFunctions.get_character_name(_EVEDB, character_id)
             if character_name:
-                _CACHE[EveSSO.ESI_CHARACTER_NAME][character_id] = character_name
+                _CACHE[TemplateIdCacheEnum.CHARACTER_NAME][character_id] = character_name
         return character_name
 
 
     @staticmethod
     @otel
-    async def _zkillboard(input: str):
+    async def _moon_name(input: str):
+        global _CACHE, _EVEDB
+        moon_id = int(input)
+        moon_name = _CACHE[TemplateIdCacheEnum.MOON_NAME].get(moon_id)
+        if not moon_name:
+            moon_name = await AppFunctions.get_mmon_name(_EVEDB, moon_id)
+            if moon_name:
+                _CACHE[TemplateIdCacheEnum.MOON_NAME][moon_id] = moon_name
+        return moon_name
+
+
+    @staticmethod
+    @otel
+    async def _type_name(input: str):
+        global _CACHE, _EVEDB
+        moon_id = int(input)
+        moon_name = _CACHE[TemplateIdCacheEnum.TYPE_NAME].get(moon_id)
+        if not moon_name:
+            moon_name = await AppFunctions.get_type_name(_EVEDB, moon_id)
+            if moon_name:
+                _CACHE[TemplateIdCacheEnum.TYPE_NAME][moon_id] = moon_name
+        return moon_name
+
+
+    @staticmethod
+    @otel
+    async def _zkillboard_character(input: str):
         character_id = int(input)
         return f"https://zkillboard.com/character/{character_id}/"
 
@@ -83,16 +120,32 @@ class AppTemplates:
 
     @staticmethod
     @otel
+    def _date(dt: datetime.datetime) -> str:
+        return dt.replace(tzinfo=None).date().isoformat()
+
+
+    @staticmethod
+    @otel
+    def _percentage(n: float) -> str:
+        return f"{(100 * n):.2f}%"
+
+
+    @staticmethod
+    @otel
     def add_templates(app: quart.Quart, evedb: EveDatabase) -> None:
         global _EVEDB
         _EVEDB = evedb
         filters: typing.Final = {
             "login_type": AppTemplates._login_type,
             "character_name": AppTemplates._character_name,
-            "zkillboard": AppTemplates._zkillboard,
+            "moon_name": AppTemplates._moon_name,
+            "type_name": AppTemplates._type_name,
+            "zkillboard_character": AppTemplates._zkillboard_character,
             "structure_state": AppTemplates._structure_state,
             "timestamp_age": AppTemplates._timestamp_age,
             "datetime": AppTemplates._datetime,
+            "date": AppTemplates._date,
+            "percentage": AppTemplates._percentage,
         }
         for k, v in filters.items():
             app.add_template_filter(v, k)
