@@ -15,11 +15,46 @@ import sqlalchemy.orm
 import sqlalchemy.sql
 
 from db import EveDatabase, EveTables
+from tasks.app_tasks import EveExtractionState, EveStructureState
 
 # from telemetry import otel, otel_initialize
 
 
-async def parse_old_extraction_archive(evedn: EveDatabase):
+async def generate_extraction_history(evedb: EveDatabase, logger: logging.Logger):
+
+    extraction_state: typing.Final = EveExtractionState(evedb, logger)
+
+    async with await evedb.sessionmaker() as session, session.begin():
+
+        query = (
+            sqlalchemy.select(EveTables.ExtractionQueryLog)
+            .order_by(sqlalchemy.asc(EveTables.ExtractionQueryLog.timestamp))
+        )
+        result: sqlalchemy.engine.Result = await session.execute(query)
+        for one in [x for x in result.scalars()]:
+            one: EveTables.ExtractionQueryLog
+
+            for x in one.json:
+                edict = dict({
+                    "character_id": one.character_id,
+                    "corporation_id": one.corporation_id,
+                })
+                for k, v in x.items():
+                    if k in ["chunk_arrival_time", "extraction_start_time", "natural_decay_time"]:
+                        v = dateutil.parser.parse(v).replace(tzinfo=datetime.timezone.utc)
+                    elif k in ["structure_id", "moon_id"]:
+                        v = int(v)
+                    else:
+                        continue
+                    edict[k] = v
+
+                structure_id = edict.get('structure_id', 0)
+                if structure_id > 0:
+                    await extraction_state.set(structure_id, edict, now_exists=True, now_timestamp=one.timestamp)
+
+
+
+async def parse_old_extraction_archive(evedb: EveDatabase):
 
     epoch: typing.Final = datetime.datetime.fromtimestamp(0, tz=datetime.timezone.utc)
     switchover_dict: typing.Final = dict()
@@ -172,13 +207,15 @@ if __name__ == "__main__":
     # logging.basicConfig(level=logging.DEBUG)
     # otel_initialize()
 
-    evedb: typing.Final = EveDatabase(os.getenv("SQLALCHEMY_DB_URL", ""), echo=True)
+    evedb: typing.Final = EveDatabase(os.getenv("SQLALCHEMY_DB_URL", ""), echo=False)
+    logger: typing.Final = logging.getLogger()
 
     async def async_main(evedb: EveDatabase):
         await evedb._initialize()
 
-        await parse_old_structure_archive(evedb)
-        await parse_old_extraction_archive(evedb)
+        await generate_extraction_history(evedb, logger)
+        # await parse_old_structure_archive(evedb, logger)
+        # await parse_old_extraction_archive(evedb, logger)
 
         # await asyncio.sleep(10)
 

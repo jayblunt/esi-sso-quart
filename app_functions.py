@@ -1,6 +1,9 @@
+import dataclasses
 import datetime
 import typing
 
+import quart
+import quart.sessions
 import sqlalchemy
 import sqlalchemy.ext.asyncio
 import sqlalchemy.ext.asyncio.engine
@@ -8,10 +11,52 @@ import sqlalchemy.orm
 import sqlalchemy.sql
 
 from db import EveAccessType, EveDatabase, EveTables
+from sso import EveSSO
 from telemetry import otel
 
 
+@dataclasses.dataclass(frozen=True)
+class AppRequest:
+    session: quart.sessions.SessionMixin = None
+    character_id: int = 0
+    corpporation_id: int = 0
+    alliance_id: int = 0
+    permitted: bool = False
+    trusted: bool = False
+    tester: bool = False
+    ts: datetime.datetime = datetime.datetime.now(tz=datetime.timezone.utc)
+
+
 class AppFunctions:
+
+
+    @staticmethod
+    @otel
+    async def get_app_request(evedb: EveDatabase, session: quart.sessions.SessionMixin, request: quart.Request) -> AppRequest:
+
+        character_id: typing.Final = session.get(EveSSO.ESI_CHARACTER_ID, 0)
+        corpporation_id: typing.Final = session.get(EveSSO.ESI_CORPORATION_ID, 0)
+        alliance_id: typing.Final = session.get(EveSSO.ESI_ALLIANCE_ID, 0)
+
+        permitted: typing.Final = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id)
+        trusted: typing.Final = await AppFunctions.is_trusted(evedb, character_id, corpporation_id, alliance_id)
+
+        ar = AppRequest(session=session,
+            character_id=character_id,
+            corpporation_id=corpporation_id,
+            alliance_id=alliance_id,
+            permitted=permitted,
+            trusted=trusted)
+
+        if ar.character_id > 0 and ar.character_id not in [92923556]:
+            try:
+                async with await evedb.sessionmaker() as session, session.begin():
+                    session.add(EveTables.AccessHistory(character_id=ar.character_id, permitted=bool(ar.permitted), path=request.path))
+                    await session.commit()
+            except Exception:
+                pass
+
+        return ar
 
 
     @staticmethod
@@ -90,6 +135,50 @@ class AppFunctions:
 
     @staticmethod
     @otel
+    async def get_moon_yield(session: sqlalchemy.ext.asyncio.AsyncSession, moon_id: int, now: datetime.datetime) -> list:
+        query: typing.Final = (
+            sqlalchemy.select(EveTables.MoonYield)
+            .where(EveTables.MoonYield.moon_id == moon_id)
+            .order_by(sqlalchemy.desc(EveTables.MoonYield.yield_percent))
+        )
+
+        result = await session.execute(query)
+        return [x for x in result.scalars() if x is not None]
+
+
+    @staticmethod
+    @otel
+    async def get_moon_history(session: sqlalchemy.ext.asyncio.AsyncSession, moon_id: int, now: datetime.datetime) -> list:
+        query: typing.Final = (
+            sqlalchemy.select(EveTables.ExtractionHistory)
+            .where(
+                sqlalchemy.and_(
+                    EveTables.ExtractionHistory.exists == sqlalchemy.sql.expression.true(),
+                    EveTables.ExtractionHistory.moon_id == moon_id,
+                    EveTables.ExtractionHistory.chunk_arrival_time < now,
+                )
+            )
+            .order_by(sqlalchemy.desc(EveTables.ExtractionHistory.chunk_arrival_time))
+            # .options(sqlalchemy.orm.selectinload(EveTables.ExtractionHistory.corporation))
+            # .options(sqlalchemy.orm.selectinload(EveTables.ExtractionHistory.moon))
+            .limit(12)
+        )
+
+        result = await session.execute(query)
+        results = list()
+        for x in result.scalars():
+            x: EveTables.ExtractionHistory
+            cat: datetime.datetime = x.chunk_arrival_time
+            results.append({
+                'extraction': x,
+                'dow': cat.isoweekday() - 1,
+                'tod': cat.hour // 3,
+            })
+        return results
+
+
+    @staticmethod
+    @otel
     async def get_usage(session: sqlalchemy.ext.asyncio.AsyncSession, permitted: bool, now: datetime.datetime) -> list:
 
         permitted_condition: typing.Final = sqlalchemy.sql.expression.true() if permitted else sqlalchemy.sql.expression.false()
@@ -114,6 +203,32 @@ class AppFunctions:
             query = (
                 sqlalchemy.select(EveTables.Character.name)
                 .where(EveTables.Character.character_id == character_id)
+                .limit(1)
+            )
+            result: sqlalchemy.engine.Result = await session.execute(query)
+            return result.scalar_one_or_none()
+
+
+    @staticmethod
+    @otel
+    async def get_mmon_name(evedb: EveDatabase, moon_id: int) -> str | None:
+        async with await evedb.sessionmaker() as session:
+            query = (
+                sqlalchemy.select(EveTables.UniverseMoon.name)
+                .where(EveTables.UniverseMoon.moon_id == moon_id)
+                .limit(1)
+            )
+            result: sqlalchemy.engine.Result = await session.execute(query)
+            return result.scalar_one_or_none()
+
+
+    @staticmethod
+    @otel
+    async def get_type_name(evedb: EveDatabase, type_id: int) -> str | None:
+        async with await evedb.sessionmaker() as session:
+            query = (
+                sqlalchemy.select(EveTables.UniverseType.name)
+                .where(EveTables.UniverseType.type_id == type_id)
                 .limit(1)
             )
             result: sqlalchemy.engine.Result = await session.execute(query)

@@ -1,6 +1,6 @@
 import collections.abc
 import inspect
-from typing import Final
+import typing
 
 import sqlalchemy
 import sqlalchemy.ext.asyncio
@@ -21,7 +21,7 @@ class EveAccessControlTask(EveTask):
 
         self.logger.info(f"> {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
 
-        acl_bootstrap_set: Final = {
+        acl_bootstrap_set: typing.Final = {
             EveTables.AccessControls(type=EveAccessType.ALLIANCE, id=99002329, permit=True),
             EveTables.AccessControls(type=EveAccessType.CORPORATION, id=1000169, permit=True),
             EveTables.AccessControls(type=EveAccessType.CORPORATION, id=98508146, permit=True),
@@ -31,7 +31,7 @@ class EveAccessControlTask(EveTask):
         try:
             async with await self.db.sessionmaker() as session, session.begin():
 
-                existing_acl_set: Final = set()
+                existing_acl_set: typing.Final = set()
                 existing_query = sqlalchemy.select(EveTables.AccessControls)
                 existing_query_result = await session.execute(existing_query)
                 existing_acl_set |= {x for x in existing_query_result.scalars()}

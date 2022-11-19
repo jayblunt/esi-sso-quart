@@ -1,11 +1,9 @@
 {% extends "base.html" %} {% block content %} {% include "character.html" %}
 <div class="box">
-    <h3>2022-11-13</h3>
-    <p>Update: looks like the ESI api lags is still reporting an old timer on a structure that I know has changed state
-        ..</p>
+    <h3>2022-11-19</h3>
+    <p>Had some hosting instability, should be fixed now .. let me know if you get errors ..</p>
+    <p><b>Moon Information</b> in the extractions section - the moon names are links ...</p>
     <p>If the information here is missing or wrong, let me know in game.</p>
-    <!-- <h3>2022-11-05</h3>
-    <p>I did not handle the case where all the structures in a corporation got wiped out. I do now. Sorry GRRRvana, I'm sure they will be replaced ..</p> -->
 </div>
 {% if active_timers %}
 <div class="box">
@@ -64,7 +62,8 @@
                         href="https://evewho.com/corporation/{{e.corporation_id}}" target="_blank"> {{
                         e.corporation.name }} </a></td>
                 <td align="left" class="{{e.timestamp|timestamp_age}}">{{ e.structure.name }}</td>
-                <td align="left" class="{{e.timestamp|timestamp_age}}">{{ e.moon.name }}</td>
+                <td align="left" class="{{e.timestamp|timestamp_age}}"><a href="/moon/{{ e.moon.moon_id }}">{{ e.moon.name }}</a></td>
+                <!-- <td align="left" class="{{e.timestamp|timestamp_age}}">{{ e.moon.name }}</td> -->
                 <td class="{{e.timestamp|timestamp_age}}">{{ e.structure.fuel_expires|datetime }}</td>
                 <td class="{{e.timestamp|timestamp_age}}">{{ e.chunk_arrival_time|datetime }}</td>
                 <td class="{{e.timestamp|timestamp_age}}">{{ e.belt_decay_time|datetime }}</td>
@@ -84,7 +83,8 @@
                         href="https://evewho.com/corporation/{{e.corporation_id}}" target="_blank"> {{
                         e.corporation.name }} </a></td>
                 <td align="left" class="{{e.timestamp|timestamp_age}}">{{ e.structure.name }}</td>
-                <td align="left" class="{{e.timestamp|timestamp_age}}">{{ e.moon.name }}</td>
+                <td align="left" class="{{e.timestamp|timestamp_age}}"><a href="/moon/{{ e.moon.moon_id }}">{{ e.moon.name }}</a></td>
+                <!-- <td align="left" class="{{e.timestamp|timestamp_age}}">{{ e.moon.name }}</td> -->
                 <td class="{{e.timestamp|timestamp_age}}">{{ e.structure.fuel_expires|datetime }}</td>
                 <td class="{{e.timestamp|timestamp_age}}">{{ e.chunk_arrival_time|datetime }}</td>
                 <td></td>
@@ -139,11 +139,9 @@
         </tfoot>
     </table>
 </div>
-{% endif %} {% if last_update %}
+{% endif %}
+{% if last_update %}
 <div class="box">
-    <h3>Recent Usage</h3>
-    <p>Recent <a href="/usage/">usage information</a> is available to contributors and to explicity trusted characters.
-    </p>
     <h3>Most Recent Structure Update</h3>
     <table>
         <thead>
@@ -170,4 +168,12 @@
         </tfoot>
     </table>
 </div>
-{% endif %} {% endblock %}
+{% endif %}
+{% if character_trusted %}
+<div class="box">
+    <h3>Recent Usage</h3>
+    <p>Recent <a href="/usage/">usage information</a> is available.
+    </p>
+</div>
+{% endif %}
+{% endblock %}

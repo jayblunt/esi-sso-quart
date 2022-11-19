@@ -191,15 +191,15 @@ class EveTables:
             return f"{self.__class__.__name__}(exists={self.exists}, structure_id={self.structure_id}, system_id={self.system_id}, name={self.name})"
 
 
-    class StructureArchive(Base):
-        __tablename__ = "app_structure_archive"
-        timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), primary_key=True, server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
-        character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
-        structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
-        json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+    # class StructureArchive(Base):
+    #     __tablename__ = "app_structure_archive"
+    #     timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), primary_key=True, server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
+    #     character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+    #     structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+    #     json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
 
-        def __repr__(self) -> str:
-            return f"{self.__class__.__name__}(timestamp={self.timestamp}, character_id={self.character_id}, structure_id={self.structure_id})"
+    #     def __repr__(self) -> str:
+    #         return f"{self.__class__.__name__}(timestamp={self.timestamp}, character_id={self.character_id}, structure_id={self.structure_id})"
 
 
     class StructurQueryLog(Base):
@@ -276,15 +276,15 @@ class EveTables:
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(exists={self.exists}, structure_id={self.structure_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time})"
 
-    class ExtractionArchive(Base):
-        __tablename__ = "app_extraction_archive"
-        timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), primary_key=True, server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
-        character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
-        structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
-        json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+    # class ExtractionArchive(Base):
+    #     __tablename__ = "app_extraction_archive"
+    #     timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), primary_key=True, server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
+    #     character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+    #     structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
+    #     json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
 
-        def __repr__(self) -> str:
-            return f"{self.__class__.__name__}(timestamp={self.timestamp}, structure_id={self.structure_id}, character_id={self.character_id})"
+    #     def __repr__(self) -> str:
+    #         return f"{self.__class__.__name__}(timestamp={self.timestamp}, structure_id={self.structure_id}, character_id={self.character_id})"
 
 
     class ExtractionQueryLog(Base):

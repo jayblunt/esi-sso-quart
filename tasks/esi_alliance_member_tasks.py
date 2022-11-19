@@ -1,6 +1,6 @@
 import collections.abc
 import inspect
-from typing import Final
+import typing
 
 import aiohttp
 import aiohttp.client_exceptions
@@ -23,9 +23,9 @@ class EveEsiAlliancMemberTask(EveTask):
     @otel
     async def run(self, client_session: collections.abc.MutableMapping):
 
-        corporation_id_set: Final = set()
+        corporation_id_set: typing.Final = set()
 
-        alliance_id: Final = int(client_session.get(EveSSO.ESI_ALLIANCE_ID, 0))
+        alliance_id: typing.Final = int(client_session.get(EveSSO.ESI_ALLIANCE_ID, 0))
         if alliance_id in [99002329]:
             corporation_id_set.add(1000169)
 
@@ -46,9 +46,9 @@ class EveEsiAlliancMemberTask(EveTask):
             try:
                 async with await self.db.sessionmaker() as session, session.begin():
 
-                    alliance_corporations_query: Final = sqlalchemy.select(EveTables.AllianceCorporation).where(EveTables.AllianceCorporation.alliance_id == alliance_id)
+                    alliance_corporations_query: typing.Final = sqlalchemy.select(EveTables.AllianceCorporation).where(EveTables.AllianceCorporation.alliance_id == alliance_id)
                     alliance_corporations_query_result = await session.execute(alliance_corporations_query)
-                    existing_obj_set: Final = {x for x in alliance_corporations_query_result.scalars()}
+                    existing_obj_set: typing.Final = {x for x in alliance_corporations_query_result.scalars()}
 
                     obj_set = set()
                     for corporation_id in corporation_id_set:
@@ -73,11 +73,11 @@ class EveEsiAlliancMemberTask(EveTask):
             try:
                 async with await self.db.sessionmaker() as session, session.begin():
 
-                    existing_corporations_query: Final = sqlalchemy.select(EveTables.Corporation)
+                    existing_corporations_query: typing.Final = sqlalchemy.select(EveTables.Corporation)
                     existing_corporations_query_result = await session.execute(existing_corporations_query)
-                    existing_corporation_set: Final = {x for x in existing_corporations_query_result.scalars()}
+                    existing_corporation_set: typing.Final = {x for x in existing_corporations_query_result.scalars()}
 
-                    existing_corporation_id_set: Final = {x.corporation_id for x in existing_corporation_set}
+                    existing_corporation_id_set: typing.Final = {x.corporation_id for x in existing_corporation_set}
 
                     obj_set = set()
 
@@ -91,7 +91,7 @@ class EveEsiAlliancMemberTask(EveTask):
                             async with await http_session.get(url, params=self.common_params) as response:
                                 # print(f"{response.url} -> {response.status}")
                                 if response.status in [200]:
-                                    edict: Final = dict({
+                                    edict: typing.Final = dict({
                                         "corporation_id": corporation_id
                                     })
 

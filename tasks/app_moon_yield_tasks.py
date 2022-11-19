@@ -4,7 +4,7 @@ import dataclasses
 import inspect
 import json
 import os
-from typing import Final
+import typing
 
 import sqlalchemy
 import sqlalchemy.exc
@@ -16,7 +16,7 @@ import sqlalchemy.sql
 from db import EveTables
 from telemetry import otel, otel_add_exception
 
-from .task import EveTask
+from .task import EveDatabaseTask
 
 
 @dataclasses.dataclass(frozen=True)
@@ -28,44 +28,70 @@ class MoonYieldData:
     yield_percent: float
 
 
-class EveMoonYieldTask(EveTask):
+class EveMoonYieldTask(EveDatabaseTask):
 
     @otel
     async def run(self, client_session: collections.abc.MutableSet):
 
-        moon_data_list: Final = list()
-        moon_data_filename: Final = os.path.abspath(os.path.join(self.configdir, "moon_data.json"))
-        if os.path.exists(moon_data_filename):
-            with open(moon_data_filename) as ifp:
-                [moon_data_list.append(MoonYieldData(**edict)) for edict in json.load(ifp)]
+        self.logger.info(f"> {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
+
+        try:
+            moon_data_list: typing.Final = list()
+            moon_data_filename: typing.Final = os.path.abspath(os.path.join(self.configdir, "moon_data.json"))
+            if not os.path.exists(moon_data_filename):
+                self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: moon_data_filename:{moon_data_filename}")
+
+            if os.path.exists(moon_data_filename):
+                with open(moon_data_filename) as ifp:
+                    [moon_data_list.append(MoonYieldData(**edict)) for edict in json.load(ifp)]
+
+        except Exception as ex:
+            otel_add_exception(ex)
+            self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+
+        if len(moon_data_list) == 0:
+            self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: moon_data_list:{moon_data_list}")
+            self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: moon_data_filename:{moon_data_filename}")
 
         if len(moon_data_list) > 0:
+
+            type_id_set: typing.Final = set()
+            existing_id_set: typing.Final = set(map(lambda x: x.moon_id, moon_data_list))
+            if len(existing_id_set) > 0:
+                try:
+                    async with await self.db.sessionmaker() as session, session.begin():
+
+                        if len(existing_id_set) > 0:
+                            query = (
+                                sqlalchemy.delete(EveTables.MoonYield)
+                                .where(EveTables.MoonYield.moon_id.in_(existing_id_set))
+                            )
+                            await session.execute(query)
+                            await session.commit()
+
+                except Exception as ex:
+                    otel_add_exception(ex)
+                    self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
 
             try:
                 async with await self.db.sessionmaker() as session, session.begin():
 
-                    existing_obj_set: Final = set()
-                    moon_yield_query: Final = sqlalchemy.select(EveTables.MoonYield)
-                    moon_yield_query_result = await session.execute(moon_yield_query)
-                    existing_obj_set |= {x for x in moon_yield_query_result.scalars()}
-                    existing_id_set: Final = {m.moon_id for m in existing_obj_set}
-
-                    obj_set: Final = set()
+                    obj_set: typing.Final = set()
                     for md in moon_data_list:
-                        if md.moon_id in existing_id_set:
-                            continue
+                        md: MoonYieldData
                         obj = EveTables.MoonYield(type_id=md.type_id, system_id=md.system_id, planet_id=md.planet_id, moon_id=md.moon_id, yield_percent=md.yield_percent)
                         obj_set.add(obj)
-
-                    if len(existing_obj_set) > 0:
-                        [await session.delete(x) for x in existing_obj_set]
+                        type_id_set.add(obj.type_id)
 
                     if len(obj_set) > 0:
                         session.add_all(obj_set)
-
-                    if any([len(existing_obj_set) > 0, len(obj_set) > 0]):
                         await session.commit()
 
             except Exception as ex:
                 otel_add_exception(ex)
-                self.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
+                self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+
+            if len(type_id_set) > 0:
+                await self.backfill_types(type_id_set)
+
+        self.logger.info(f"< {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
