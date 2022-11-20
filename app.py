@@ -235,19 +235,20 @@ if __name__ == "__main__":
         import hypercorn.config
         from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-        trusted_hosts: typing.Final = ["127.0.0.1", "::1"]
+        app_trusted_hosts: typing.Final = ["127.0.0.1", "::1"]
+        app_bind_hosts: typing.Final = [x for x in app_trusted_hosts]
 
-        # is_development = False
-        # development_flag_file = os.path.join(app.config.get("BASEDIR", "."), "development.txt")
-        # if os.path.exists(development_flag_file):
-        #     with open(development_flag_file) as ifp:
-        #         is_development = True
-        #         for line in [line.strip() for line in ifp.readlines()]:
-        #             trusted_hosts.append(line)
-        # app.logger.info(f"{inspect.currentframe().f_code.co_name}: trusted_hosts:{sorted(trusted_hosts)}")
+        # XXX: hack for development server.
+        development_flag_file = os.path.join(app.config.get("BASEDIR", "."), "development.txt")
+        if os.path.exists(development_flag_file):
+            with open(development_flag_file) as ifp:
+                app_bind_hosts.clear()
+                app_bind_hosts.append("0.0.0.0")
+                for line in [line.strip() for line in ifp.readlines()]:
+                    app_trusted_hosts.append(line)
 
         config: typing.Final = hypercorn.config.Config()
-        config.bind = [f"{host}:{app_port}" for host in trusted_hosts]
+        config.bind = [f"{host}:{app_port}" for host in app_bind_hosts]
         config.accesslog = "-"
 
         async def async_main():
@@ -263,7 +264,7 @@ if __name__ == "__main__":
             # )
 
             app.asgi_app = ProxyHeadersMiddleware(
-                app.asgi_app, trusted_hosts=trusted_hosts
+                app.asgi_app, trusted_hosts=app_trusted_hosts
             )
 
             await hypercorn.asyncio.serve(app, config)
