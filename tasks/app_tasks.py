@@ -26,12 +26,10 @@ from .task import EveDatabaseTask
 
 class EveCommonState:
 
-
     def __init__(self, db: EveDatabase, logger: logging.Logger = logging.getLogger()) -> None:
         self.db: typing.Final = db
         self.logger: typing.Final = logger
         self.name: typing.Final = self.__class__.__name__
-
 
     async def check_changes(self, structure_id: int, prior_exists: bool, now_exists: bool, prior_edict: dict, now_edict: dict) -> dict:
         result = None
@@ -50,7 +48,6 @@ class EveCommonState:
 
 
 class EveStructureState(EveCommonState):
-
 
     async def structure_ids(self, corporation_id: int) -> set[int]:
         corporation_structure_ids = set()
@@ -86,7 +83,6 @@ class EveStructureState(EveCommonState):
 
         return corporation_structure_ids
 
-
     async def get(self, structure_id: int) -> EveTables.StructureHistory | None:
         structure_obj = None
         try:
@@ -109,7 +105,6 @@ class EveStructureState(EveCommonState):
             self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
 
         return structure_obj
-
 
     async def set(self, structure_id: int, now_edict: dict, now_exists: bool, now_timestamp: datetime.datetime | None = None) -> None:
 
@@ -141,7 +136,6 @@ class EveStructureState(EveCommonState):
 
 
 class EveExtractionState(EveCommonState):
-
 
     async def structure_ids(self, corporation_id: int) -> set[int]:
         corporation_structure_ids = set()
@@ -177,7 +171,6 @@ class EveExtractionState(EveCommonState):
 
         return corporation_structure_ids
 
-
     async def get(self, structure_id: int) -> EveTables.ExtractionHistory | None:
         structure_obj = None
         try:
@@ -200,7 +193,6 @@ class EveExtractionState(EveCommonState):
             self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
 
         return structure_obj
-
 
     async def set(self, structure_id: int, now_edict: dict, now_exists: bool, now_timestamp: datetime.datetime | None = None) -> None:
 
@@ -233,13 +225,11 @@ class EveExtractionState(EveCommonState):
 
 class EveStructureTask(EveDatabaseTask):
 
-
     @otel
     def __init__(self, client_session: collections.abc.MutableMapping, db: EveDatabase, logger: logging.Logger = logging.getLogger()):
         super().__init__(client_session, db, logger)
         self.structure_state: typing.Final = EveStructureState(db, logger)
         self.extraction_state: typing.Final = EveExtractionState(db, logger)
-
 
     @otel
     async def run_structures(self, now: datetime.datetime, character_id: int, corporation_id: int, access_token: str):
@@ -265,7 +255,6 @@ class EveStructureTask(EveDatabaseTask):
         except Exception as ex:
             otel_add_exception(ex)
             self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
-
 
         structure_obj_dict: typing.Final = dict()
         structure_type_id_set: typing.Final = set()
@@ -308,12 +297,10 @@ class EveStructureTask(EveDatabaseTask):
         await self.backfill_types(structure_type_id_set)
         await self.backfill_corporations(structure_corporation_id_set)
 
-
         # Ugly hack to remove structures that no longer exist. If I was better with the ORM I would not have to do this ..
         try:
             want_commit = False
             async with await self.db.sessionmaker() as session, session.begin():
-
 
                 completed_extraction_query: typing.Final = sqlalchemy.select(EveTables.CompletedExtraction).where(
                     EveTables.CompletedExtraction.corporation_id == corporation_id,
@@ -327,7 +314,6 @@ class EveStructureTask(EveDatabaseTask):
                     [await session.delete(x) for x in completed_extraction_obj_list]
                     want_commit = want_commit or True
 
-
                 scheduled_extraction_query: typing.Final = sqlalchemy.select(EveTables.ScheduledExtraction).where(
                     EveTables.ScheduledExtraction.corporation_id == corporation_id,
                     EveTables.ScheduledExtraction.structure_id.not_in(structure_obj_dict.keys())
@@ -339,7 +325,6 @@ class EveStructureTask(EveDatabaseTask):
                     # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: scheduled_extraction_obj_list: {sorted(list(map(lambda x: x.structure_id, scheduled_extraction_obj_list)))}")
                     [await session.delete(x) for x in scheduled_extraction_obj_list]
                     want_commit = want_commit or True
-
 
                 all_structures_query: typing.Final = sqlalchemy.select(EveTables.Structure).where(
                     EveTables.Structure.corporation_id == corporation_id
@@ -355,14 +340,12 @@ class EveStructureTask(EveDatabaseTask):
                     session.add_all(structure_obj_dict.values())
                     want_commit = want_commit or True
 
-
                 if want_commit:
                     await session.commit()
 
         except Exception as ex:
             otel_add_exception(ex)
             self.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
-
 
     @otel
     async def run_extractions(self, now: datetime.datetime, character_id: int, corporation_id: int, access_token: str):
@@ -394,7 +377,6 @@ class EveStructureTask(EveDatabaseTask):
             #     await self.extraction_state.set(structure_id, None, exists=False)
             self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: corporation_id: {corporation_id}, extractions: {extractions}")
             return
-
 
         extractions_obj_dict: typing.Final = dict()
         extraction_structure_id_set: typing.Final = set()
@@ -490,7 +472,6 @@ class EveStructureTask(EveDatabaseTask):
                 otel_add_exception(ex)
                 self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
 
-
     @otel
     async def run(self, client_session: collections.abc.MutableMapping):
         if not client_session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False):
@@ -510,7 +491,6 @@ class EveStructureTask(EveDatabaseTask):
 
 
 class EveStructurePollingTask(EveStructureTask):
-
 
     @otel
     async def get_available_periodic_credentials(self, now: datetime.datetime) -> dict[int, EveTables.PeriodicCredentials]:
@@ -546,7 +526,6 @@ class EveStructurePollingTask(EveStructureTask):
         # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: available_credentials_dict: {sorted(available_credentials_dict.keys())}")
         return available_credentials_dict
 
-
     @otel
     async def get_refresh_times(self, corporation_id_list: list) -> dict[int, datetime.datetime]:
 
@@ -572,7 +551,6 @@ class EveStructurePollingTask(EveStructureTask):
 
         # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh_history_dict: {str(refresh_history_dict)}")
         return corporation_refresh_history_dict
-
 
     @otel
     async def set_refresh_times(self, corporation_id: int, character_id: int, timestamp: datetime.datetime) -> None:
@@ -601,7 +579,6 @@ class EveStructurePollingTask(EveStructureTask):
             otel_add_exception(ex)
             self.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
 
-
     @otel
     async def run_once(self, client_session: collections.abc.MutableSet):
 
@@ -609,25 +586,21 @@ class EveStructurePollingTask(EveStructureTask):
         refresh_interval: typing.Final = datetime.timedelta(seconds=600) - refresh_buffer
         now: typing.Final = datetime.datetime.now(tz=datetime.timezone.utc)
 
-
         available_corporation_id_dict: typing.Final = await self.get_available_periodic_credentials(now)
         if len(available_corporation_id_dict.keys()) == 0:
             await asyncio.sleep(refresh_buffer.total_seconds())
             return
-
 
         corporation_refresh_history_dict: typing.Final = await self.get_refresh_times(available_corporation_id_dict.keys())
         oldest_corporation_id = sorted(corporation_refresh_history_dict.keys(), key=lambda x: corporation_refresh_history_dict[x])[0]
         oldest_corporation_timestamp = corporation_refresh_history_dict[oldest_corporation_id]
         # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: oldest_corporation_id: {oldest_corporation_id}, oldest_timestamp: {oldest_timestamp}")
 
-
         if oldest_corporation_timestamp + refresh_interval > now:
             remaining_interval: typing.Final[datetime.timedelta] = oldest_corporation_timestamp + refresh_interval + refresh_buffer - now
             remaining_sleep_interval: typing.Final = min(refresh_interval.total_seconds(), remaining_interval.total_seconds())
             await asyncio.sleep(remaining_sleep_interval)
             return
-
 
         # Should make these asyncio tasks ...
         refresh_count = 0
@@ -653,7 +626,6 @@ class EveStructurePollingTask(EveStructureTask):
         # otel_add_event(inspect.currentframe().f_code.co_name, {"refresh_count": refresh_count})
         # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh_count {refresh_count}")
         # await asyncio.sleep(int(refresh_buffer.total_seconds()))
-
 
     async def run(self, client_session: collections.abc.MutableSet):
         tracer: typing.Final = opentelemetry.trace.get_tracer_provider().get_tracer(inspect.currentframe().f_code.co_name)

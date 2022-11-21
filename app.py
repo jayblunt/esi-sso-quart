@@ -13,7 +13,7 @@ import quart_session
 from app_functions import AppFunctions
 from app_templates import AppTemplates
 from db import EveDatabase, EveTables
-from middleware import RateLimiterMiddleware
+# from middleware import RateLimiterMiddleware
 from sso import EveSSO
 from tasks import (EveAccessControlTask, EveAllianceTask, EveMoonYieldTask,
                    EveStructurePollingTask, EveStructureTask, EveTask,
@@ -133,7 +133,7 @@ async def page(moon_id: int) -> quart.Response:
             async with await evedb.sessionmaker() as session:
                 moon_history += await AppFunctions.get_moon_history(session, moon_id, ar.ts)
                 moon_yield += await AppFunctions.get_moon_yield(session, moon_id, ar.ts)
-                
+
         except Exception as ex:
             app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
 
@@ -149,7 +149,6 @@ async def page(moon_id: int) -> quart.Response:
         )
 
     return quart.redirect("/")
-
 
 
 @app.route("/", methods=["GET"])
@@ -198,6 +197,7 @@ async def root() -> quart.Response:
             structure_fuel_expiries=structure_fuel_results,
             last_update=last_update_results,
             character_trusted=ar.trusted,
+            character_contributor=ar.contributor,
         )
 
     elif ar.character_id > 0 and not ar.permitted:

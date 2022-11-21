@@ -23,12 +23,11 @@ class AppRequest:
     alliance_id: int = 0
     permitted: bool = False
     trusted: bool = False
-    tester: bool = False
+    contributor: bool = False
     ts: datetime.datetime = datetime.datetime.now(tz=datetime.timezone.utc)
 
 
 class AppFunctions:
-
 
     @staticmethod
     @otel
@@ -40,13 +39,15 @@ class AppFunctions:
 
         permitted: typing.Final = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id)
         trusted: typing.Final = await AppFunctions.is_trusted(evedb, character_id, corpporation_id, alliance_id)
+        contributor: typing.Final = await AppFunctions.is_contributor(evedb, character_id, corpporation_id, alliance_id)
 
         ar = AppRequest(session=session,
-            character_id=character_id,
-            corpporation_id=corpporation_id,
-            alliance_id=alliance_id,
-            permitted=permitted,
-            trusted=trusted)
+                        character_id=character_id,
+                        corpporation_id=corpporation_id,
+                        alliance_id=alliance_id,
+                        permitted=permitted,
+                        trusted=trusted,
+                        contributor=contributor)
 
         if ar.character_id > 0 and ar.character_id not in [92923556]:
             try:
@@ -57,7 +58,6 @@ class AppFunctions:
                 pass
 
         return ar
-
 
     @staticmethod
     @otel
@@ -75,7 +75,6 @@ class AppFunctions:
         )
         timer_query_result = await session.execute(timer_query)
         return [x for x in timer_query_result.scalars()]
-
 
     @staticmethod
     @otel
@@ -95,7 +94,6 @@ class AppFunctions:
         extraction_query_result = await session.execute(extraction_query)
         return [x for x in extraction_query_result.scalars()]
 
-
     @staticmethod
     @otel
     async def get_scheduled_extractions(session: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list:
@@ -114,13 +112,13 @@ class AppFunctions:
         extraction_query_result = await session.execute(extraction_query)
         return [x for x in extraction_query_result.scalars()]
 
-
     @staticmethod
     @otel
     async def get_structure_fuel_expiries(session: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list:
         structure_query: typing.Final = (
             sqlalchemy.select(EveTables.Structure)
             .where(
+                EveTables.Structure.fuel_expires != sqlalchemy.sql.expression.null(),
                 EveTables.Structure.fuel_expires > now,
             )
             .join(EveTables.Structure.system)
@@ -131,7 +129,6 @@ class AppFunctions:
         )
         structure_query_result = await session.execute(structure_query)
         return [x for x in structure_query_result.scalars()]
-
 
     @staticmethod
     @otel
@@ -144,7 +141,6 @@ class AppFunctions:
 
         result = await session.execute(query)
         return [x for x in result.scalars() if x is not None]
-
 
     @staticmethod
     @otel
@@ -176,7 +172,6 @@ class AppFunctions:
             })
         return results
 
-
     @staticmethod
     @otel
     async def get_usage(session: sqlalchemy.ext.asyncio.AsyncSession, permitted: bool, now: datetime.datetime) -> list:
@@ -189,12 +184,11 @@ class AppFunctions:
             .where(EveTables.AccessHistory.permitted == permitted_condition)
             .group_by(EveTables.Character.character_id)
             .order_by(sqlalchemy.desc(sqlalchemy.func.max(EveTables.AccessHistory.timestamp)))
-            .limit(25)
+            .limit(20)
         )
         timer_query_result: typing.Final[sqlalchemy.engine.Result] = await session.execute(timer_query)
         colnames: typing.Final = ["id", "count", "last"]
         return [dict(zip(colnames, x)) for x in timer_query_result.all()]
-
 
     @staticmethod
     @otel
@@ -208,7 +202,6 @@ class AppFunctions:
             result: sqlalchemy.engine.Result = await session.execute(query)
             return result.scalar_one_or_none()
 
-
     @staticmethod
     @otel
     async def get_mmon_name(evedb: EveDatabase, moon_id: int) -> str | None:
@@ -221,7 +214,6 @@ class AppFunctions:
             result: sqlalchemy.engine.Result = await session.execute(query)
             return result.scalar_one_or_none()
 
-
     @staticmethod
     @otel
     async def get_type_name(evedb: EveDatabase, type_id: int) -> str | None:
@@ -233,7 +225,6 @@ class AppFunctions:
             )
             result: sqlalchemy.engine.Result = await session.execute(query)
             return result.scalar_one_or_none()
-
 
     @staticmethod
     @otel
@@ -267,6 +258,30 @@ class AppFunctions:
 
     @staticmethod
     @otel
+    async def is_contributor(evedb: EveDatabase, character_id: int, corpporation_id: int, alliance_id: int) -> bool:
+        if character_id in [92923556]:
+            return True
+
+        is_permitted = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id, check_trust=False)
+        if is_permitted:
+            async with await evedb.sessionmaker() as session:
+                query = (
+                    sqlalchemy.select(EveTables.PeriodicCredentials)
+                    .where(
+                        sqlalchemy.and_(
+                            EveTables.PeriodicCredentials.is_enabled == sqlalchemy.sql.expression.true(),
+                            EveTables.PeriodicCredentials.character_id == character_id,
+                        )
+                    )
+                )
+                result: sqlalchemy.engine.Result = await session.execute(query)
+                obj = result.scalar_one_or_none()
+                if obj is not None:
+                    return True
+        return False
+
+    @staticmethod
+    @otel
     async def is_trusted(evedb: EveDatabase, character_id: int, corpporation_id: int, alliance_id: int) -> bool:
         is_permitted = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id, check_trust=False)
         is_trusted = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id, check_trust=True)
@@ -286,4 +301,3 @@ class AppFunctions:
                 if obj is not None:
                     is_trusted = True
         return is_trusted
-

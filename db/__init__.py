@@ -152,7 +152,7 @@ class EveTables:
         state = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=True)
         state_timer_start = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=True)
         state_timer_end = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=True)
-        fuel_expires = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
+        fuel_expires = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=True)
         unanchors_at = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=True)
         has_moon_drill = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
 
@@ -180,7 +180,7 @@ class EveTables:
         state = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=True)
         state_timer_start = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=True)
         state_timer_end = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=True)
-        fuel_expires = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
+        fuel_expires = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=True)
         unanchors_at = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=True)
         has_moon_drill = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
 

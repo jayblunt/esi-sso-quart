@@ -26,6 +26,8 @@ class EveEsiAlliancMemberTask(EveTask):
         corporation_id_set: typing.Final = set()
 
         alliance_id: typing.Final = int(client_session.get(EveSSO.ESI_ALLIANCE_ID, 0))
+
+        # XXX: Add CAS to CAStabouts ...
         if alliance_id in [99002329]:
             corporation_id_set.add(1000169)
 

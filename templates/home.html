@@ -146,6 +146,9 @@
     <table>
         <thead>
             <tr>
+                {% if character_contributor %}
+                <th align="left">Character</th>
+                {% endif %}
                 <th align="left">Corporation</th>
                 <th>Last Update</th>
             </tr>
@@ -153,6 +156,10 @@
         <tbody>
             {% for lu in last_update %}
             <tr class="{{lu.timestamp|timestamp_age}}">
+                {% if character_contributor %}
+                <td align="left"><a href="{{ lu.character_id|zkillboard_character }}" target="_blank">{{
+                        lu.character_id|character_name }}</a></td>
+                {% endif %}
                 <td align="left" class="{{lu.timestamp|timestamp_age}}"><a
                         href="https://evewho.com/corporation/{{lu.corporation_id}}" target="_blank">{{
                         lu.corporation.name }}</a></td>
@@ -162,18 +169,23 @@
         </tbody>
         <tfoot>
             <tr>
+                {% if character_contributor %}
+                <td></td>
+                {% endif %}
                 <td></td>
                 <td></td>
             </tr>
         </tfoot>
     </table>
+    {% if character_contributor %}
+    <p>Note: only contributors see contributor character names. all others see corporation name only.</p>
+    {% endif %}
 </div>
 {% endif %}
-{% if character_trusted %}
+{% if character_contributor %}
 <div class="box">
     <h3>Recent Usage</h3>
-    <p>Recent <a href="/usage/">usage information</a> is available.
-    </p>
+    <p>Recent <a href="/usage/">usage information</a> is available.</p>
 </div>
 {% endif %}
 {% endblock %}
