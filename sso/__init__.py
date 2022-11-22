@@ -95,7 +95,7 @@ class EveSSO:
 
         @app.before_serving
         @otel
-        async def _esi_sso_setup():
+        async def _esi_sso_setup() -> None:
             self.configuration = await self._get_json(self.configuration_url)
 
             required_configuration_keys = ["token_endpoint", "authorization_endpoint", "issuer", "jwks_uri"]
@@ -115,7 +115,7 @@ class EveSSO:
 
         @app.after_serving
         @otel
-        async def _esi_sso_teardown():
+        async def _esi_sso_teardown() -> None:
             for task in [self.refresh_jwks_task, self.refresh_token_task]:
                 if task is None:
                     continue
@@ -217,7 +217,7 @@ class EveSSO:
                     self.jwks = new_jwks
             except Exception as ex:
                 otel_add_exception(ex)
-                self.app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
+                self.app.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
 
     async def _refresh_token_task(self) -> None:
         refresh_buffer: typing.Final = datetime.timedelta(seconds=15)
@@ -346,7 +346,7 @@ class EveSSO:
                 decoded_acess_token = jose.jwt.decode(token_response["access_token"], key=jwt_key, issuer=self.JWT_ISSUERS, audience=self.JWT_AUDIENCE)
             except jose.exceptions.JWTError as ex:
                 otel_add_exception(ex)
-                self.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
+                self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
 
         return decoded_acess_token or dict()
 
@@ -594,11 +594,11 @@ class EveSSO:
                 #     return None
 
                 task_list: typing.Final = [
-                    asyncio.ensure_future(self._get_url(http_session, f"https://esi.evetech.net/latest/characters/{character_id}/", request_params)),
+                    asyncio.create_task(self._get_url(http_session, f"https://esi.evetech.net/latest/characters/{character_id}/", request_params)),
                 ]
                 if "esi-characters.read_corporation_roles.v1" in client_session.get(EveSSO.ESI_ACCESS_TOKEN_SCOPES, []):
                     task_list.append(
-                        asyncio.ensure_future(self._get_url(http_session, f"https://esi.evetech.net/latest/characters/{character_id}/roles/", request_params))
+                        asyncio.create_task(self._get_url(http_session, f"https://esi.evetech.net/latest/characters/{character_id}/roles/", request_params))
                     )
 
                 characters_result = None

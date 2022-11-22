@@ -61,7 +61,7 @@ class AppFunctions:
 
     @staticmethod
     @otel
-    async def get_active_timers(session: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list:
+    async def get_active_timers(session: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list[EveTables.Structure]:
         timer_query: typing.Final = (
             sqlalchemy.select(EveTables.Structure)
             .where(
@@ -78,7 +78,7 @@ class AppFunctions:
 
     @staticmethod
     @otel
-    async def get_completed_extractions(session: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list:
+    async def get_completed_extractions(session: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list[EveTables.CompletedExtraction]:
         extraction_query: typing.Final = (
             sqlalchemy.select(EveTables.CompletedExtraction)
             .where(
@@ -96,7 +96,7 @@ class AppFunctions:
 
     @staticmethod
     @otel
-    async def get_scheduled_extractions(session: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list:
+    async def get_scheduled_extractions(session: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list[EveTables.ScheduledExtraction]:
         extraction_query: typing.Final = (
             sqlalchemy.select(EveTables.ScheduledExtraction)
             .where(
@@ -114,7 +114,7 @@ class AppFunctions:
 
     @staticmethod
     @otel
-    async def get_structure_fuel_expiries(session: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list:
+    async def get_structure_fuel_expiries(session: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list[EveTables.Structure]:
         structure_query: typing.Final = (
             sqlalchemy.select(EveTables.Structure)
             .where(
@@ -132,7 +132,7 @@ class AppFunctions:
 
     @staticmethod
     @otel
-    async def get_moon_yield(session: sqlalchemy.ext.asyncio.AsyncSession, moon_id: int, now: datetime.datetime) -> list:
+    async def get_moon_yield(session: sqlalchemy.ext.asyncio.AsyncSession, moon_id: int, now: datetime.datetime) -> list[EveTables.MoonYield]:
         query: typing.Final = (
             sqlalchemy.select(EveTables.MoonYield)
             .where(EveTables.MoonYield.moon_id == moon_id)
@@ -144,7 +144,7 @@ class AppFunctions:
 
     @staticmethod
     @otel
-    async def get_moon_history(session: sqlalchemy.ext.asyncio.AsyncSession, moon_id: int, now: datetime.datetime) -> list:
+    async def get_moon_history(session: sqlalchemy.ext.asyncio.AsyncSession, moon_id: int, now: datetime.datetime) -> list[EveTables.ExtractionHistory]:
         query: typing.Final = (
             sqlalchemy.select(EveTables.ExtractionHistory)
             .where(
@@ -174,7 +174,7 @@ class AppFunctions:
 
     @staticmethod
     @otel
-    async def get_usage(session: sqlalchemy.ext.asyncio.AsyncSession, permitted: bool, now: datetime.datetime) -> list:
+    async def get_usage(session: sqlalchemy.ext.asyncio.AsyncSession, permitted: bool, now: datetime.datetime) -> list[dict]:
 
         permitted_condition: typing.Final = sqlalchemy.sql.expression.true() if permitted else sqlalchemy.sql.expression.false()
 

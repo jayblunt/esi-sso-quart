@@ -37,21 +37,21 @@ def otel_initialize() -> opentelemetry.sdk.trace.Tracer:
     return opentelemetry.trace.get_tracer_provider().get_tracer(__name__)
 
 
-def otel(func: typing.Callable):
+def otel(func: typing.Callable) -> typing.Callable:
 
     global _OTEL_INITIALIZED
 
     if _OTEL_INITIALIZED:
         if asyncio.iscoroutinefunction(func):
             @functools.wraps(func)
-            async def async_wrapper(*args, **kwargs):
+            async def async_wrapper(*args, **kwargs) -> typing.Any | None:
                 tracer = opentelemetry.trace.get_tracer_provider().get_tracer(func.__module__)
                 with tracer.start_as_current_span(func.__qualname__):
                     return await func(*args, **kwargs)
             return async_wrapper
         else:
             @functools.wraps(func)
-            def wrapper(*args, **kwargs):
+            def wrapper(*args, **kwargs) -> typing.Any | None:
                 tracer = opentelemetry.trace.get_tracer_provider().get_tracer(func.__module__)
                 with tracer.start_as_current_span(func.__qualname__):
                     return func(*args, **kwargs)
@@ -59,12 +59,12 @@ def otel(func: typing.Callable):
     else:
         if asyncio.iscoroutinefunction(func):
             @functools.wraps(func)
-            async def async_wrapper(*args, **kwargs):
+            async def async_wrapper(*args, **kwargs) -> typing.Any | None:
                 return await func(*args, **kwargs)
             return async_wrapper
         else:
             @functools.wraps(func)
-            def wrapper(*args, **kwargs):
+            def wrapper(*args, **kwargs) -> typing.Any | None:
                 return func(*args, **kwargs)
             return wrapper
 

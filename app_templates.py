@@ -31,7 +31,7 @@ class AppTemplates:
 
     @staticmethod
     @otel
-    def _login_type(input: str):
+    def _login_type(input: str) -> str:
         client_session: typing.Final = quart.session
         login_type = client_session.get(EveSSO.APP_SESSION_TYPE, "USER")
         if login_type == "CONTRIBUTOR":
@@ -42,7 +42,7 @@ class AppTemplates:
 
     @staticmethod
     @otel
-    async def _character_name(input: str):
+    async def _character_name(input: str) -> str:
         global _CACHE, _EVEDB
         character_id = int(input)
         character_name = _CACHE[TemplateIdCacheEnum.CHARACTER_NAME].get(character_id)
@@ -55,7 +55,7 @@ class AppTemplates:
 
     @staticmethod
     @otel
-    async def _moon_name(input: str):
+    async def _moon_name(input: str) -> str:
         global _CACHE, _EVEDB
         moon_id = int(input)
         moon_name = _CACHE[TemplateIdCacheEnum.MOON_NAME].get(moon_id)
@@ -68,7 +68,7 @@ class AppTemplates:
 
     @staticmethod
     @otel
-    async def _type_name(input: str):
+    async def _type_name(input: str) -> str:
         global _CACHE, _EVEDB
         moon_id = int(input)
         moon_name = _CACHE[TemplateIdCacheEnum.TYPE_NAME].get(moon_id)
@@ -81,7 +81,7 @@ class AppTemplates:
 
     @staticmethod
     @otel
-    async def _zkillboard_character(input: str):
+    async def _zkillboard_character(input: str) -> str:
         character_id = int(input)
         return f"https://zkillboard.com/character/{character_id}/"
 

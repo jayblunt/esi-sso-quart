@@ -94,7 +94,7 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
                         task_list: typing.Final = list()
                         for obj_id in missing_obj_id_set:
                             self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{str(self.object_class.__name__)}({obj_id})"))
-                            task_list.append(asyncio.ensure_future(self._get_item(obj_id, http_session)))
+                            task_list.append(asyncio.create_task(self._get_item(obj_id, http_session)))
 
                         if len(task_list) > 0:
                             for obj in await asyncio.gather(*task_list):

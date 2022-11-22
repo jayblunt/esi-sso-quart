@@ -235,7 +235,7 @@ class EveTables:
         moon = sqlalchemy.orm.relationship("UniverseMoon", viewonly=True)
 
         def __repr__(self) -> str:
-            return f"{self.__class__.__name__}(structure_id={self.structure_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time})"
+            return f"{self.__class__.__name__}(timestamp={self.timestamp}, structure_id={self.structure_id}, corporation_id={self.corporation}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time})"
 
 
     class CompletedExtraction(Base):
@@ -255,7 +255,7 @@ class EveTables:
         moon = sqlalchemy.orm.relationship("UniverseMoon", viewonly=True)
 
         def __repr__(self) -> str:
-            return f"{self.__class__.__name__}(structure_id={self.structure_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time})"
+            return f"{self.__class__.__name__}(timestamp={self.timestamp}, structure_id={self.structure_id}, corporation_id={self.corporation}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time}, belt_decay_time={self.belt_decay_time})"
 
     class ExtractionHistory(Base):
         __tablename__ = "app_extraction_history"
@@ -375,7 +375,7 @@ class EveDatabase:
         self._sessionmaker = None
         self._initialized = False
 
-    async def _initialize(self):
+    async def _initialize(self) -> None:
         if not self._initialized:
             async with self._engine.begin() as transaction:
                 await transaction.run_sync(EveTables.Base.metadata.create_all)

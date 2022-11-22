@@ -1,16 +1,18 @@
 import asyncio
+import datetime
 import inspect
 import logging
 import os
 import typing
 import uuid
+import wsgiref.handlers
 
 import opentelemetry.instrumentation.asgi
 import quart
 import quart.sessions
 import quart_session
 
-from app_functions import AppFunctions
+from app_functions import AppFunctions, AppRequest
 from app_templates import AppTemplates
 from db import EveDatabase, EveTables
 # from middleware import RateLimiterMiddleware
@@ -63,7 +65,7 @@ evesession[EveSSO.ESI_CHARACTER_NAME] = dict()
 
 @app.before_serving
 @otel
-async def _before_serving():
+async def _before_serving() -> None:
     if not bool(evesession.get("setup_tasks_started", False)):
         evesession["setup_tasks_started"] = True
 
@@ -88,8 +90,8 @@ async def error_404(path: str) -> quart.Response:
 @otel
 async def _usage() -> quart.Response:
 
-    ar: typing.Final = await AppFunctions.get_app_request(evedb, quart.session, quart.request)
-    if ar.trusted:
+    ar: typing.Final[AppRequest] = await AppFunctions.get_app_request(evedb, quart.session, quart.request)
+    if ar.character_id > 0 and ar.permitted:
 
         permitted_data = list()
         denied_data = list()
@@ -124,7 +126,7 @@ async def _about() -> quart.Response:
 @otel
 async def page(moon_id: int) -> quart.Response:
 
-    ar: typing.Final = await AppFunctions.get_app_request(evedb, quart.session, quart.request)
+    ar: typing.Final[AppRequest] = await AppFunctions.get_app_request(evedb, quart.session, quart.request)
     if ar.character_id > 0 and ar.permitted:
         moon_history: typing.Final = list()
         moon_yield: typing.Final = list()
@@ -155,17 +157,18 @@ async def page(moon_id: int) -> quart.Response:
 @otel
 async def root() -> quart.Response:
 
-    ar: typing.Final = await AppFunctions.get_app_request(evedb, quart.session, quart.request)
+    ar: typing.Final[AppRequest] = await AppFunctions.get_app_request(evedb, quart.session, quart.request)
     if ar.character_id > 0 and ar.permitted:
 
         if bool(ar.session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)):
             EveStructureTask(ar.session, evedb, app.logger)
 
-        active_timer_results: typing.Final = list()
+        active_timer_results: typing.Final[list[EveTables.Structure]] = list()
         completed_extraction_results: typing.Final = list()
         scheduled_extraction_results: typing.Final = list()
-        structure_fuel_results: typing.Final = list()
+        structure_fuel_results: typing.Final[list[EveTables.Structure]] = list()
         last_update_results: typing.Final = list()
+        page_expires = ar.ts + datetime.timedelta(minutes=5)
 
         try:
             async with await evedb.sessionmaker() as session:
@@ -178,27 +181,40 @@ async def root() -> quart.Response:
                 last_update_dict: typing.Final = dict()
                 for obj in structure_fuel_results:
                     if isinstance(obj, EveTables.Structure):
+                        if obj.fuel_expires < page_expires:
+                            page_expires = obj.fuel_expires
                         if obj.corporation_id not in last_update_dict.keys():
                             last_update_dict[obj.corporation_id] = obj
                         elif obj.timestamp > last_update_dict[obj.corporation_id].timestamp:
                             last_update_dict[obj.corporation_id] = obj
+
+                for obj in scheduled_extraction_results:
+                    if isinstance(obj, EveTables.CompletedExtraction):
+                        if obj.chunk_arrival_time < page_expires:
+                            page_expires = obj.chunk_arrival_time
 
                 last_update_results += sorted(last_update_dict.values(), reverse=False, key=lambda x: x.timestamp)
 
         except Exception as ex:
             app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
 
-        return await quart.render_template(
-            "home.html",
-            character_id=ar.character_id,
-            active_timers=active_timer_results,
-            completed_extractions=completed_extraction_results,
-            scheduled_extractions=scheduled_extraction_results,
-            structure_fuel_expiries=structure_fuel_results,
-            last_update=last_update_results,
-            character_trusted=ar.trusted,
-            character_contributor=ar.contributor,
+        response = await app.make_response(
+            await quart.render_template(
+                "home.html",
+                character_id=ar.character_id,
+                active_timers=active_timer_results,
+                completed_extractions=completed_extraction_results,
+                scheduled_extractions=scheduled_extraction_results,
+                structure_fuel_expiries=structure_fuel_results,
+                last_update=last_update_results,
+                character_trusted=ar.trusted,
+                character_contributor=ar.contributor,
+            ),
         )
+
+        response.headers['expires'] = wsgiref.handlers.format_date_time(page_expires.timestamp())
+        
+        return response
 
     elif ar.character_id > 0 and not ar.permitted:
         app.logger.warning(f"{ar.character_id} not permitted")

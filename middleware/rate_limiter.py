@@ -19,13 +19,13 @@ class RateLimiterMiddleware:
         self.task = None
 
 
-    def __del__(self):
+    def __del__(self) -> None:
         if self.task is not None:
             if not self.task.cancelled():
                 self.task.cancel()
 
 
-    async def decrement_task(self):
+    async def decrement_task(self) -> None:
         while True:
             await asyncio.sleep(self.interval)
 
