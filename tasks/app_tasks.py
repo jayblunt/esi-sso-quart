@@ -353,28 +353,57 @@ class EveStructureTask(EveDatabaseTask):
 
         try:
             async with await self.db.sessionmaker() as session, session.begin():
+                session: sqlalchemy.ext.asyncio.AsyncSession
+                obj_update_set = set()
+                obj_delete_set = set()
+                obj_add_set = set()
 
-                all_structures_query: typing.Final = (
+                existing_structure_obj_dict: typing.Final[dict[int, EveTables.Structure]] = dict()
+                query = (
                     sqlalchemy.select(EveTables.Structure)
                     .where(EveTables.Structure.corporation_id == corporation_id)
                     .options(sqlalchemy.orm.selectinload(EveTables.Structure.system))
                     .options(sqlalchemy.orm.selectinload(EveTables.Structure.corporation))
                 )
-                all_structures_query_result: typing.Final[sqlalchemy.engine.Result] = await session.execute(all_structures_query)
-                existing_obj_list: typing.Final[list[EveTables.Structure]] = [x for x in all_structures_query_result.scalars()]
+                query_result: sqlalchemy.engine.Result = await session.execute(query)
+                for obj in query_result.scalars():
+                    obj: EveTables.Structure
+                    existing_structure_obj_dict[obj.structure_id] = obj
 
-                if len(existing_obj_list) > 0:
-                    # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: existing_obj_list: {sorted(list(map(lambda x: x.structure_id, existing_obj_list)))}")
-                    [await session.delete(x) for x in existing_obj_list]
+                for structure_id, obj in structure_obj_dict.items():
+                    existing_obj = existing_structure_obj_dict.get(structure_id, None)
 
-                if len(structure_obj_dict) > 0:
-                    session.add_all(structure_obj_dict.values())
+                    if not existing_obj:
+                        self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: add({obj})")
+                        obj_add_set.add(obj)
+                        continue
+
+                    same_attributes = True
+                    for attribute in [x for x in obj.__table__.columns.keys() if x not in ['timestamp']]:
+                        if getattr(obj, attribute) != getattr(existing_obj, attribute):
+                            self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {structure_id} {attribute} {getattr(existing_obj, attribute)} -> {getattr(obj, attribute)}")
+                            setattr(existing_obj, attribute, getattr(obj, attribute))
+                            same_attributes = False
+                    if not same_attributes:
+                        existing_obj.timestamp = now
+                        obj_update_set.add(existing_obj)
+
+                for structure_id, existing_obj in existing_structure_obj_dict.items():
+                    if structure_obj_dict.get(structure_id) is None:
+                        self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: delete({existing_obj})")
+                        obj_delete_set.add(existing_obj)
+
+                if any([len(obj_add_set) > 0, len(obj_delete_set) > 0, len(obj_update_set) > 0]):
+                    if len(obj_delete_set) > 0:
+                        [await session.delete(obj) for obj in obj_delete_set]
+                    if len(obj_add_set) > 0:
+                        session.add_all(obj_add_set)
                     await session.commit()
 
         except Exception as ex:
             otel_add_exception(ex)
-            self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
-
+            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+            
     @otel
     async def roll_extractions(self, now: datetime.datetime, character_id: int, corporation_id: int, access_token: str) -> None:
 
@@ -424,7 +453,7 @@ class EveStructureTask(EveDatabaseTask):
                     completed_obj: EveTables.CompletedExtraction = completed_extraction_dict.get(structure_id, None)
                     if completed_obj:
                         self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: delete({completed_obj})")
-                        self.logger.info(str(await session.delete(completed_obj)))
+                        await session.delete(completed_obj)
 
                     new_completed_obj = EveTables.CompletedExtraction(
                         character_id=scheduled_obj.character_id,
@@ -448,7 +477,7 @@ class EveStructureTask(EveDatabaseTask):
                         obj: EveTables.ScheduledExtraction = scheduled_extraction_dict.get(structure_id, None)
                         if obj:
                             self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: delete({obj})")
-                            self.logger.info(str(await session.delete(obj)))
+                            await session.delete(obj)
 
                 await session.commit()
 
@@ -513,11 +542,17 @@ class EveStructureTask(EveDatabaseTask):
             await self.backfill_corporations(extraction_corporation_id_set)
 
 
-        scheduled_extraction_dict: typing.Final = dict()
+
 
         try:
             async with await self.db.sessionmaker() as session, session.begin():
+                session: sqlalchemy.ext.asyncio.AsyncSession
 
+                obj_update_set = set()
+                obj_delete_set = set()
+                obj_add_set = set()
+
+                scheduled_extraction_dict: typing.Final[dict[int, EveTables.ScheduledExtraction]] = dict()
                 query = (
                     sqlalchemy.select(EveTables.ScheduledExtraction)
                     .where(EveTables.ScheduledExtraction.corporation_id == corporation_id)
@@ -530,48 +565,35 @@ class EveStructureTask(EveDatabaseTask):
                     obj: EveTables.ScheduledExtraction
                     scheduled_extraction_dict[obj.structure_id] = obj
 
-        except Exception as ex:
-            otel_add_exception(ex)
-            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
-
-
-        try:
-            async with await self.db.sessionmaker() as session, session.begin():
-                session: sqlalchemy.ext.asyncio.AsyncSession
-                want_commit = False
-
                 for structure_id, obj in extractions_obj_dict.items():
                     existing_obj = scheduled_extraction_dict.get(structure_id, None)
 
                     if not existing_obj:
                         self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: add({obj})")
-                        session.add(obj)
-                        want_commit = True
+                        obj_add_set.add(obj)
                         continue
 
                     same_attributes = True
                     for attribute in [x for x in obj.__table__.columns.keys() if x not in ['timestamp']]:
-                        if not all([hasattr(obj, attribute), hasattr(existing_obj, attribute)]):
-                            same_attributes = False
-                            break
                         if getattr(obj, attribute) != getattr(existing_obj, attribute):
+                            self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {structure_id} {attribute} {getattr(existing_obj, attribute)} -> {getattr(obj, attribute)}")
+                            setattr(existing_obj, attribute, getattr(obj, attribute))
                             same_attributes = False
-                            break
-
                     if not same_attributes:
-                        self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: delete({existing_obj})")
-                        await session.delete(existing_obj)
-                        self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: add({obj})")
-                        await session.add(obj)
-                        want_commit = True
+                        existing_obj.timestamp = now
+                        obj_update_set.add(existing_obj)
 
                 for structure_id, existing_obj in scheduled_extraction_dict.items():
                     if extractions_obj_dict.get(structure_id) is None:
                         self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: delete({existing_obj})")
-                        await session.delete(existing_obj)
-                        want_commit = True
+                        obj_delete_set.add(existing_obj)
 
-                if want_commit:
+                if any([len(obj_add_set) > 0, len(obj_delete_set) > 0, len(obj_update_set) > 0]):
+                    if len(obj_delete_set) > 0:
+                        [await session.delete(obj) for obj in obj_delete_set]
+                        await session.flush()
+                    if len(obj_add_set) > 0:
+                        session.add_all(obj_add_set)
                     await session.commit()
 
         except Exception as ex:
@@ -728,9 +750,9 @@ class EveStructurePollingTask(EveStructureTask):
             await self.run_extractions(now, character_id, corporation_id, access_token)
 
             refresh_count += 1
-            refresh_wobble: typing.Final = datetime.timedelta(seconds=random.randrange(refresh_interval.total_seconds())) - refresh_interval / 2
+            # refresh_wobble: typing.Final = datetime.timedelta(seconds=random.randrange(refresh_interval.total_seconds())) - refresh_interval / 2
 
-            await self.set_refresh_times(corporation_id, character_id, now + refresh_wobble)
+            await self.set_refresh_times(corporation_id, character_id, now)
 
         # otel_add_event(inspect.currentframe().f_code.co_name, {"refresh_count": refresh_count})
         # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh_count {refresh_count}")

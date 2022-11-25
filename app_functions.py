@@ -132,6 +132,17 @@ class AppFunctions:
 
     @staticmethod
     @otel
+    async def get_refresh_times(session: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list[EveTables.PeriodicTaskTimestamp]:
+        query = (
+            sqlalchemy.select(EveTables.PeriodicTaskTimestamp)
+            .order_by(sqlalchemy.desc(EveTables.PeriodicTaskTimestamp.timestamp))
+        )
+
+        results: sqlalchemy.engine.Result = await session.execute(query)
+        return [x for x in results.scalars()]
+
+    @staticmethod
+    @otel
     async def get_moon_yield(session: sqlalchemy.ext.asyncio.AsyncSession, moon_id: int, now: datetime.datetime) -> list[EveTables.MoonYield]:
         query: typing.Final = (
             sqlalchemy.select(EveTables.MoonYield)
@@ -197,6 +208,18 @@ class AppFunctions:
             query = (
                 sqlalchemy.select(EveTables.Character.name)
                 .where(EveTables.Character.character_id == character_id)
+                .limit(1)
+            )
+            result: sqlalchemy.engine.Result = await session.execute(query)
+            return result.scalar_one_or_none()
+
+    @staticmethod
+    @otel
+    async def get_corporation_name(evedb: EveDatabase, corporation_id: int) -> str | None:
+        async with await evedb.sessionmaker() as session:
+            query = (
+                sqlalchemy.select(EveTables.Corporation.name)
+                .where(EveTables.Corporation.corporation_id == corporation_id)
                 .limit(1)
             )
             result: sqlalchemy.engine.Result = await session.execute(query)

@@ -14,12 +14,14 @@ from telemetry import otel
 class TemplateIdCacheEnum(enum.Enum):
 
     CHARACTER_NAME = 0
-    MOON_NAME = 1
-    TYPE_NAME = 2
+    CORPORATION_NAME = 1
+    MOON_NAME = 2
+    TYPE_NAME = 3
 
 
 _CACHE = {
     TemplateIdCacheEnum.CHARACTER_NAME: dict(),
+    TemplateIdCacheEnum.CORPORATION_NAME: dict(),
     TemplateIdCacheEnum.MOON_NAME: dict(),
     TemplateIdCacheEnum.TYPE_NAME: dict(),
 }
@@ -51,6 +53,19 @@ class AppTemplates:
             if character_name:
                 _CACHE[TemplateIdCacheEnum.CHARACTER_NAME][character_id] = character_name
         return character_name
+
+
+    @staticmethod
+    @otel
+    async def _corporation_name(input: str) -> str:
+        global _CACHE, _EVEDB
+        corporation_id = int(input)
+        corporation_name = _CACHE[TemplateIdCacheEnum.CORPORATION_NAME].get(corporation_id)
+        if not corporation_name:
+            corporation_name = await AppFunctions.get_corporation_name(_EVEDB, corporation_id)
+            if corporation_name:
+                _CACHE[TemplateIdCacheEnum.CORPORATION_NAME][corporation_id] = corporation_name
+        return corporation_name
 
 
     @staticmethod
@@ -138,6 +153,7 @@ class AppTemplates:
         filters: typing.Final = {
             "login_type": AppTemplates._login_type,
             "character_name": AppTemplates._character_name,
+            "corporation_name": AppTemplates._corporation_name,
             "moon_name": AppTemplates._moon_name,
             "type_name": AppTemplates._type_name,
             "zkillboard_character": AppTemplates._zkillboard_character,
