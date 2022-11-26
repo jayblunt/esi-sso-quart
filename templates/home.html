@@ -155,7 +155,8 @@
             {% for lu in last_update %}
             <tr class="{{lu.timestamp|timestamp_age}}">
                 {% if character_contributor %}
-                <td align="left"><a href="{{ lu.character_id|zkillboard_character }}" target="_blank">{{
+                <td align="left" class="{{lu.timestamp|timestamp_age}}"><a
+                        href="{{ lu.character_id|zkillboard_character }}" target="_blank">{{
                         lu.character_id|character_name }}</a></td>
                 {% endif %}
                 <td align="left" class="{{lu.timestamp|timestamp_age}}"><a
