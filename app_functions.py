@@ -63,7 +63,7 @@ class AppFunctions:
     @otel
     async def get_active_timers(session: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list[EveTables.Structure]:
 
-        timer_query: typing.Final = (
+        query = (
             sqlalchemy.select(EveTables.Structure)
             .where(
                 EveTables.Structure.state_timer_end > now,
@@ -75,14 +75,14 @@ class AppFunctions:
             .options(sqlalchemy.orm.selectinload(EveTables.Structure.corporation))
         )
 
-        timer_query_result = await session.execute(timer_query)
-        return [x for x in timer_query_result.scalars()]
+        query_result: sqlalchemy.engine.Result = await session.execute(query)
+        return [x for x in query_result.scalars()]
 
     @staticmethod
     @otel
     async def get_completed_extractions(session: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list[EveTables.CompletedExtraction]:
 
-        extraction_query: typing.Final = (
+        query = (
             sqlalchemy.select(EveTables.CompletedExtraction)
             .where(
                 EveTables.CompletedExtraction.belt_decay_time > now,
@@ -94,14 +94,14 @@ class AppFunctions:
             .options(sqlalchemy.orm.selectinload(EveTables.CompletedExtraction.moon))
         )
 
-        extraction_query_result = await session.execute(extraction_query)
-        return [x for x in extraction_query_result.scalars()]
+        query_result: sqlalchemy.engine.Result = await session.execute(query)
+        return [x for x in query_result.scalars()]
 
     @staticmethod
     @otel
     async def get_scheduled_extractions(session: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list[EveTables.ScheduledExtraction]:
 
-        extraction_query: typing.Final = (
+        query = (
             sqlalchemy.select(EveTables.ScheduledExtraction)
             .where(
                 EveTables.ScheduledExtraction.chunk_arrival_time > now,
@@ -113,14 +113,14 @@ class AppFunctions:
             .options(sqlalchemy.orm.selectinload(EveTables.ScheduledExtraction.moon))
         )
 
-        extraction_query_result = await session.execute(extraction_query)
-        return [x for x in extraction_query_result.scalars()]
+        query_result: sqlalchemy.engine.Result = await session.execute(query)
+        return [x for x in query_result.scalars()]
 
     @staticmethod
     @otel
     async def get_structure_fuel_expiries(session: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list[EveTables.Structure]:
 
-        structure_query: typing.Final = (
+        query = (
             sqlalchemy.select(EveTables.Structure)
             .where(
                 EveTables.Structure.fuel_expires != sqlalchemy.sql.expression.null(),
@@ -133,8 +133,8 @@ class AppFunctions:
             .options(sqlalchemy.orm.selectinload(EveTables.Structure.corporation))
         )
 
-        structure_query_result = await session.execute(structure_query)
-        return [x for x in structure_query_result.scalars()]
+        query_result: sqlalchemy.engine.Result = await session.execute(query)
+        return [x for x in query_result.scalars()]
 
     @staticmethod
     @otel
@@ -154,18 +154,19 @@ class AppFunctions:
     @otel
     async def get_moon_yield(session: sqlalchemy.ext.asyncio.AsyncSession, moon_id: int, now: datetime.datetime) -> list[EveTables.MoonYield]:
 
-        query: typing.Final = (
+        query = (
             sqlalchemy.select(EveTables.MoonYield)
             .where(EveTables.MoonYield.moon_id == moon_id)
             .order_by(sqlalchemy.desc(EveTables.MoonYield.yield_percent))
         )
 
-        result = await session.execute(query)
-        return [x for x in result.scalars() if x is not None]
+        query_result: sqlalchemy.engine.Result = await session.execute(query)
+        return [x for x in query_result.scalars() if x is not None]
 
     @staticmethod
     @otel
     async def get_moon_history(session: sqlalchemy.ext.asyncio.AsyncSession, moon_id: int, now: datetime.datetime) -> list[EveTables.ExtractionHistory]:
+
         query: typing.Final = (
             sqlalchemy.select(EveTables.ExtractionHistory)
             .where(
@@ -181,9 +182,9 @@ class AppFunctions:
             .limit(12)
         )
 
-        result = await session.execute(query)
+        query_result: sqlalchemy.engine.Result = await session.execute(query)
         results = list()
-        for x in result.scalars():
+        for x in query_result.scalars():
             x: EveTables.ExtractionHistory
             cat: datetime.datetime = x.chunk_arrival_time
             results.append({
@@ -197,20 +198,27 @@ class AppFunctions:
     @otel
     async def get_usage(session: sqlalchemy.ext.asyncio.AsyncSession, permitted: bool, now: datetime.datetime) -> list[dict]:
 
-        permitted_condition: typing.Final = sqlalchemy.sql.expression.true() if permitted else sqlalchemy.sql.expression.false()
+        min_timestamp = datetime.datetime(2000, 1, 1, 0, 0, 0)
+        if not permitted:
+            min_timestamp = now - datetime.timedelta(days=14)
 
-        timer_query: typing.Final = (
+        query = (
             sqlalchemy.select((EveTables.Character.character_id, sqlalchemy.func.count(EveTables.AccessHistory.timestamp).label("count"), sqlalchemy.func.max(EveTables.AccessHistory.timestamp).label("last")))
             .join(EveTables.Character, EveTables.AccessHistory.character_id == EveTables.Character.character_id)
-            .where(EveTables.AccessHistory.permitted == permitted_condition)
+            .where(
+                sqlalchemy.and_(
+                    EveTables.AccessHistory.permitted.is_(permitted),
+                    EveTables.AccessHistory.timestamp >= min_timestamp
+                )
+            )
             .group_by(EveTables.Character.character_id)
             .order_by(sqlalchemy.desc(sqlalchemy.func.max(EveTables.AccessHistory.timestamp)))
             .limit(20)
         )
 
-        timer_query_result: typing.Final[sqlalchemy.engine.Result] = await session.execute(timer_query)
+        query_result: sqlalchemy.engine.Result = await session.execute(query)
         colnames: typing.Final = ["id", "count", "last"]
-        return [dict(zip(colnames, x)) for x in timer_query_result.all()]
+        return [dict(zip(colnames, x)) for x in query_result.all()]
 
     @staticmethod
     @otel
@@ -222,8 +230,8 @@ class AppFunctions:
                 .limit(1)
             )
 
-            result: sqlalchemy.engine.Result = await session.execute(query)
-            return result.scalar_one_or_none()
+            query_result: sqlalchemy.engine.Result = await session.execute(query)
+            return query_result.scalar_one_or_none()
 
     @staticmethod
     @otel
@@ -235,8 +243,8 @@ class AppFunctions:
                 .limit(1)
             )
 
-            result: sqlalchemy.engine.Result = await session.execute(query)
-            return result.scalar_one_or_none()
+            query_result: sqlalchemy.engine.Result = await session.execute(query)
+            return query_result.scalar_one_or_none()
 
     @staticmethod
     @otel
@@ -248,8 +256,8 @@ class AppFunctions:
                 .limit(1)
             )
 
-            result: sqlalchemy.engine.Result = await session.execute(query)
-            return result.scalar_one_or_none()
+            query_result: sqlalchemy.engine.Result = await session.execute(query)
+            return query_result.scalar_one_or_none()
 
     @staticmethod
     @otel
@@ -261,8 +269,8 @@ class AppFunctions:
                 .limit(1)
             )
 
-            result: sqlalchemy.engine.Result = await session.execute(query)
-            return result.scalar_one_or_none()
+            query_result: sqlalchemy.engine.Result = await session.execute(query)
+            return query_result.scalar_one_or_none()
 
     @staticmethod
     @otel
@@ -314,8 +322,8 @@ class AppFunctions:
                     )
                 )
 
-                result: sqlalchemy.engine.Result = await session.execute(query)
-                obj = result.scalar_one_or_none()
+                query_result: sqlalchemy.engine.Result = await session.execute(query)
+                obj = query_result.scalar_one_or_none()
                 if obj is not None:
                     return True
         return False
@@ -339,8 +347,8 @@ class AppFunctions:
                     )
                 )
 
-                result: sqlalchemy.engine.Result = await session.execute(query)
-                obj = result.scalar_one_or_none()
+                query_result: sqlalchemy.engine.Result = await session.execute(query)
+                obj = query_result.scalar_one_or_none()
                 if obj is not None:
                     is_trusted = True
 

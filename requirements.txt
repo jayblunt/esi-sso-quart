@@ -1,13 +1,13 @@
-aiohttp>=3.8.1
-aioredis>=2.0.1
-asyncpg>=0.26.0
-hypercorn>=0.13.2
-python-dateutil>=2.8.2
-python-jose>=3.3.0
-quart>=0.18.0
-quart_session>=1.0.4
-SQLAlchemy>=1.4.39
-uvicorn>=0.18.2
+aiohttp
+aioredis
+asyncpg
+hypercorn
+python-dateutil
+python-jose
+quart
+quart_session
+SQLAlchemy
+uvicorn
 # opentelemetry-exporter-otlp-proto-grpc
 opentelemetry-exporter-otlp-proto-http 
 opentelemetry-instrumentation

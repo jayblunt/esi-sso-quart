@@ -104,9 +104,9 @@ class EveSSO:
 
             self.jwks_uri = self.configuration["jwks_uri"]
             self.jwks = await self._get_jwks(self.jwks_uri)
-            self.refresh_jwks_task = asyncio.create_task(self._refresh_jwks_task())
+            self.refresh_jwks_task = asyncio.create_task(self._refresh_jwks_task(), name="_refresh_jwks_task")
 
-            self.refresh_token_task = asyncio.create_task(self._refresh_token_task())
+            self.refresh_token_task = asyncio.create_task(self._refresh_token_task(), name="_refresh_token_task")
 
             app.add_url_rule(self.callback_route, self.callback_endpoint, view_func=self.esi_sso_callback, methods=["GET"])
             app.add_url_rule(self.logout_route, self.logout_endpoint, view_func=self.esi_sso_logout, methods=["GET"])
@@ -191,17 +191,9 @@ class EveSSO:
         if len(esi_access_token) > 0:
             session_headers["Authorization"] = f"Bearer {esi_access_token}"
 
-        json = None
         async with aiohttp.ClientSession(headers=session_headers) as http_session:
-            json = await self._get_url(http_session, url)
-            # async with await http_session.get(url) as response:
-            #     if response.status in [200]:
-            #         json = dict(await response.json())
-            #     else:
-            #         otel_add_error(f"{response.url} -> {response.status}")
-            #         self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
-
-        return json
+            return await self._get_url(http_session, url)
+        return None
 
     @otel
     async def _get_jwks(self, url: str) -> list[dict]:
@@ -220,41 +212,40 @@ class EveSSO:
                 self.app.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
 
     async def _refresh_token_task(self) -> None:
-        refresh_buffer: typing.Final = datetime.timedelta(seconds=15)
-        refresh_interval: typing.Final = datetime.timedelta(seconds=60) - refresh_buffer
+        refresh_buffer: typing.Final = datetime.timedelta(seconds=30)
+        refresh_interval: typing.Final = datetime.timedelta(seconds=300) - refresh_buffer
         while True:
             now: typing.Final = datetime.datetime.now(tz=datetime.timezone.utc)
 
             refresh_obj: EveTables.PeriodicCredentials = None
             try:
-                async with await self.db.sessionmaker() as session, session.begin():
+                async with await self.db.sessionmaker() as session:
 
                     query = (
                         sqlalchemy.select(EveTables.PeriodicCredentials)
-                        .where(
-                            EveTables.PeriodicCredentials.is_permitted.is_(True),
-                            EveTables.PeriodicCredentials.access_token_exiry <= now - refresh_interval,
-                        )
+                        .where(EveTables.PeriodicCredentials.is_enabled.is_(True))
                         .order_by(sqlalchemy.asc(EveTables.PeriodicCredentials.access_token_exiry))
                         .limit(1)
                     )
-                    results = await session.execute(query)
-                    obj_list = [x for x in results.scalars()]
-
-                    if len(obj_list) > 0:
-                        refresh_obj = obj_list.pop(0)
+                    query_results: sqlalchemy.engine.Result = await session.execute(query)
+                    refresh_obj: EveTables.PeriodicCredentials = query_results.scalar_one_or_none()
 
             except Exception as ex:
                 otel_add_exception(ex)
                 self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
-
-            if refresh_obj is None:
                 await asyncio.sleep(refresh_interval.total_seconds())
                 continue
 
-            if refresh_obj.access_token_exiry - refresh_interval > now:
-                remaining_interval: typing.Final = (refresh_obj.access_token_exiry + refresh_interval + refresh_buffer) - now
-                await asyncio.sleep(int(min(refresh_interval.total_seconds(), remaining_interval.total_seconds())))
+            if refresh_obj is None:
+                self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: no permitted credentials")
+                await asyncio.sleep(refresh_interval.total_seconds())
+                continue
+
+            if refresh_obj.access_token_exiry > now + refresh_buffer:
+                remaining_interval: datetime.timedelta = (refresh_obj.access_token_exiry) - (now + refresh_buffer)
+                remaining_sleep_interval = min(refresh_interval.total_seconds(), remaining_interval.total_seconds())
+                # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {refresh_obj.character_id} refresh in {int(remaining_interval.total_seconds())}, sleeping {int(remaining_sleep_interval)}")
+                await asyncio.sleep(remaining_sleep_interval)
                 continue
 
             refresh_character_id: typing.Final = refresh_obj.character_id
@@ -271,19 +262,20 @@ class EveSSO:
             try:
                 async with await self.db.sessionmaker() as session, session.begin():
 
-                    query = await session.execute(
+                    query = (
                         sqlalchemy.select(EveTables.PeriodicCredentials)
-                        .where(EveTables.PeriodicCredentials.character_id == refresh_character_id))
-                    update_character_obj_set: typing.Final = {x for x in query.scalars()}
-
-                    refresh_character_obj: EveTables.PeriodicCredentials = None
-                    if len(update_character_obj_set) == 1:
-                        refresh_character_obj = update_character_obj_set.pop()
+                        .where(EveTables.PeriodicCredentials.character_id == refresh_character_id)
+                        .limit(1)
+                    )
+                    query_results: sqlalchemy.engine.Result = await session.execute(query)
+                    refresh_character_obj: EveTables.PeriodicCredentials = query_results.scalar_one_or_none()
 
                     if refresh_character_obj is None:
+                        self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {refresh_character_id} not found")
                         await asyncio.sleep(int(refresh_interval.total_seconds()))
                         continue
 
+                    self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: character_id:{refresh_character_id} {refresh_character_obj}")
                     if await self.esi_sso_refresh(client_session):
 
                         update_dict = {
@@ -294,13 +286,14 @@ class EveSSO:
                         }
 
                         for k, v in update_dict.items():
-                            if hasattr(refresh_character_obj, k):
+                            if hasattr(refresh_character_obj, k) and getattr(refresh_character_obj, k) != v:
                                 setattr(refresh_character_obj, k, v)
 
-                        self.logger.info("- {}.{}: {} {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  refresh_obj.character_id, "token refreshed"))
+                        self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: character_id:{refresh_character_id} {refresh_character_obj}")
+                        self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {refresh_obj.character_id} token refreshed")
                     else:
                         otel_add_error("token refreshed failed")
-                        self.logger.error("- {}.{}: {} {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  refresh_obj.character_id, "token refreshed failed"))
+                        self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {refresh_obj.character_id} token refreshed failed")
 
                         refresh_character_obj.is_enabled = False
                         refresh_character_obj.is_permitted = False
@@ -394,14 +387,14 @@ class EveSSO:
                 # Disable periodic on explicit logout
                 async with await self.db.sessionmaker() as session, session.begin():
 
-                    character_query = sqlalchemy.select(EveTables.PeriodicCredentials).where(
-                        EveTables.PeriodicCredentials.character_id == character_id)
-                    character_query_results = await session.execute(character_query)
-                    character_set = {x for x in character_query_results.scalars()}
-                    obj = None
-
-                    if len(character_set) > 0:
-                        obj: EveTables.PeriodicCredentials = character_set.pop()
+                    query = (
+                        sqlalchemy.select(EveTables.PeriodicCredentials)
+                        .where(EveTables.PeriodicCredentials.character_id == character_id)
+                        .limit(1)
+                    )
+                    query_results: sqlalchemy.engine.Result = await session.execute(query)
+                    obj: EveTables.PeriodicCredentials = query_results.scalar_one_or_none()
+                    if obj:
                         obj.is_enabled = False
                         obj.is_permitted = False
                         await session.commit()
@@ -455,12 +448,6 @@ class EveSSO:
         token_response = dict()
         async with aiohttp.ClientSession(headers=post_session_headers) as http_session:
             token_response = await self._post_url(http_session, post_token_url, post_body)
-            # async with await http_session.post(post_token_url, data=post_body) as response:
-            #     if response.status in [200]:
-            #         token_response = dict(await response.json())
-            #     else:
-            #         otel_add_error(f"{response.url} -> {response.status}")
-            #         self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
 
         required_response_keys: typing.Final = ["access_token", "token_type", "refresh_token"]
         if not all(map(lambda x: bool(token_response.get(x)), required_response_keys)):
@@ -519,12 +506,6 @@ class EveSSO:
                 "client_id": self.client_id
             }
             token_response = await self._post_url(http_session, post_token_url, post_body)
-            # async with await http_session.post(post_token_url, data=post_body) as response:
-            #     if response.status in [200]:
-            #         token_response = dict(await response.json())
-            #     else:
-            #         otel_add_error(f"{response.url} -> {response.status}")
-            #         self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
 
         required_response_keys: typing.Final = ["access_token", "token_type", "refresh_token"]
         if all(map(lambda x: bool(token_response.get(x)), required_response_keys)):
@@ -566,6 +547,9 @@ class EveSSO:
         client_session[EveSSO.ESI_ACCESS_TOKEN_SCOPES] = decoded_acess_token.get('scp', [])
 
         corporation_id = client_session.get(EveSSO.ESI_CORPORATION_ID, 0)
+
+        # What is going on here?
+        # Looks like only collecting information if the corporation_id is 0
         if not corporation_id > 0:
             session_headers: typing.Final = {
                 "Authorization": f"Bearer {client_session.get(EveSSO.ESI_ACCESS_TOKEN)}"
@@ -576,22 +560,6 @@ class EveSSO:
                     "datasource": "tranquility",
                     "language": "en"
                 }
-                # async def _get_dict(url: str, http_session: aiohttp.ClientSession) -> dict | None:
-                #     request_params: typing.Final = {
-                #         "datasource": "tranquility",
-                #         "language": "en"
-                #     }
-                #     attempts_remaining = 3
-                #     while attempts_remaining > 0:
-                #         async with await http_session.get(url, params=request_params) as response:
-                #             if response.status in [200]:
-                #                 return await response.json()
-                #             else:
-                #                 attempts_remaining -= 1
-                #                 otel_add_error(f"{response.url} -> {response.status}")
-                #                 self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
-                #                 await asyncio.sleep(3)
-                #     return None
 
                 task_list: typing.Final = [
                     asyncio.create_task(self._get_url(http_session, f"https://esi.evetech.net/latest/characters/{character_id}/", request_params)),
@@ -681,22 +649,23 @@ class EveSSO:
                             "is_enabled": bool(client_session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)),
                         }
 
-                        query = sqlalchemy.select(EveTables.PeriodicCredentials).where(
-                            EveTables.PeriodicCredentials.character_id == character_id)
-                        result = await session.execute(query)
-                        character_set = {x for x in result.scalars()}
-                        obj = None
-                        if len(character_set) > 0:
-                            obj = character_set.pop()
+                        query = (
+                            sqlalchemy.select(EveTables.PeriodicCredentials)
+                            .where(EveTables.PeriodicCredentials.character_id == character_id)
+                            .limit(1)
+                        )
+                        query_result: sqlalchemy.engine.Result = await session.execute(query)
+                        obj: EveTables.PeriodicCredentials = query_result.scalar_one_or_none()
+                        if obj:
+                            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: character_id:{character_id} {obj}")
                             for k, v in periodic_credentials.items():
-                                if hasattr(obj, k):
+                                if hasattr(obj, k) and getattr(obj, k) != v:
                                     setattr(obj, k, v)
+                            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: character_id:{character_id} {obj}")
                         else:
-                            new_periodic_credentials = {
-                            }
-                            obj = EveTables.PeriodicCredentials(**{**periodic_credentials, **new_periodic_credentials})
+                            obj = EveTables.PeriodicCredentials(**periodic_credentials)
                             session.add(obj)
-                            await session.commit()
+                        await session.commit()
 
                 except Exception as ex:
                     otel_add_exception(ex)

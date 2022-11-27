@@ -48,9 +48,9 @@ class EveEsiAlliancMemberTask(EveTask):
             try:
                 async with await self.db.sessionmaker() as session, session.begin():
 
-                    alliance_corporations_query: typing.Final = sqlalchemy.select(EveTables.AllianceCorporation).where(EveTables.AllianceCorporation.alliance_id == alliance_id)
-                    alliance_corporations_query_result = await session.execute(alliance_corporations_query)
-                    existing_obj_set: typing.Final = {x for x in alliance_corporations_query_result.scalars()}
+                    query = sqlalchemy.select(EveTables.AllianceCorporation).where(EveTables.AllianceCorporation.alliance_id == alliance_id)
+                    query_result: sqlalchemy.engine.Result = await session.execute(query)
+                    existing_obj_set: typing.Final = {x for x in query_result.scalars()}
 
                     obj_set = set()
                     for corporation_id in corporation_id_set:
@@ -75,10 +75,10 @@ class EveEsiAlliancMemberTask(EveTask):
             try:
                 async with await self.db.sessionmaker() as session, session.begin():
 
-                    existing_corporations_query: typing.Final = sqlalchemy.select(EveTables.Corporation)
-                    existing_corporations_query_result = await session.execute(existing_corporations_query)
-                    existing_corporation_set: typing.Final = {x for x in existing_corporations_query_result.scalars()}
+                    query = sqlalchemy.select(EveTables.Corporation)
+                    query_result: sqlalchemy.engine.Result = await session.execute(query)
 
+                    existing_corporation_set: typing.Final = {x for x in query_result.scalars()}
                     existing_corporation_id_set: typing.Final = {x.corporation_id for x in existing_corporation_set}
 
                     obj_set = set()

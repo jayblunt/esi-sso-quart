@@ -25,11 +25,12 @@ _CACHE = {
     TemplateIdCacheEnum.MOON_NAME: dict(),
     TemplateIdCacheEnum.TYPE_NAME: dict(),
 }
+
+
 _EVEDB = None
 
 
 class AppTemplates:
-
 
     @staticmethod
     @otel
@@ -40,7 +41,6 @@ class AppTemplates:
             return "contributor"
         else:
             return "user"
-
 
     @staticmethod
     @otel
@@ -54,7 +54,6 @@ class AppTemplates:
                 _CACHE[TemplateIdCacheEnum.CHARACTER_NAME][character_id] = character_name
         return character_name
 
-
     @staticmethod
     @otel
     async def _corporation_name(input: str) -> str:
@@ -66,7 +65,6 @@ class AppTemplates:
             if corporation_name:
                 _CACHE[TemplateIdCacheEnum.CORPORATION_NAME][corporation_id] = corporation_name
         return corporation_name
-
 
     @staticmethod
     @otel
@@ -80,7 +78,6 @@ class AppTemplates:
                 _CACHE[TemplateIdCacheEnum.MOON_NAME][moon_id] = moon_name
         return moon_name
 
-
     @staticmethod
     @otel
     async def _type_name(input: str) -> str:
@@ -93,13 +90,11 @@ class AppTemplates:
                 _CACHE[TemplateIdCacheEnum.TYPE_NAME][moon_id] = moon_name
         return moon_name
 
-
     @staticmethod
     @otel
     async def _zkillboard_character(input: str) -> str:
         character_id = int(input)
         return f"https://zkillboard.com/character/{character_id}/"
-
 
     @staticmethod
     @otel
@@ -117,7 +112,6 @@ class AppTemplates:
         }
         return map.get(state, "Unknown")
 
-
     @staticmethod
     @otel
     def _timestamp_age(dt: datetime.datetime) -> str:
@@ -126,24 +120,20 @@ class AppTemplates:
             return "stale"
         return "fresh"
 
-
     @staticmethod
     @otel
     def _datetime(dt: datetime.datetime) -> str:
         return dt.replace(tzinfo=None).isoformat(sep=" ", timespec="minutes")
-
 
     @staticmethod
     @otel
     def _date(dt: datetime.datetime) -> str:
         return dt.replace(tzinfo=None).date().isoformat()
 
-
     @staticmethod
     @otel
     def _percentage(n: float) -> str:
         return f"{(100 * n):.2f}%"
-
 
     @staticmethod
     @otel
