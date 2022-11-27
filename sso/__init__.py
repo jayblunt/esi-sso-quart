@@ -241,11 +241,11 @@ class EveSSO:
                 await asyncio.sleep(refresh_interval.total_seconds())
                 continue
 
-            if refresh_obj.access_token_exiry + refresh_interval > now:
-                remaining_interval: typing.Final[datetime.timedelta] = refresh_obj.access_token_exiry + refresh_interval + refresh_buffer - now
-                remaining_sleep_interval: typing.Final = min(refresh_interval.total_seconds(), remaining_interval.total_seconds())
-                self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {refresh_obj.character_id} refresh in {int(remaining_interval.total_seconds())}, sleeping {int(remaining_sleep_interval)}")
-                await asyncio.sleep(int(min(refresh_interval.total_seconds(), remaining_interval.total_seconds())))
+            if refresh_obj.access_token_exiry > now + refresh_buffer:
+                remaining_interval: datetime.timedelta = (refresh_obj.access_token_exiry) - (now + refresh_buffer)
+                remaining_sleep_interval = min(refresh_interval.total_seconds(), remaining_interval.total_seconds())
+                # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {refresh_obj.character_id} refresh in {int(remaining_interval.total_seconds())}, sleeping {int(remaining_sleep_interval)}")
+                await asyncio.sleep(remaining_sleep_interval)
                 continue
 
             refresh_character_id: typing.Final = refresh_obj.character_id

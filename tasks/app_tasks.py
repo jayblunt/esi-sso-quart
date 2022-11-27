@@ -711,13 +711,12 @@ class EveStructurePollingTask(EveStructureTask):
     @otel
     async def run_once(self, client_session: collections.abc.MutableSet):
 
-        refresh_buffer: typing.Final = datetime.timedelta(seconds=30)
-        refresh_interval: typing.Final = datetime.timedelta(seconds=self.STRUCTURE_REFRESH_INTERVAL_SECONDS) - refresh_buffer
+        refresh_interval: typing.Final = datetime.timedelta(seconds=self.STRUCTURE_REFRESH_INTERVAL_SECONDS)
         now: typing.Final = datetime.datetime.now(tz=datetime.timezone.utc)
 
         available_corporation_id_dict: typing.Final = await self.get_available_periodic_credentials(now)
         if len(available_corporation_id_dict.keys()) == 0:
-            await asyncio.sleep(refresh_buffer.total_seconds())
+            await asyncio.sleep(refresh_interval.total_seconds())
             return
 
         corporation_refresh_history_dict: typing.Final = await self.get_refresh_times(available_corporation_id_dict.keys())
@@ -726,9 +725,9 @@ class EveStructurePollingTask(EveStructureTask):
         # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: oldest_corporation_id: {oldest_corporation_id}, oldest_timestamp: {oldest_timestamp}")
 
         if oldest_corporation_timestamp + refresh_interval > now:
-            remaining_interval: typing.Final[datetime.timedelta] = oldest_corporation_timestamp + refresh_interval + refresh_buffer - now
-            remaining_sleep_interval: typing.Final = min(refresh_interval.total_seconds(), remaining_interval.total_seconds())
-            await asyncio.sleep(remaining_sleep_interval)
+            remaining_interval: datetime.timedelta = (oldest_corporation_timestamp + refresh_interval) - (now)
+            # remaining_sleep_interval = min(refresh_interval.total_seconds(), remaining_interval.total_seconds())
+            await asyncio.sleep(remaining_interval.total_seconds())
             return
 
         # Should make these asyncio tasks ...
@@ -752,10 +751,6 @@ class EveStructurePollingTask(EveStructureTask):
             # refresh_wobble: typing.Final = datetime.timedelta(seconds=random.randrange(refresh_interval.total_seconds())) - refresh_interval / 2
 
             await self.set_refresh_times(corporation_id, character_id, now)
-
-        # otel_add_event(inspect.currentframe().f_code.co_name, {"refresh_count": refresh_count})
-        # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh_count {refresh_count}")
-        # await asyncio.sleep(int(refresh_buffer.total_seconds()))
 
     async def run(self, client_session: collections.abc.MutableSet):
         tracer: typing.Final = opentelemetry.trace.get_tracer_provider().get_tracer(inspect.currentframe().f_code.co_name)
