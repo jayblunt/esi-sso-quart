@@ -198,12 +198,19 @@ class AppFunctions:
     @otel
     async def get_usage(session: sqlalchemy.ext.asyncio.AsyncSession, permitted: bool, now: datetime.datetime) -> list[dict]:
 
-        permitted_condition: typing.Final = sqlalchemy.sql.expression.true() if permitted else sqlalchemy.sql.expression.false()
+        min_timestamp = datetime.datetime(2000, 1, 1, 0, 0, 0)
+        if not permitted:
+            min_timestamp = now - datetime.timedelta(days=14)
 
         query = (
             sqlalchemy.select((EveTables.Character.character_id, sqlalchemy.func.count(EveTables.AccessHistory.timestamp).label("count"), sqlalchemy.func.max(EveTables.AccessHistory.timestamp).label("last")))
             .join(EveTables.Character, EveTables.AccessHistory.character_id == EveTables.Character.character_id)
-            .where(EveTables.AccessHistory.permitted == permitted_condition)
+            .where(
+                sqlalchemy.and_(
+                    EveTables.AccessHistory.permitted.is_(permitted),
+                    EveTables.AccessHistory.timestamp >= min_timestamp
+                )
+            )
             .group_by(EveTables.Character.character_id)
             .order_by(sqlalchemy.desc(sqlalchemy.func.max(EveTables.AccessHistory.timestamp)))
             .limit(20)
