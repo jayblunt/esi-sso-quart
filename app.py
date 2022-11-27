@@ -179,23 +179,6 @@ async def root() -> quart.Response:
                 structure_fuel_results += await AppFunctions.get_structure_fuel_expiries(session, ar.ts)
                 last_update_results += await AppFunctions.get_refresh_times(session, ar.ts)
 
-                # last_update_dict: typing.Final = dict()
-                # for obj in structure_fuel_results:
-                #     if isinstance(obj, EveTables.Structure):
-                #         if obj.fuel_expires < page_expires:
-                #             page_expires = obj.fuel_expires
-                #         if obj.corporation_id not in last_update_dict.keys():
-                #             last_update_dict[obj.corporation_id] = obj
-                #         elif obj.timestamp > last_update_dict[obj.corporation_id].timestamp:
-                #             last_update_dict[obj.corporation_id] = obj
-
-                # for obj in scheduled_extraction_results:
-                #     if isinstance(obj, EveTables.CompletedExtraction):
-                #         if obj.chunk_arrival_time < page_expires:
-                #             page_expires = obj.chunk_arrival_time
-
-                # last_update_results += sorted(last_update_dict.values(), reverse=False, key=lambda x: x.timestamp)
-
         except Exception as ex:
             app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
 
@@ -214,7 +197,7 @@ async def root() -> quart.Response:
         )
 
         response.headers['expires'] = wsgiref.handlers.format_date_time(page_expires.timestamp())
-        
+
         return response
 
     elif ar.character_id > 0 and not ar.permitted:

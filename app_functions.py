@@ -166,6 +166,7 @@ class AppFunctions:
     @staticmethod
     @otel
     async def get_moon_history(session: sqlalchemy.ext.asyncio.AsyncSession, moon_id: int, now: datetime.datetime) -> list[EveTables.ExtractionHistory]:
+
         query: typing.Final = (
             sqlalchemy.select(EveTables.ExtractionHistory)
             .where(
