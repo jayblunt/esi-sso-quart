@@ -633,7 +633,7 @@ class EveStructurePollingTask(EveStructureTask):
 
                 query = (
                     sqlalchemy.select(EveTables.PeriodicCredentials)
-                    .where(EveTables.PeriodicCredentials.is_permitted.is_(True))
+                    .where(EveTables.PeriodicCredentials.is_enabled.is_(True))
                     .where(EveTables.PeriodicCredentials.access_token_exiry > now)
                     .order_by(sqlalchemy.asc(EveTables.PeriodicCredentials.access_token_exiry))
                 )

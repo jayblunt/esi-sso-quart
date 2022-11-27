@@ -213,17 +213,17 @@ class EveSSO:
 
     async def _refresh_token_task(self) -> None:
         refresh_buffer: typing.Final = datetime.timedelta(seconds=30)
-        refresh_interval: typing.Final = datetime.timedelta(seconds=120) - refresh_buffer
+        refresh_interval: typing.Final = datetime.timedelta(seconds=300) - refresh_buffer
         while True:
             now: typing.Final = datetime.datetime.now(tz=datetime.timezone.utc)
 
             refresh_obj: EveTables.PeriodicCredentials = None
             try:
-                async with await self.db.sessionmaker() as session, session.begin():
+                async with await self.db.sessionmaker() as session:
 
                     query = (
                         sqlalchemy.select(EveTables.PeriodicCredentials)
-                        .where(EveTables.PeriodicCredentials.is_permitted.is_(True))
+                        .where(EveTables.PeriodicCredentials.is_enabled.is_(True))
                         .order_by(sqlalchemy.asc(EveTables.PeriodicCredentials.access_token_exiry))
                         .limit(1)
                     )
@@ -241,9 +241,10 @@ class EveSSO:
                 await asyncio.sleep(refresh_interval.total_seconds())
                 continue
 
-            if refresh_obj.access_token_exiry - refresh_interval > now:
-                remaining_interval: typing.Final[datetime.timedelta] = (refresh_obj.access_token_exiry + refresh_interval + refresh_buffer) - now
-                self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {refresh_obj.character_id} refresh in {int(remaining_interval.total_seconds())}")
+            if refresh_obj.access_token_exiry + refresh_interval > now:
+                remaining_interval: typing.Final[datetime.timedelta] = refresh_obj.access_token_exiry + refresh_interval + refresh_buffer - now
+                remaining_sleep_interval: typing.Final = min(refresh_interval.total_seconds(), remaining_interval.total_seconds())
+                self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {refresh_obj.character_id} refresh in {int(remaining_interval.total_seconds())}, sleeping {int(remaining_sleep_interval)}")
                 await asyncio.sleep(int(min(refresh_interval.total_seconds(), remaining_interval.total_seconds())))
                 continue
 
@@ -286,10 +287,9 @@ class EveSSO:
 
                         for k, v in update_dict.items():
                             if hasattr(refresh_character_obj, k) and getattr(refresh_character_obj, k) != v:
-                                if k not in ['access_token', 'refresh_token']:
-                                    self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh_character_id:{refresh_character_id} {k} {getattr(refresh_character_obj, k)} -> {v}")
                                 setattr(refresh_character_obj, k, v)
 
+                        self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: character_id:{refresh_character_id} {refresh_character_obj}")
                         self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {refresh_obj.character_id} token refreshed")
                     else:
                         otel_add_error("token refreshed failed")
@@ -547,6 +547,9 @@ class EveSSO:
         client_session[EveSSO.ESI_ACCESS_TOKEN_SCOPES] = decoded_acess_token.get('scp', [])
 
         corporation_id = client_session.get(EveSSO.ESI_CORPORATION_ID, 0)
+
+        # What is going on here?
+        # Looks like only collecting information if the corporation_id is 0
         if not corporation_id > 0:
             session_headers: typing.Final = {
                 "Authorization": f"Bearer {client_session.get(EveSSO.ESI_ACCESS_TOKEN)}"
@@ -657,9 +660,8 @@ class EveSSO:
                             self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: character_id:{character_id} {obj}")
                             for k, v in periodic_credentials.items():
                                 if hasattr(obj, k) and getattr(obj, k) != v:
-                                    if k not in ['access_token', 'refresh_token']:
-                                        self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: character_id:{character_id} {k} {getattr(obj, k)} -> {v}")
                                     setattr(obj, k, v)
+                            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: character_id:{character_id} {obj}")
                         else:
                             obj = EveTables.PeriodicCredentials(**periodic_credentials)
                             session.add(obj)

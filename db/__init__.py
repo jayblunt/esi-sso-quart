@@ -303,7 +303,7 @@ class EveTables:
         access_token = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
 
         def __repr__(self) -> str:
-            return f"{self.__class__.__name__}(character_id={self.character_id}, corporation_id={self.corporation_id}, is_permitted={self.is_permitted}, is_enabled={self.is_enabled}, access_token_issued={self.access_token_issued}, access_token_exiry={self.access_token_exiry})"
+            return f"{self.__class__.__name__}(character_id={self.character_id}, corporation_id={self.corporation_id}, is_enabled={self.is_enabled}, access_token_issued={self.access_token_issued}, access_token_exiry={self.access_token_exiry})"
 
 
     class PeriodicTaskTimestamp(Base):
