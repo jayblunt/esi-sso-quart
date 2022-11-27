@@ -115,10 +115,10 @@ class AppTemplates:
     @staticmethod
     @otel
     def _timestamp_age(dt: datetime.datetime) -> str:
-        age_days: typing.Final = (datetime.datetime.now(datetime.timezone.utc) - dt.replace(tzinfo=datetime.timezone.utc)).days
-        if age_days >= 3:
-            return "stale"
         return "fresh"
+        age_days: typing.Final = (datetime.datetime.now(datetime.timezone.utc) - dt.replace(tzinfo=datetime.timezone.utc)).days
+        if age_days >= 7:
+            return "stale"
 
     @staticmethod
     @otel

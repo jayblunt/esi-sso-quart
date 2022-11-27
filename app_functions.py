@@ -52,6 +52,7 @@ class AppFunctions:
         if ar.character_id > 0 and ar.character_id not in [92923556]:
             try:
                 async with await evedb.sessionmaker() as session, session.begin():
+                    session: sqlalchemy.ext.asyncio.AsyncSession
                     session.add(EveTables.AccessHistory(character_id=ar.character_id, permitted=bool(ar.permitted), path=request.path))
                     await session.commit()
             except Exception:
@@ -75,8 +76,7 @@ class AppFunctions:
             .options(sqlalchemy.orm.selectinload(EveTables.Structure.corporation))
         )
 
-        query_result: sqlalchemy.engine.Result = await session.execute(query)
-        return [x for x in query_result.scalars()]
+        return [x async for x in await session.stream_scalars(query)]
 
     @staticmethod
     @otel
@@ -94,8 +94,7 @@ class AppFunctions:
             .options(sqlalchemy.orm.selectinload(EveTables.CompletedExtraction.moon))
         )
 
-        query_result: sqlalchemy.engine.Result = await session.execute(query)
-        return [x for x in query_result.scalars()]
+        return [x async for x in await session.stream_scalars(query)]
 
     @staticmethod
     @otel
@@ -113,8 +112,7 @@ class AppFunctions:
             .options(sqlalchemy.orm.selectinload(EveTables.ScheduledExtraction.moon))
         )
 
-        query_result: sqlalchemy.engine.Result = await session.execute(query)
-        return [x for x in query_result.scalars()]
+        return [x async for x in await session.stream_scalars(query)]
 
     @staticmethod
     @otel
@@ -133,8 +131,7 @@ class AppFunctions:
             .options(sqlalchemy.orm.selectinload(EveTables.Structure.corporation))
         )
 
-        query_result: sqlalchemy.engine.Result = await session.execute(query)
-        return [x for x in query_result.scalars()]
+        return [x async for x in await session.stream_scalars(query)]
 
     @staticmethod
     @otel
@@ -147,8 +144,7 @@ class AppFunctions:
             .order_by(sqlalchemy.desc(EveTables.PeriodicTaskTimestamp.timestamp))
         )
 
-        results: sqlalchemy.engine.Result = await session.execute(query)
-        return [x for x in results.scalars()]
+        return [x async for x in await session.stream_scalars(query)]
 
     @staticmethod
     @otel
@@ -160,8 +156,7 @@ class AppFunctions:
             .order_by(sqlalchemy.desc(EveTables.MoonYield.yield_percent))
         )
 
-        query_result: sqlalchemy.engine.Result = await session.execute(query)
-        return [x for x in query_result.scalars() if x is not None]
+        return [x async for x in await session.stream_scalars(query)]
 
     @staticmethod
     @otel
@@ -182,9 +177,8 @@ class AppFunctions:
             .limit(12)
         )
 
-        query_result: sqlalchemy.engine.Result = await session.execute(query)
         results = list()
-        for x in query_result.scalars():
+        async for x in await session.stream_scalars(query):
             x: EveTables.ExtractionHistory
             cat: datetime.datetime = x.chunk_arrival_time
             results.append({
@@ -216,9 +210,8 @@ class AppFunctions:
             .limit(20)
         )
 
-        query_result: sqlalchemy.engine.Result = await session.execute(query)
         colnames: typing.Final = ["id", "count", "last"]
-        return [dict(zip(colnames, x)) for x in query_result.all()]
+        return [dict(zip(colnames, x)) async for x in await session.stream(query)]
 
     @staticmethod
     @otel
@@ -277,28 +270,27 @@ class AppFunctions:
     async def is_permitted(evedb: EveDatabase, character_id: int, corpporation_id: int, alliance_id: int, check_trust: bool = False) -> bool:
         acl_pass = False
 
-        acl_set: typing.Final = set()
         async with await evedb.sessionmaker() as session:
+            session: sqlalchemy.ext.asyncio.AsyncSession
 
             acl_query = sqlalchemy.select(EveTables.AccessControls)
-            acl_query_result = await session.execute(acl_query)
-            acl_set |= {x for x in acl_query_result.scalars()}
+            acl_set: typing.Final = {acl async for acl in await session.stream_scalars(acl_query)}
 
-        acl_pass = False
-        acl_evaluations = [
-            (EveAccessType.ALLIANCE, alliance_id),
-            (EveAccessType.CORPORATION, corpporation_id),
-            (EveAccessType.CHARACTER, character_id),
-        ]
+            acl_pass = False
+            acl_evaluations = [
+                (EveAccessType.ALLIANCE, alliance_id),
+                (EveAccessType.CORPORATION, corpporation_id),
+                (EveAccessType.CHARACTER, character_id),
+            ]
 
-        for acl_type, acl_id in acl_evaluations:
-            for acl in filter(lambda x: x.type == acl_type, acl_set):
-                if not isinstance(acl, EveTables.AccessControls):
-                    continue
-                if acl_id == acl.id:
-                    acl_pass = acl.permit
-                    if check_trust:
-                        acl_pass = acl_pass and acl.trust
+            for acl_type, acl_id in acl_evaluations:
+                for acl in filter(lambda x: x.type == acl_type, acl_set):
+                    if not isinstance(acl, EveTables.AccessControls):
+                        continue
+                    if acl_id == acl.id:
+                        acl_pass = acl.permit
+                        if check_trust:
+                            acl_pass = acl_pass and acl.trust
 
         return acl_pass
 
@@ -316,7 +308,7 @@ class AppFunctions:
                     sqlalchemy.select(EveTables.PeriodicCredentials)
                     .where(
                         sqlalchemy.and_(
-                            EveTables.PeriodicCredentials.is_enabled == sqlalchemy.sql.expression.true(),
+                            EveTables.PeriodicCredentials.is_enabled.is_(True),
                             EveTables.PeriodicCredentials.character_id == character_id,
                         )
                     )
@@ -341,7 +333,7 @@ class AppFunctions:
                     sqlalchemy.select(EveTables.PeriodicCredentials)
                     .where(
                         sqlalchemy.and_(
-                            EveTables.PeriodicCredentials.is_enabled == sqlalchemy.sql.expression.true(),
+                            EveTables.PeriodicCredentials.is_enabled.is_(True),
                             EveTables.PeriodicCredentials.character_id == character_id,
                         )
                     )

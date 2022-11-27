@@ -60,14 +60,14 @@ class EveMoonYieldTask(EveDatabaseTask):
             if len(existing_id_set) > 0:
                 try:
                     async with await self.db.sessionmaker() as session, session.begin():
+                        session: sqlalchemy.ext.asyncio.AsyncSession
 
-                        if len(existing_id_set) > 0:
-                            query = (
-                                sqlalchemy.delete(EveTables.MoonYield)
-                                .where(EveTables.MoonYield.moon_id.in_(existing_id_set))
-                            )
-                            await session.execute(query)
-                            await session.commit()
+                        query = (
+                            sqlalchemy.delete(EveTables.MoonYield)
+                            .where(EveTables.MoonYield.moon_id.in_(existing_id_set))
+                        )
+                        await session.execute(query)
+                        await session.commit()
 
                 except Exception as ex:
                     otel_add_exception(ex)

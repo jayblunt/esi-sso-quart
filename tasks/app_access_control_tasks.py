@@ -30,6 +30,7 @@ class EveAccessControlTask(EveTask):
 
         try:
             async with await self.db.sessionmaker() as session, session.begin():
+                session: sqlalchemy.ext.asyncio.AsyncSession
 
                 existing_acl_set: typing.Final = set()
                 query = sqlalchemy.select(EveTables.AccessControls)
@@ -38,7 +39,8 @@ class EveAccessControlTask(EveTask):
 
                 if len(existing_acl_set) == 0:
                     session.add_all(acl_bootstrap_set)
-                    await session.commit()
+
+                await session.commit()
 
         except Exception as ex:
             otel_add_exception(ex)

@@ -93,13 +93,13 @@ async def _usage() -> quart.Response:
     ar: typing.Final[AppRequest] = await AppFunctions.get_app_request(evedb, quart.session, quart.request)
     if ar.character_id > 0 and ar.permitted:
 
-        permitted_data = list()
-        denied_data = list()
+        permitted_data: typing.Final = list()
+        denied_data: typing.Final = list()
 
         try:
             async with await evedb.sessionmaker() as session:
-                permitted_data = await AppFunctions.get_usage(session, True, ar.ts)
-                denied_data = await AppFunctions.get_usage(session, False, ar.ts)
+                permitted_data += await AppFunctions.get_usage(session, True, ar.ts)
+                denied_data += await AppFunctions.get_usage(session, False, ar.ts)
 
         except Exception as ex:
             app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
@@ -128,6 +128,7 @@ async def page(moon_id: int) -> quart.Response:
 
     ar: typing.Final[AppRequest] = await AppFunctions.get_app_request(evedb, quart.session, quart.request)
     if ar.character_id > 0 and ar.permitted:
+
         moon_history: typing.Final = list()
         moon_yield: typing.Final = list()
 
@@ -172,7 +173,6 @@ async def root() -> quart.Response:
 
         try:
             async with await evedb.sessionmaker() as session:
-
                 active_timer_results += await AppFunctions.get_active_timers(session, ar.ts)
                 completed_extraction_results += await AppFunctions.get_completed_extractions(session, ar.ts)
                 scheduled_extraction_results += await AppFunctions.get_scheduled_extractions(session, ar.ts)

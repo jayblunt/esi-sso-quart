@@ -20,7 +20,7 @@ def otel_initialize() -> opentelemetry.sdk.trace.Tracer:
     if not _OTEL_INITIALIZED:
 
         # opentelemetry.instrumentation.aiohttp_client.AioHttpClientInstrumentor().instrument()
-        opentelemetry.instrumentation.asyncpg.AsyncPGInstrumentor().instrument()
+        # opentelemetry.instrumentation.asyncpg.AsyncPGInstrumentor().instrument()
 
         provider: typing.Final = opentelemetry.sdk.trace.TracerProvider()
 

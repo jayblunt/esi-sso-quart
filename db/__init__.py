@@ -224,7 +224,7 @@ class EveTables:
         moon = sqlalchemy.orm.relationship("UniverseMoon", viewonly=True)
 
         def __repr__(self) -> str:
-            return f"{self.__class__.__name__}(timestamp={self.timestamp}, structure_id={self.structure_id}, corporation_id={self.corporation}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time})"
+            return f"{self.__class__.__name__}(timestamp={self.timestamp}, structure_id={self.structure_id}, corporation_id={self.corporation_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time})"
 
 
     class CompletedExtraction(Base):
@@ -244,7 +244,7 @@ class EveTables:
         moon = sqlalchemy.orm.relationship("UniverseMoon", viewonly=True)
 
         def __repr__(self) -> str:
-            return f"{self.__class__.__name__}(timestamp={self.timestamp}, structure_id={self.structure_id}, corporation_id={self.corporation}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time}, belt_decay_time={self.belt_decay_time})"
+            return f"{self.__class__.__name__}(timestamp={self.timestamp}, structure_id={self.structure_id}, corporation_id={self.corporation_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time}, belt_decay_time={self.belt_decay_time})"
 
 
     class ExtractionHistory(Base):
@@ -298,12 +298,12 @@ class EveTables:
         is_station_manager_role = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
         session_id = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
         access_token_issued = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
-        access_token_exiry = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
+        access_token_expiry = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
         refresh_token = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
         access_token = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
 
         def __repr__(self) -> str:
-            return f"{self.__class__.__name__}(character_id={self.character_id}, corporation_id={self.corporation_id}, is_enabled={self.is_enabled}, access_token_issued={self.access_token_issued}, access_token_exiry={self.access_token_exiry})"
+            return f"{self.__class__.__name__}(character_id={self.character_id}, corporation_id={self.corporation_id}, is_enabled={self.is_enabled}, access_token_issued={self.access_token_issued}, access_token_expiry={self.access_token_expiry})"
 
 
     class PeriodicTaskTimestamp(Base):
