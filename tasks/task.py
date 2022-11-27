@@ -32,7 +32,6 @@ class EveTask(metaclass=abc.ABCMeta):
         504: 2
     }
 
-
     CONFIGDIR: typing.Final = "CONFIGDIR"
 
     @otel
@@ -46,7 +45,7 @@ class EveTask(metaclass=abc.ABCMeta):
             self.task: asyncio.Task = None
         else:
             client_session[self.name] = True
-            self.task: asyncio.Task = asyncio.create_task(self.manage_task(client_session))
+            self.task: asyncio.Task = asyncio.create_task(self.manage_task(client_session), name=self.__class__.__name__)
 
     async def manage_task(self, client_session: collections.abc.MutableMapping):
         await self.run(client_session)

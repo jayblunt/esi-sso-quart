@@ -60,7 +60,8 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
                     attempts_remaining -= 1
                     otel_add_error(f"{response.url} -> {response.status}")
                     self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
-                    await asyncio.sleep(self.ERROR_SLEEP_TIME)
+                    if attempts_remaining > 0:
+                        await asyncio.sleep(self.ERROR_SLEEP_TIME)
         self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {id} -> {None}")
         return None
 
@@ -82,9 +83,10 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
         try:
             async with await self.db.sessionmaker() as session, session.begin():
 
-                existing_query = sqlalchemy.select(self.object_class)
-                existing_query_result = await session.execute(existing_query)
-                existing_obj_set: typing.Final = {x for x in existing_query_result.scalars()}
+                query = sqlalchemy.select(self.object_class)
+                query_result: sqlalchemy.engine.Result = await session.execute(query)
+                
+                existing_obj_set: typing.Final = {x for x in query_result.scalars()}
                 existing_obj_id_set: typing.Final = {self.object_id(x) for x in existing_obj_set}
 
                 obj_set: typing.Final = set()

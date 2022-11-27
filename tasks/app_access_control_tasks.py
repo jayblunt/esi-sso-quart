@@ -32,9 +32,9 @@ class EveAccessControlTask(EveTask):
             async with await self.db.sessionmaker() as session, session.begin():
 
                 existing_acl_set: typing.Final = set()
-                existing_query = sqlalchemy.select(EveTables.AccessControls)
-                existing_query_result = await session.execute(existing_query)
-                existing_acl_set |= {x for x in existing_query_result.scalars()}
+                query = sqlalchemy.select(EveTables.AccessControls)
+                query_result: sqlalchemy.engine.Result = await session.execute(query)
+                existing_acl_set |= {x for x in query_result.scalars()}
 
                 if len(existing_acl_set) == 0:
                     session.add_all(acl_bootstrap_set)
