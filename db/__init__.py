@@ -152,7 +152,7 @@ class EveTables:
         state = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=True)
         state_timer_start = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=True)
         state_timer_end = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=True)
-        fuel_expires = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
+        fuel_expires = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=True)
         unanchors_at = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=True)
         has_moon_drill = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
 
@@ -163,7 +163,7 @@ class EveTables:
         # completed_extractions = sqlalchemy.orm.relationship("CompletedExtraction", back_populates="structure", cascade="all, delete")
 
         def __repr__(self) -> str:
-            return f"{self.__class__.__name__}(structure_id={self.structure_id}, system_id={self.system_id}, name={self.name})"
+            return f"{self.__class__.__name__}(corporation_id={self.corporation_id}, structure_id={self.structure_id}, name={self.name}, state={self.state}, fuel_expires={self.fuel_expires})"
 
 
     class StructureHistory(Base):
@@ -180,7 +180,7 @@ class EveTables:
         state = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=True)
         state_timer_start = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=True)
         state_timer_end = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=True)
-        fuel_expires = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
+        fuel_expires = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=True)
         unanchors_at = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=True)
         has_moon_drill = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
 
@@ -189,17 +189,6 @@ class EveTables:
 
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(exists={self.exists}, structure_id={self.structure_id}, system_id={self.system_id}, name={self.name})"
-
-
-    # class StructureArchive(Base):
-    #     __tablename__ = "app_structure_archive"
-    #     timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), primary_key=True, server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
-    #     character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
-    #     structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
-    #     json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
-
-    #     def __repr__(self) -> str:
-    #         return f"{self.__class__.__name__}(timestamp={self.timestamp}, character_id={self.character_id}, structure_id={self.structure_id})"
 
 
     class StructurQueryLog(Base):
@@ -235,7 +224,7 @@ class EveTables:
         moon = sqlalchemy.orm.relationship("UniverseMoon", viewonly=True)
 
         def __repr__(self) -> str:
-            return f"{self.__class__.__name__}(structure_id={self.structure_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time})"
+            return f"{self.__class__.__name__}(timestamp={self.timestamp}, structure_id={self.structure_id}, corporation_id={self.corporation}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time})"
 
 
     class CompletedExtraction(Base):
@@ -255,7 +244,8 @@ class EveTables:
         moon = sqlalchemy.orm.relationship("UniverseMoon", viewonly=True)
 
         def __repr__(self) -> str:
-            return f"{self.__class__.__name__}(structure_id={self.structure_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time})"
+            return f"{self.__class__.__name__}(timestamp={self.timestamp}, structure_id={self.structure_id}, corporation_id={self.corporation}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time}, belt_decay_time={self.belt_decay_time})"
+
 
     class ExtractionHistory(Base):
         __tablename__ = "app_extraction_history"
@@ -276,17 +266,6 @@ class EveTables:
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(exists={self.exists}, structure_id={self.structure_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time})"
 
-    # class ExtractionArchive(Base):
-    #     __tablename__ = "app_extraction_archive"
-    #     timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), primary_key=True, server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
-    #     character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
-    #     structure_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
-    #     json = sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
-
-    #     def __repr__(self) -> str:
-    #         return f"{self.__class__.__name__}(timestamp={self.timestamp}, structure_id={self.structure_id}, character_id={self.character_id})"
-
-
     class ExtractionQueryLog(Base):
         __tablename__ = "app_extraction_query_log"
         timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), primary_key=True, server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
@@ -296,6 +275,7 @@ class EveTables:
 
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(timestamp={self.timestamp}, corporation_id={self.corporation_id}, character_id={self.character_id}), len={len(self.json)})"
+
 
     class MoonYield(Base):
         __tablename__ = "app_moon_yields"
@@ -375,7 +355,7 @@ class EveDatabase:
         self._sessionmaker = None
         self._initialized = False
 
-    async def _initialize(self):
+    async def _initialize(self) -> None:
         if not self._initialized:
             async with self._engine.begin() as transaction:
                 await transaction.run_sync(EveTables.Base.metadata.create_all)

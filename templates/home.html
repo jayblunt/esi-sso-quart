@@ -1,8 +1,6 @@
 {% extends "base.html" %} {% block content %} {% include "character.html" %}
 <div class="box">
-    <h3>2022-11-19</h3>
-    <p>Had some hosting instability, should be fixed now .. let me know if you get errors ..</p>
-    <p><b>Moon Information</b> in the extractions section - the moon names are links ...</p>
+    <h3>2022-11-26</h3>
     <p>If the information here is missing or wrong, let me know in game.</p>
 </div>
 {% if active_timers %}
@@ -146,6 +144,9 @@
     <table>
         <thead>
             <tr>
+                {% if character_contributor %}
+                <th align="left">Character</th>
+                {% endif %}
                 <th align="left">Corporation</th>
                 <th>Last Update</th>
             </tr>
@@ -153,27 +154,37 @@
         <tbody>
             {% for lu in last_update %}
             <tr class="{{lu.timestamp|timestamp_age}}">
+                {% if character_contributor %}
+                <td align="left" class="{{lu.timestamp|timestamp_age}}"><a
+                        href="{{ lu.character_id|zkillboard_character }}" target="_blank">{{
+                        lu.character_id|character_name }}</a></td>
+                {% endif %}
                 <td align="left" class="{{lu.timestamp|timestamp_age}}"><a
                         href="https://evewho.com/corporation/{{lu.corporation_id}}" target="_blank">{{
-                        lu.corporation.name }}</a></td>
+                        lu.corporation_id|corporation_name }}</a></td>
                 <td class="{{lu.timestamp|timestamp_age}}">{{ lu.timestamp|datetime }}</td>
             </tr>
             {% endfor %}
         </tbody>
         <tfoot>
             <tr>
+                {% if character_contributor %}
+                <td></td>
+                {% endif %}
                 <td></td>
                 <td></td>
             </tr>
         </tfoot>
     </table>
+    {% if character_contributor %}
+    <p>Note: only contributors see contributor character names. others see contributor corporation names only.</p>
+    {% endif %}
 </div>
 {% endif %}
-{% if character_trusted %}
+{% if character_contributor %}
 <div class="box">
     <h3>Recent Usage</h3>
-    <p>Recent <a href="/usage/">usage information</a> is available.
-    </p>
+    <p>Recent <a href="/usage/">usage information</a> is available.</p>
 </div>
 {% endif %}
 {% endblock %}

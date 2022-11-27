@@ -26,6 +26,13 @@ class EveTask(metaclass=abc.ABCMeta):
     ERROR_SLEEP_TIME: typing.Final = 7
     ERROR_RETRY_COUNT: typing.Final = 11
 
+    # ESI throws off a 504 at daily restart, so let's double the retry
+    # waiting period for those.
+    ERROR_SLEEP_MODIFIERS: typing.Final = {
+        504: 2
+    }
+
+
     CONFIGDIR: typing.Final = "CONFIGDIR"
 
     @otel
@@ -82,12 +89,12 @@ class EveTask(metaclass=abc.ABCMeta):
                         if response.status in [403]:
                             break
                         if attempts_remaining > 0:
-                            await asyncio.sleep(self.ERROR_SLEEP_TIME)
+                            await asyncio.sleep(self.ERROR_SLEEP_TIME * self.ERROR_SLEEP_MODIFIERS.get(response.status, 1))
 
             if results is not None:
                 pages = list(range(2, 1 + int(maxpageno)))
 
-                task_list: typing.Final = [asyncio.ensure_future(self._get_url(http_session, url, {"page": x})) for x in pages]
+                task_list: typing.Final = [asyncio.create_task(self._get_url(http_session, url, {"page": x})) for x in pages]
                 if len(task_list) > 0:
                     results.extend(sum(await asyncio.gather(*task_list), []))
 
@@ -112,7 +119,7 @@ class EveTask(metaclass=abc.ABCMeta):
                     if response.status in [403]:
                         return None
                     if attempts_remaining > 0:
-                        await asyncio.sleep(self.ERROR_SLEEP_TIME)
+                        await asyncio.sleep(self.ERROR_SLEEP_TIME * self.ERROR_SLEEP_MODIFIERS.get(response.status, 1))
 
         return None
 
@@ -121,35 +128,6 @@ class EveTask(metaclass=abc.ABCMeta):
 
 
 class EveDatabaseTask(EveTask):
-
-
-    # @otel
-    # async def _get_url(self, http_session: aiohttp.ClientSession, url: str, request_params: dict | None = None) -> dict | None:
-    #     return self._get_item(http_session, url)
-    #     result = await self._get_item(http_session, url)
-    #     if result is not None:
-    #         return dict(result)
-    #     return result
-
-    #     # request_params = {**self.common_params}
-    #     # if page is not None:
-    #     #     request_params |= {"page": page}
-
-    #     # attempts_remaining = self.ERROR_RETRY_COUNT
-    #     # while attempts_remaining > 0:
-    #     #     async with await http_session.get(url, params=request_params) as response:
-    #     #         if response.status in [200]:
-    #     #             return dict(await response.json())
-    #     #         else:
-    #     #             attempts_remaining -= 1
-    #     #             otel_add_error(f"{response.url} -> {response.status}")
-    #     #             self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
-    #     #             if response.status in [403]:
-    #     #                 return None
-    #     #             if attempts_remaining > 0:
-    #     #                 await asyncio.sleep(self.ERROR_SLEEP_TIME)
-
-    #     # return None
 
 
     @otel
@@ -220,7 +198,7 @@ class EveDatabaseTask(EveTask):
                 async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as http_session:
                     type_task_list: typing.Final = list()
                     for id in type_id_set - existing_type_id_set:
-                        type_task_list.append(asyncio.ensure_future(self._get_type(id, http_session)))
+                        type_task_list.append(asyncio.create_task(self._get_type(id, http_session)))
 
                     if len(type_task_list) > 0:
                         result_list = await asyncio.gather(*type_task_list)
@@ -252,7 +230,7 @@ class EveDatabaseTask(EveTask):
                 async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as http_session:
                     task_list: typing.Final = list()
                     for id in moon_id_set - existing_moon_id_set:
-                        task_list.append(asyncio.ensure_future(self._get_moon(id, http_session)))
+                        task_list.append(asyncio.create_task(self._get_moon(id, http_session)))
 
                     if len(task_list) > 0:
                         result_list = await asyncio.gather(*task_list)
@@ -284,7 +262,7 @@ class EveDatabaseTask(EveTask):
                 async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as http_session:
                     corporation_task_list: typing.Final = list()
                     for id in corporation_id_set - existing_corporation_id_set:
-                        corporation_task_list.append(asyncio.ensure_future(self._get_corporation(id, http_session)))
+                        corporation_task_list.append(asyncio.create_task(self._get_corporation(id, http_session)))
 
                     if len(corporation_task_list) > 0:
                         result_list = await asyncio.gather(*corporation_task_list)

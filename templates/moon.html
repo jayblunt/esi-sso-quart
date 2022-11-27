@@ -1,9 +1,5 @@
 {% extends "base.html" %} {% block content %} {% include "character.html" %}
 <div class="box">
-    <h3>2022-11-16</h3>
-    <p>Work in Progress ..</p>
-</div>
-<div class="box">
     {% if moon_id %}<h3>{{moon_id|moon_name}}</h3>{% endif %}
     {% if moon_yield %}
     <table>
