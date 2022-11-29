@@ -3,7 +3,7 @@ import pprint
 import asgiref.typing
 
 
-class LoggingMiddleware(object):
+class LoggingMiddleware:
     def __init__(self, app: asgiref.typing.ASGI3Application):
         self.app = app
 

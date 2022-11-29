@@ -224,7 +224,7 @@ class EveTables:
         moon = sqlalchemy.orm.relationship("UniverseMoon", viewonly=True)
 
         def __repr__(self) -> str:
-            return f"{self.__class__.__name__}(timestamp={self.timestamp}, structure_id={self.structure_id}, corporation_id={self.corporation_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time})"
+            return f"{self.__class__.__name__}(structure_id={self.structure_id}, corporation_id={self.corporation_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time}, chunk_arrival_time={self.chunk_arrival_time})"
 
 
     class CompletedExtraction(Base):
@@ -244,7 +244,7 @@ class EveTables:
         moon = sqlalchemy.orm.relationship("UniverseMoon", viewonly=True)
 
         def __repr__(self) -> str:
-            return f"{self.__class__.__name__}(timestamp={self.timestamp}, structure_id={self.structure_id}, corporation_id={self.corporation_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time}, belt_decay_time={self.belt_decay_time})"
+            return f"{self.__class__.__name__}(structure_id={self.structure_id}, corporation_id={self.corporation_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time}, chunk_arrival_time={self.chunk_arrival_time}, belt_decay_time={self.belt_decay_time})"
 
 
     class ExtractionHistory(Base):

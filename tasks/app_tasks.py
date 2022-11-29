@@ -369,7 +369,7 @@ class EveStructureTask(EveDatabaseTask):
                     if same_attributes:
                         continue
 
-                    existing_obj.timestamp = None
+                    existing_obj.timestamp = now
                     self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {existing_obj} updated")
                     session.add(existing_obj)
 
@@ -413,7 +413,7 @@ class EveStructureTask(EveDatabaseTask):
                     if now <= scheduled_obj.chunk_arrival_time:
                         continue
 
-                    completed_obj: EveTables.CompletedExtraction = completed_extraction_dict.get(structure_id, None)
+                    completed_obj: EveTables.CompletedExtraction | None = completed_extraction_dict.get(structure_id)
                     if completed_obj:
                         if completed_obj.chunk_arrival_time == scheduled_obj.chunk_arrival_time:
                             self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {scheduled_obj} already migrated")
@@ -564,7 +564,7 @@ class EveStructureTask(EveDatabaseTask):
                     if same_attributes:
                         continue
 
-                    existing_obj.timestamp = None
+                    existing_obj.timestamp = now
                     self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {existing_obj} updated")
                     session.add(existing_obj)
 

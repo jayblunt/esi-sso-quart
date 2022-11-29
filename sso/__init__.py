@@ -212,8 +212,8 @@ class EveSSO:
                 self.app.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
 
     async def _refresh_token_task(self) -> None:
-        refresh_buffer: typing.Final = datetime.timedelta(seconds=30)
-        refresh_interval: typing.Final = datetime.timedelta(seconds=300) - refresh_buffer
+        refresh_buffer: typing.Final = datetime.timedelta(seconds=60)
+        refresh_interval: typing.Final = datetime.timedelta(seconds=300)
         while True:
             now: typing.Final = datetime.datetime.now(tz=datetime.timezone.utc)
 
@@ -224,7 +224,7 @@ class EveSSO:
 
                     query = (
                         sqlalchemy.select(EveTables.PeriodicCredentials)
-                        .where(EveTables.PeriodicCredentials.is_permitted.is_(True))
+                        .where(EveTables.PeriodicCredentials.is_enabled.is_(True))
                         .order_by(sqlalchemy.asc(EveTables.PeriodicCredentials.access_token_expiry))
                         .limit(1)
                     )

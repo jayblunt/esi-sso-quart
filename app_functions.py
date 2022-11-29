@@ -140,7 +140,15 @@ class AppFunctions:
         start_time = now - datetime.timedelta(days=6)
         query = (
             sqlalchemy.select(EveTables.PeriodicTaskTimestamp)
-            .where(EveTables.PeriodicTaskTimestamp.timestamp > start_time)
+            .where(
+                sqlalchemy.and_(
+                    EveTables.PeriodicTaskTimestamp.timestamp > start_time,
+                    EveTables.PeriodicTaskTimestamp.corporation_id.in_(
+                        sqlalchemy.select(sqlalchemy.distinct(EveTables.PeriodicCredentials.corporation_id))
+                        .where(EveTables.PeriodicCredentials.is_enabled.is_(True))
+                    )
+                )
+            )
             .order_by(sqlalchemy.desc(EveTables.PeriodicTaskTimestamp.timestamp))
         )
 
