@@ -5,13 +5,14 @@ import typing
 import quart
 import quart.sessions
 
-from app_functions import AppFunctions
-from db import EveDatabase
-from sso import EveSSO
-from telemetry import otel
+from support.telemetry import otel
+
+from .db import EveDatabase
+from .functions import AppFunctions
+from .sso import EveSSO
 
 
-class TemplateIdCacheEnum(enum.Enum):
+class AppTemplateCsacheEnum(enum.Enum):
 
     CHARACTER_NAME = 0
     CORPORATION_NAME = 1
@@ -19,18 +20,15 @@ class TemplateIdCacheEnum(enum.Enum):
     TYPE_NAME = 3
 
 
-_CACHE = {
-    TemplateIdCacheEnum.CHARACTER_NAME: dict(),
-    TemplateIdCacheEnum.CORPORATION_NAME: dict(),
-    TemplateIdCacheEnum.MOON_NAME: dict(),
-    TemplateIdCacheEnum.TYPE_NAME: dict(),
-}
-
-
-_EVEDB = None
-
-
 class AppTemplates:
+
+    EVEDB: EveDatabase = None
+    CACHE: typing.Final = {
+        AppTemplateCsacheEnum.CHARACTER_NAME: dict(),
+        AppTemplateCsacheEnum.CORPORATION_NAME: dict(),
+        AppTemplateCsacheEnum.MOON_NAME: dict(),
+        AppTemplateCsacheEnum.TYPE_NAME: dict(),
+    }
 
     @staticmethod
     @otel
@@ -45,49 +43,45 @@ class AppTemplates:
     @staticmethod
     @otel
     async def _character_name(input: str) -> str:
-        global _CACHE, _EVEDB
         character_id = int(input)
-        character_name = _CACHE[TemplateIdCacheEnum.CHARACTER_NAME].get(character_id)
+        character_name = AppTemplates.CACHE[AppTemplateCsacheEnum.CHARACTER_NAME].get(character_id)
         if not character_name:
-            character_name = await AppFunctions.get_character_name(_EVEDB, character_id)
+            character_name = await AppFunctions.get_character_name(AppTemplates.EVEDB, character_id)
             if character_name:
-                _CACHE[TemplateIdCacheEnum.CHARACTER_NAME][character_id] = character_name
+                AppTemplates.CACHE[AppTemplateCsacheEnum.CHARACTER_NAME][character_id] = character_name
         return character_name
 
     @staticmethod
     @otel
     async def _corporation_name(input: str) -> str:
-        global _CACHE, _EVEDB
         corporation_id = int(input)
-        corporation_name = _CACHE[TemplateIdCacheEnum.CORPORATION_NAME].get(corporation_id)
+        corporation_name = AppTemplates.CACHE[AppTemplateCsacheEnum.CORPORATION_NAME].get(corporation_id)
         if not corporation_name:
-            corporation_name = await AppFunctions.get_corporation_name(_EVEDB, corporation_id)
+            corporation_name = await AppFunctions.get_corporation_name(AppTemplates.EVEDB, corporation_id)
             if corporation_name:
-                _CACHE[TemplateIdCacheEnum.CORPORATION_NAME][corporation_id] = corporation_name
+                AppTemplates.CACHE[AppTemplateCsacheEnum.CORPORATION_NAME][corporation_id] = corporation_name
         return corporation_name
 
     @staticmethod
     @otel
     async def _moon_name(input: str) -> str:
-        global _CACHE, _EVEDB
         moon_id = int(input)
-        moon_name = _CACHE[TemplateIdCacheEnum.MOON_NAME].get(moon_id)
+        moon_name = AppTemplates.CACHE[AppTemplateCsacheEnum.MOON_NAME].get(moon_id)
         if not moon_name:
-            moon_name = await AppFunctions.get_mmon_name(_EVEDB, moon_id)
+            moon_name = await AppFunctions.get_mmon_name(AppTemplates.EVEDB, moon_id)
             if moon_name:
-                _CACHE[TemplateIdCacheEnum.MOON_NAME][moon_id] = moon_name
+                AppTemplates.CACHE[AppTemplateCsacheEnum.MOON_NAME][moon_id] = moon_name
         return moon_name
 
     @staticmethod
     @otel
     async def _type_name(input: str) -> str:
-        global _CACHE, _EVEDB
         moon_id = int(input)
-        moon_name = _CACHE[TemplateIdCacheEnum.TYPE_NAME].get(moon_id)
+        moon_name = AppTemplates.CACHE[AppTemplateCsacheEnum.TYPE_NAME].get(moon_id)
         if not moon_name:
-            moon_name = await AppFunctions.get_type_name(_EVEDB, moon_id)
+            moon_name = await AppFunctions.get_type_name(AppTemplates.EVEDB, moon_id)
             if moon_name:
-                _CACHE[TemplateIdCacheEnum.TYPE_NAME][moon_id] = moon_name
+                AppTemplates.CACHE[AppTemplateCsacheEnum.TYPE_NAME][moon_id] = moon_name
         return moon_name
 
     @staticmethod
@@ -138,8 +132,7 @@ class AppTemplates:
     @staticmethod
     @otel
     def add_templates(app: quart.Quart, evedb: EveDatabase) -> None:
-        global _EVEDB
-        _EVEDB = evedb
+        AppTemplates.EVEDB = evedb
         filters: typing.Final = {
             "login_type": AppTemplates._login_type,
             "character_name": AppTemplates._character_name,

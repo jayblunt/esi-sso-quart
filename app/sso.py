@@ -21,8 +21,10 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
-from db import EveAuthType, EveDatabase, EveTables
-from telemetry import otel, otel_add_error, otel_add_event, otel_add_exception
+from support.telemetry import (otel, otel_add_error, otel_add_event,
+                               otel_add_exception)
+
+from .db import EveAuthType, EveDatabase, EveTables
 
 
 class EveSSO:

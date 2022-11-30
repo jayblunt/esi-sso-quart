@@ -12,16 +12,15 @@ import quart
 import quart.sessions
 import quart_session
 
-from app_functions import AppFunctions, AppRequest
-from app_templates import AppTemplates
-from db import EveDatabase, EveTables
-# from middleware import RateLimiterMiddleware
-from sso import EveSSO
-from tasks import (EveAccessControlTask, EveAllianceTask, EveMoonYieldTask,
-                   EveStructurePollingTask, EveStructureTask, EveTask,
-                   EveUniverseConstellationsTask, EveUniverseRegionsTask,
-                   EveUniverseSystemsTask)
-from telemetry import otel, otel_initialize
+from app import AppFunctions, AppRequest, AppTemplates
+from app.db import EveDatabase, EveTables
+from app.sso import EveSSO
+from app.tasks import (EveAccessControlTask, EveAllianceTask, EveMoonYieldTask,
+                       EveStructurePollingTask, EveStructureTask, EveTask,
+                       EveUniverseConstellationsTask, EveUniverseRegionsTask,
+                       EveUniverseSystemsTask)
+# from support.middleware import RateLimiterMiddleware
+from support.telemetry import otel, otel_initialize
 
 app: typing.Final = quart.Quart(__name__)
 
@@ -39,7 +38,8 @@ app.config.from_mapping(
         "EVEONLINE_CLIENT_SECRET": os.getenv("EVEONLINE_CLIENT_SECRET", ""),
         "SQLALCHEMY_DB_URL": os.getenv("SQLALCHEMY_DB_URL", ""),
         "TEMPLATES_AUTO_RELOAD": True,
-        "SEND_FILE_MAX_AGE_DEFAULT": 300,
+        # "SEND_FILE_MAX_AGE_DEFAULT": 300,
+        "SEND_FILE_MAX_AGE_DEFAULT": 30,
         "MAX_CONTENT_LENGTH": 512 * 1024,
         "BODY_TIMEOUT": 15,
         "RESPONSE_TIMEOUT": 15,

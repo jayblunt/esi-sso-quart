@@ -13,10 +13,10 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
-from db import EveTables
-from sso import EveSSO
-from telemetry import otel, otel_add_error, otel_add_exception
+from support.telemetry import otel, otel_add_error, otel_add_exception
 
+from ..db import EveTables
+from ..sso import EveSSO
 from .task import EveTask
 
 

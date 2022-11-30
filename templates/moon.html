@@ -1,24 +1,20 @@
-{% extends "base.html" %} {% block content %} {% include "character.html" %}
+{% extends "base.html" %} {% block content %}
 <div class="box">
     {% if moon_id %}<h3>{{moon_id|moon_name}}</h3>{% endif %}
     {% if moon_yield %}
     <table>
         <thead>
             <tr>
-                <!-- <th align="left"></th> -->
-                <th align="left">Moon Ore</th>
-                <th align="left">Percentage</th>
+                <!-- <th class="align_left"></th> -->
+                <th class="align_left">Moon Ore</th>
+                <th class="align_left">Percentage</th>
             </tr>
         </thead>
-        <tbody>
-            {% for y in moon_yield %}
-            <tr>
-                <!-- <td align="left"><img width="16" height="16" alt="{{y.type_id|type_name}}" src="https://images.evetech.net/types/{{y.type_id}}/icon?size=32"></td> -->
-                <td align="left">{{y.type_id|type_name}}</td>
-                <td align="left">{{y.yield_percent|percentage}}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
+        <tbody> {% for y in moon_yield %} <tr>
+                <!-- <td class="align_left"><img width="16" height="16" alt="{{y.type_id|type_name}}" src="https://images.evetech.net/types/{{y.type_id}}/icon?size=32"></td> -->
+                <td class="align_left">{{y.type_id|type_name}}</td>
+                <td class="align_left">{{y.yield_percent|percentage}}</td>
+            </tr> {% endfor %} </tbody>
         <tfoot>
             <tr>
                 <!-- <td></td> -->
@@ -27,34 +23,25 @@
             </tr>
         </tfoot>
     </table>
-    {% endif %}
-    {% if moon_history and weekday_names and timeofday_names %}
-    <h3>Extraction History</h3>
+    {% endif %} {% if moon_history and weekday_names and timeofday_names %} <h3>Extraction History</h3>
     <table>
         <thead>
             <tr>
-                <th align="left">Date</th>
-                <th align="left">Day of Week</th>
-                <th align="left">Time of Day</th>
+                <th class="align_left">Date</th>
+                <th class="align_left">Day of Week</th>
+                <th class="align_left">Time of Day</th>
             </tr>
         </thead>
         <tbody>
             <tr>
-                <td align="left">&nbsp;</td>
-                <td align="left">{% for wdn in weekday_names %}{{wdn}}&nbsp;{% endfor %}</td>
-                <td align="left">{% for tod in timeofday_names %}{{tod}}&nbsp;{% endfor %}</td>
-            </tr>
-            {% for e in moon_history %}
-            <tr>
-                <td align="left">{{ e.extraction.chunk_arrival_time|date }}</td>
-                <td align="left">{% for wdn in weekday_names %}<span
-                        class="{% if loop.index0 == e.dow %}dow_on{% else %}dow_off{% endif %}">{{wdn}}</span>&nbsp;{%
-                    endfor %}</td>
-                <td align="left">{% for tod in timeofday_names %}<span
-                        class="{% if loop.index0 == e.tod %}dow_on{% else %}dow_off{% endif %}">{{tod}}</span>&nbsp;{%
-                    endfor %}</td>
-            </tr>
-            {% endfor %}
+                <td class="align_left">&nbsp;</td>
+                <td class="align_left">{% for wdn in weekday_names %}{{wdn}}&nbsp;{% endfor %}</td>
+                <td class="align_left">{% for tod in timeofday_names %}{{tod}}&nbsp;{% endfor %}</td>
+            </tr> {% for e in moon_history %} <tr>
+                <td class="align_left">{{ e.extraction.chunk_arrival_time|date }}</td>
+                <td class="align_left">{% for wdn in weekday_names %}<span class="{% if loop.index0 == e.dow %}dow_on{% else %}dow_off{% endif %}">{{wdn}}</span>&nbsp;{% endfor %}</td>
+                <td class="align_left">{% for tod in timeofday_names %}<span class="{% if loop.index0 == e.tod %}dow_on{% else %}dow_off{% endif %}">{{tod}}</span>&nbsp;{% endfor %}</td>
+            </tr> {% endfor %}
         </tbody>
         <tfoot>
             <tr>
@@ -64,7 +51,5 @@
                 <td></td>
             </tr>
         </tfoot>
-    </table>
-    {% endif %}
-</div>
-{% endblock %}
+    </table> {% endif %}
+</div> {% endblock %}

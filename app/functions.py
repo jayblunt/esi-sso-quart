@@ -1,5 +1,6 @@
 import dataclasses
 import datetime
+import functools
 import typing
 
 import quart
@@ -10,13 +11,15 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
-from db import EveAccessType, EveDatabase, EveTables
-from sso import EveSSO
-from telemetry import otel
+from support.telemetry import otel
+
+from .db import EveAccessType, EveDatabase, EveTables
+from .sso import EveSSO
 
 
 @dataclasses.dataclass(frozen=True)
 class AppRequest:
+    ts: datetime.datetime = dataclasses.field(default_factory=functools.partial(datetime.datetime.now, tz=datetime.timezone.utc))
     session: quart.sessions.SessionMixin = None
     character_id: int = 0
     corpporation_id: int = 0
@@ -24,7 +27,6 @@ class AppRequest:
     permitted: bool = False
     trusted: bool = False
     contributor: bool = False
-    ts: datetime.datetime = datetime.datetime.now(tz=datetime.timezone.utc)
 
 
 class AppFunctions:

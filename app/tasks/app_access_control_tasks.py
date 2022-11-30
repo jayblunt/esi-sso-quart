@@ -8,9 +8,9 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
-from db import EveAccessType, EveTables
-from telemetry import otel, otel_add_exception
+from support.telemetry import otel, otel_add_exception
 
+from ..db import EveAccessType, EveTables
 from .task import EveTask
 
 

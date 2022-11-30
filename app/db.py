@@ -6,7 +6,7 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
-from telemetry import otel
+from support.telemetry import otel
 
 
 class EveAccessType(enum.Enum):
