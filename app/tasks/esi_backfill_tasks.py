@@ -15,12 +15,11 @@ import sqlalchemy.sql
 
 from support.telemetry import otel, otel_add_error, otel_add_exception
 
-from ..db import EveTables
-from ..sso import EveSSO
-from .task import EveTask
+from .. import AppSSO, AppTables
+from .task import AppTask
 
 
-class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
+class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
 
     @property
     @abc.abstractmethod
@@ -71,7 +70,7 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
         self.logger.info(f"> {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
 
         url: typing.Final = self.index_url()
-        access_token: typing.Final = client_session.get(EveSSO.ESI_ACCESS_TOKEN, '')
+        access_token: typing.Final = client_session.get(AppSSO.ESI_ACCESS_TOKEN, '')
         obj_id_set: typing.Final = set(await self.get_pages(url, access_token))
 
         # cache_dict: typing.Final = dict()
@@ -131,11 +130,11 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
         self.logger.info(f"< {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
 
 
-class EveUniverseRegionsTask(EveBackfillTask):
+class ESIUniverseRegionsBackfillTask(ESIBackfillTask):
 
     @property
     def object_class(self) -> typing.Any:
-        return EveTables.UniverseRegion
+        return AppTables.UniverseRegion
 
     def object_id(self, obj: typing.Any) -> int:
         if isinstance(obj, self.object_class):
@@ -165,11 +164,11 @@ class EveUniverseRegionsTask(EveBackfillTask):
         return edict
 
 
-class EveUniverseConstellationsTask(EveBackfillTask):
+class ESIUniverseConstellationsBackfillTask(ESIBackfillTask):
 
     @property
     def object_class(self) -> typing.Any:
-        return EveTables.UniverseConstellation
+        return AppTables.UniverseConstellation
 
     def object_id(self, obj: typing.Any) -> int:
         if isinstance(obj, self.object_class):
@@ -199,11 +198,11 @@ class EveUniverseConstellationsTask(EveBackfillTask):
         return edict
 
 
-class EveUniverseSystemsTask(EveBackfillTask):
+class ESIUniverseSystemsBackfillTask(ESIBackfillTask):
 
     @property
     def object_class(self) -> typing.Any:
-        return EveTables.UniverseSystem
+        return AppTables.UniverseSystem
 
     def object_id(self, obj: typing.Any) -> int:
         if isinstance(obj, self.object_class):
@@ -233,11 +232,11 @@ class EveUniverseSystemsTask(EveBackfillTask):
         return edict
 
 
-class EveAllianceTask(EveBackfillTask):
+class ESIAllianceBackfillTask(ESIBackfillTask):
 
     @property
     def object_class(self) -> typing.Any:
-        return EveTables.Alliance
+        return AppTables.Alliance
 
     def object_id(self, obj: typing.Any) -> int:
         if isinstance(obj, self.object_class):

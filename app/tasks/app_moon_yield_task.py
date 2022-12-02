@@ -15,8 +15,8 @@ import sqlalchemy.sql
 
 from support.telemetry import otel, otel_add_exception
 
-from ..db import EveTables
-from .task import EveDatabaseTask
+from .. import AppTables
+from .task import AppDatabaseTask
 
 
 @dataclasses.dataclass(frozen=True)
@@ -28,7 +28,7 @@ class MoonYieldData:
     yield_percent: float
 
 
-class EveMoonYieldTask(EveDatabaseTask):
+class AppMoonYieldTask(AppDatabaseTask):
 
     @otel
     async def run(self, client_session: collections.abc.MutableSet):
@@ -63,8 +63,8 @@ class EveMoonYieldTask(EveDatabaseTask):
                         session: sqlalchemy.ext.asyncio.AsyncSession
 
                         query = (
-                            sqlalchemy.delete(EveTables.MoonYield)
-                            .where(EveTables.MoonYield.moon_id.in_(existing_id_set))
+                            sqlalchemy.delete(AppTables.MoonYield)
+                            .where(AppTables.MoonYield.moon_id.in_(existing_id_set))
                         )
                         await session.execute(query)
                         await session.commit()
@@ -79,7 +79,7 @@ class EveMoonYieldTask(EveDatabaseTask):
                     obj_set: typing.Final = set()
                     for md in moon_data_list:
                         md: MoonYieldData
-                        obj = EveTables.MoonYield(type_id=md.type_id, system_id=md.system_id, planet_id=md.planet_id, moon_id=md.moon_id, yield_percent=md.yield_percent)
+                        obj = AppTables.MoonYield(type_id=md.type_id, system_id=md.system_id, planet_id=md.planet_id, moon_id=md.moon_id, yield_percent=md.yield_percent)
                         obj_set.add(obj)
                         type_id_set.add(obj.type_id)
 

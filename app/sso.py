@@ -24,10 +24,11 @@ import sqlalchemy.sql
 from support.telemetry import (otel, otel_add_error, otel_add_event,
                                otel_add_exception)
 
-from .db import EveAuthType, EveDatabase, EveTables
+from .db import AppAuthType, AppDatabase, AppTables
+from .events import SSOLoginEvent, SSOLogoutEvent, SSOTokenRefreshEvent
 
 
-class EveSSO:
+class AppSSO:
 
     CONNFIGURATION_URL: typing.Final = 'https://login.eveonline.com/.well-known/oauth-authorization-server'
 
@@ -57,13 +58,14 @@ class EveSSO:
     ESI_DEBUG_TOKEN: typing.Final = "debug_token"
     ESI_DEBUG_ACCESS_TOKEN: typing.Final = "debug_access_token"
 
-    ERROR_SLEEP_TIME: typing.Final = 7
-    ERROR_RETRY_COUNT: typing.Final = 11
+    ERROR_SLEEP_TIME: typing.Final = 11
+    ERROR_RETRY_COUNT: typing.Final = 7
 
     @otel
     def __init__(self,
                  app: quart.Quart,
-                 db: EveDatabase,
+                 db: AppDatabase,
+                 outbound: asyncio.Queue,
                  client_id: str,
                  client_secret: str,
                  configuration_url: str = None,
@@ -75,6 +77,7 @@ class EveSSO:
 
         self.app: typing.Final = app
         self.db: typing.Final = db
+        self.outbound: typing.Final = outbound
         self.logger: typing.Final = app.logger
 
         self.client_id: typing.Final = client_id
@@ -219,19 +222,19 @@ class EveSSO:
         while True:
             now: typing.Final = datetime.datetime.now(tz=datetime.timezone.utc)
 
-            refresh_obj: EveTables.PeriodicCredentials = None
+            refresh_obj: AppTables.PeriodicCredentials = None
             try:
                 async with await self.db.sessionmaker() as session:
                     session: sqlalchemy.ext.asyncio.AsyncSession
 
                     query = (
-                        sqlalchemy.select(EveTables.PeriodicCredentials)
-                        .where(EveTables.PeriodicCredentials.is_enabled.is_(True))
-                        .order_by(sqlalchemy.asc(EveTables.PeriodicCredentials.access_token_expiry))
+                        sqlalchemy.select(AppTables.PeriodicCredentials)
+                        .where(AppTables.PeriodicCredentials.is_enabled.is_(True))
+                        .order_by(sqlalchemy.asc(AppTables.PeriodicCredentials.access_token_expiry))
                         .limit(1)
                     )
                     query_results: sqlalchemy.engine.Result = await session.execute(query)
-                    refresh_obj: EveTables.PeriodicCredentials = query_results.scalar_one_or_none()
+                    refresh_obj: AppTables.PeriodicCredentials = query_results.scalar_one_or_none()
 
             except Exception as ex:
                 otel_add_exception(ex)
@@ -254,24 +257,24 @@ class EveSSO:
             refresh_character_id: typing.Final = refresh_obj.character_id
 
             client_session = dict({
-                EveSSO.ESI_ACCESS_TOKEN_ISSUED: int(refresh_obj.access_token_issued.timestamp()),
-                EveSSO.ESI_ACCESS_TOKEN_EXPIRY: int(refresh_obj.access_token_expiry.timestamp()),
-                EveSSO.ESI_CHARACTER_ID: refresh_obj.character_id,
-                EveSSO.ESI_CORPORATION_ID: refresh_obj.corporation_id,
-                EveSSO.APP_SESSION_ID: refresh_obj.session_id,
-                EveSSO.ESI_REFRESH_TOKEN: refresh_obj.refresh_token,
+                AppSSO.ESI_ACCESS_TOKEN_ISSUED: int(refresh_obj.access_token_issued.timestamp()),
+                AppSSO.ESI_ACCESS_TOKEN_EXPIRY: int(refresh_obj.access_token_expiry.timestamp()),
+                AppSSO.ESI_CHARACTER_ID: refresh_obj.character_id,
+                AppSSO.ESI_CORPORATION_ID: refresh_obj.corporation_id,
+                AppSSO.APP_SESSION_ID: refresh_obj.session_id,
+                AppSSO.ESI_REFRESH_TOKEN: refresh_obj.refresh_token,
             })
 
             try:
                 async with await self.db.sessionmaker() as session, session.begin():
 
                     query = (
-                        sqlalchemy.select(EveTables.PeriodicCredentials)
-                        .where(EveTables.PeriodicCredentials.character_id == refresh_character_id)
+                        sqlalchemy.select(AppTables.PeriodicCredentials)
+                        .where(AppTables.PeriodicCredentials.character_id == refresh_character_id)
                         .limit(1)
                     )
                     query_results: sqlalchemy.engine.Result = await session.execute(query)
-                    refresh_character_obj: EveTables.PeriodicCredentials = query_results.scalar_one_or_none()
+                    refresh_character_obj: AppTables.PeriodicCredentials = query_results.scalar_one_or_none()
 
                     if refresh_character_obj is None:
                         self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {refresh_character_id} not found")
@@ -280,10 +283,10 @@ class EveSSO:
 
                     if await self.esi_sso_refresh(session, client_session):
                         update_dict = {
-                            "access_token_expiry": datetime.datetime.fromtimestamp(client_session.get(EveSSO.ESI_ACCESS_TOKEN_EXPIRY, 0), tz=datetime.timezone.utc),
-                            "access_token_issued": datetime.datetime.fromtimestamp(client_session.get(EveSSO.ESI_ACCESS_TOKEN_ISSUED, 0), tz=datetime.timezone.utc),
-                            "access_token": client_session.get(EveSSO.ESI_ACCESS_TOKEN, ''),
-                            "refresh_token": client_session.get(EveSSO.ESI_REFRESH_TOKEN, '')
+                            "access_token_expiry": datetime.datetime.fromtimestamp(client_session.get(AppSSO.ESI_ACCESS_TOKEN_EXPIRY, 0), tz=datetime.timezone.utc),
+                            "access_token_issued": datetime.datetime.fromtimestamp(client_session.get(AppSSO.ESI_ACCESS_TOKEN_ISSUED, 0), tz=datetime.timezone.utc),
+                            "access_token": client_session.get(AppSSO.ESI_ACCESS_TOKEN, ''),
+                            "refresh_token": client_session.get(AppSSO.ESI_REFRESH_TOKEN, '')
                         }
 
                         for k, v in update_dict.items():
@@ -304,9 +307,12 @@ class EveSSO:
                 otel_add_exception(ex)
                 self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
 
+            if self.outbound:
+                await self.outbound.put(SSOTokenRefreshEvent(character_id=refresh_obj.character_id, session_id=refresh_obj.session_id))
+
             try:
                 async with await self.db.sessionmaker() as session, session.begin():
-                    session.add(EveTables.AuthLog(character_id=client_session.get(EveSSO.ESI_CHARACTER_ID, 0), session_id=client_session.get(EveSSO.APP_SESSION_ID, ''), auth_type=EveAuthType.REFRESH))
+                    session.add(AppTables.AuthLog(character_id=client_session.get(AppSSO.ESI_CHARACTER_ID, 0), session_id=client_session.get(AppSSO.APP_SESSION_ID, ''), auth_type=AppAuthType.REFRESH))
                     await session.commit()
             except Exception as ex:
                 otel_add_exception(ex)
@@ -345,7 +351,7 @@ class EveSSO:
     async def esi_sso_login(self, variant: str) -> quart.redirect:
         client_session: typing.Final = quart.session
 
-        client_session[EveSSO.APP_SESSION_ID] = uuid.uuid4().hex
+        client_session[AppSSO.APP_SESSION_ID] = uuid.uuid4().hex
 
         login_scopes = ['publicData']
         if variant == 'user':
@@ -354,18 +360,18 @@ class EveSSO:
             login_scopes = self.scopes
 
         if len(login_scopes) == 1 and 'publicData' in login_scopes:
-            client_session[EveSSO.APP_SESSION_TYPE] = "USER"
+            client_session[AppSSO.APP_SESSION_TYPE] = "USER"
         else:
-            client_session[EveSSO.APP_SESSION_TYPE] = "CONTRIBUTOR"
+            client_session[AppSSO.APP_SESSION_TYPE] = "CONTRIBUTOR"
 
-        client_session[EveSSO.APP_SESSION_SCOPES] = login_scopes
+        client_session[AppSSO.APP_SESSION_SCOPES] = login_scopes
 
         redirect_params: typing.Final = [
             'response_type=code',
             f'redirect_uri={self.callback_url}',
             f'client_id={self.client_id}',
             f'scope={urllib.parse.quote(" ".join(login_scopes))}',
-            f'state={client_session[EveSSO.APP_SESSION_ID]}'
+            f'state={client_session[AppSSO.APP_SESSION_ID]}'
         ]
 
         redirect_url: typing.Final = f"{self.configuration['authorization_endpoint']}?{'&'.join(redirect_params)}"
@@ -376,8 +382,8 @@ class EveSSO:
     async def esi_sso_logout(self) -> quart.redirect:
         client_session: typing.Final = quart.session
 
-        character_id: typing.Final = client_session.get(EveSSO.ESI_CHARACTER_ID, 0)
-        session_id: typing.Final = client_session.get(EveSSO.APP_SESSION_ID, '')
+        character_id: typing.Final = client_session.get(AppSSO.ESI_CHARACTER_ID, 0)
+        session_id: typing.Final = client_session.get(AppSSO.APP_SESSION_ID, '')
 
         if character_id > 0 and len(session_id) > 0:
 
@@ -387,13 +393,13 @@ class EveSSO:
                     session: sqlalchemy.ext.asyncio.AsyncSession
 
                     query = (
-                        sqlalchemy.select(EveTables.PeriodicCredentials)
-                        .where(EveTables.PeriodicCredentials.character_id == character_id)
+                        sqlalchemy.select(AppTables.PeriodicCredentials)
+                        .where(AppTables.PeriodicCredentials.character_id == character_id)
                         .limit(1)
                     )
 
                     query_results: sqlalchemy.engine.Result = await session.execute(query)
-                    obj: EveTables.PeriodicCredentials = query_results.scalar_one_or_none()
+                    obj: AppTables.PeriodicCredentials = query_results.scalar_one_or_none()
                     if obj:
                         obj.is_enabled = False
                         obj.is_permitted = False
@@ -407,11 +413,14 @@ class EveSSO:
 
             try:
                 async with await self.db.sessionmaker() as session, session.begin():
-                    session.add(EveTables.AuthLog(character_id=character_id, session_id=session_id, auth_type=EveAuthType.LOGOUT))
+                    session.add(AppTables.AuthLog(character_id=character_id, session_id=session_id, auth_type=AppAuthType.LOGOUT))
                     await session.commit()
             except Exception as ex:
                 otel_add_exception(ex)
                 self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+
+            if self.outbound:
+                await self.outbound.put(SSOLogoutEvent(character_id=character_id, session_id=session_id))
 
         otel_add_event("logout", {"session_id": session_id})
 
@@ -424,7 +433,7 @@ class EveSSO:
 
         client_session: typing.Final = quart.session
 
-        session_id: typing.Final = client_session.get(EveSSO.APP_SESSION_ID, '')
+        session_id: typing.Final = client_session.get(AppSSO.APP_SESSION_ID, '')
 
         required_callback_keys: typing.Final = ["code", "state"]
         if not all(map(lambda x: bool(quart.request.args.get(x)), required_callback_keys)):
@@ -465,14 +474,20 @@ class EveSSO:
             otel_add_exception(ex)
             self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
 
-        character_id: typing.Final = client_session.get(EveSSO.ESI_CHARACTER_ID, 0)
+        character_id: typing.Final = client_session.get(AppSSO.ESI_CHARACTER_ID, 0)
+
+        if self.outbound:
+            login_auth_type = AppAuthType.LOGIN_USER
+            if len(client_session.get(AppSSO.APP_SESSION_SCOPES, [])) > 1:
+                login_auth_type = AppAuthType.LOGIN_CONTRIBUTOR
+            await self.outbound.put(SSOLoginEvent(character_id=character_id, session_id=session_id, login_type=login_auth_type.name))
 
         try:
             async with await self.db.sessionmaker() as session, session.begin():
-                login_auth_type = EveAuthType.LOGIN_USER
-                if len(client_session.get(EveSSO.APP_SESSION_SCOPES, [])) > 1:
-                    login_auth_type = EveAuthType.LOGIN_CONTRIBUTOR
-                session.add(EveTables.AuthLog(character_id=character_id, session_id=session_id, auth_type=login_auth_type))
+                login_auth_type = AppAuthType.LOGIN_USER
+                if len(client_session.get(AppSSO.APP_SESSION_SCOPES, [])) > 1:
+                    login_auth_type = AppAuthType.LOGIN_CONTRIBUTOR
+                session.add(AppTables.AuthLog(character_id=character_id, session_id=session_id, auth_type=login_auth_type))
                 await session.commit()
         except Exception as ex:
             otel_add_exception(ex)
@@ -487,10 +502,10 @@ class EveSSO:
 
         now: typing.Final = datetime.datetime.now(tz=datetime.timezone.utc)
 
-        if now < datetime.datetime.fromtimestamp(client_session.get(EveSSO.ESI_ACCESS_TOKEN_ISSUED, 0), tz=datetime.timezone.utc):
+        if now < datetime.datetime.fromtimestamp(client_session.get(AppSSO.ESI_ACCESS_TOKEN_ISSUED, 0), tz=datetime.timezone.utc):
             return
 
-        if (now + datetime.timedelta(minutes=5)) < datetime.datetime.fromtimestamp(client_session.get(EveSSO.ESI_ACCESS_TOKEN_EXPIRY, 0), tz=datetime.timezone.utc):
+        if (now + datetime.timedelta(minutes=5)) < datetime.datetime.fromtimestamp(client_session.get(AppSSO.ESI_ACCESS_TOKEN_EXPIRY, 0), tz=datetime.timezone.utc):
             return
 
         token_response = dict()
@@ -504,7 +519,7 @@ class EveSSO:
             post_token_url = self.configuration['token_endpoint']
             post_body: typing.Final = {
                 "grant_type": "refresh_token",
-                "refresh_token": client_session.get(EveSSO.ESI_REFRESH_TOKEN, ''),
+                "refresh_token": client_session.get(AppSSO.ESI_REFRESH_TOKEN, ''),
                 "client_id": self.client_id
             }
             token_response = await self._post_url(http_session, post_token_url, post_body)
@@ -535,26 +550,26 @@ class EveSSO:
 
         now: typing.Final = datetime.datetime.now(tz=datetime.timezone.utc)
 
-        client_session[EveSSO.ESI_CHARACTER_ID] = character_id
-        client_session[EveSSO.ESI_CHARACTER_NAME] = decoded_acess_token.get('name', '')
+        client_session[AppSSO.ESI_CHARACTER_ID] = character_id
+        client_session[AppSSO.ESI_CHARACTER_NAME] = decoded_acess_token.get('name', '')
 
-        client_session[EveSSO.ESI_ACCESS_TOKEN] = token_response.get("access_token", '')
-        client_session[EveSSO.ESI_REFRESH_TOKEN] = token_response.get('refresh_token', '')
+        client_session[AppSSO.ESI_ACCESS_TOKEN] = token_response.get("access_token", '')
+        client_session[AppSSO.ESI_REFRESH_TOKEN] = token_response.get('refresh_token', '')
 
-        client_session[EveSSO.ESI_DEBUG_TOKEN] = token_response
-        client_session[EveSSO.ESI_DEBUG_ACCESS_TOKEN] = decoded_acess_token
+        client_session[AppSSO.ESI_DEBUG_TOKEN] = token_response
+        client_session[AppSSO.ESI_DEBUG_ACCESS_TOKEN] = decoded_acess_token
 
-        client_session[EveSSO.ESI_ACCESS_TOKEN_ISSUED] = decoded_acess_token.get('iat', int(now.timestamp()))
-        client_session[EveSSO.ESI_ACCESS_TOKEN_EXPIRY] = decoded_acess_token.get('exp', int(now.timestamp()))
-        client_session[EveSSO.ESI_ACCESS_TOKEN_SCOPES] = decoded_acess_token.get('scp', [])
+        client_session[AppSSO.ESI_ACCESS_TOKEN_ISSUED] = decoded_acess_token.get('iat', int(now.timestamp()))
+        client_session[AppSSO.ESI_ACCESS_TOKEN_EXPIRY] = decoded_acess_token.get('exp', int(now.timestamp()))
+        client_session[AppSSO.ESI_ACCESS_TOKEN_SCOPES] = decoded_acess_token.get('scp', [])
 
-        corporation_id = client_session.get(EveSSO.ESI_CORPORATION_ID, 0)
+        corporation_id = client_session.get(AppSSO.ESI_CORPORATION_ID, 0)
 
         # What is going on here?
         # Looks like only collecting information if the corporation_id is 0
         if not corporation_id > 0:
             session_headers: typing.Final = {
-                "Authorization": f"Bearer {client_session.get(EveSSO.ESI_ACCESS_TOKEN)}"
+                "Authorization": f"Bearer {client_session.get(AppSSO.ESI_ACCESS_TOKEN)}"
             }
 
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=17), headers=session_headers) as http_session:
@@ -566,7 +581,7 @@ class EveSSO:
                 task_list: typing.Final = [
                     self._get_url(http_session, f"https://esi.evetech.net/latest/characters/{character_id}/", request_params),
                 ]
-                if "esi-characters.read_corporation_roles.v1" in client_session.get(EveSSO.ESI_ACCESS_TOKEN_SCOPES, []):
+                if "esi-characters.read_corporation_roles.v1" in client_session.get(AppSSO.ESI_ACCESS_TOKEN_SCOPES, []):
                     task_list.append(
                         self._get_url(http_session, f"https://esi.evetech.net/latest/characters/{character_id}/roles/", request_params)
                     )
@@ -580,15 +595,15 @@ class EveSSO:
                         characters_roles_result |= result
                     elif bool(result.get('name', False)):
                         characters_result = result
-                        for k in [EveSSO.ESI_CORPORATION_ID, EveSSO.ESI_ALLIANCE_ID]:
+                        for k in [AppSSO.ESI_CORPORATION_ID, AppSSO.ESI_ALLIANCE_ID]:
                             v = characters_result.get(k, None)
                             if v is not None:
                                 client_session[k] = v
-                        corporation_id = client_session.get(EveSSO.ESI_CORPORATION_ID, 0)
+                        corporation_id = client_session.get(AppSSO.ESI_CORPORATION_ID, 0)
 
-                client_session[EveSSO.ESI_CHARACTER_HAS_ACCOUNTANT_ROLE] = 'Accountant' in characters_roles_result.get('roles', [])
-                client_session[EveSSO.ESI_CHARACTER_HAS_DIRECTOR_ROLE] = 'Director' in characters_roles_result.get('roles', [])
-                client_session[EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE] = 'Station_Manager' in characters_roles_result.get('roles', [])
+                client_session[AppSSO.ESI_CHARACTER_HAS_ACCOUNTANT_ROLE] = 'Accountant' in characters_roles_result.get('roles', [])
+                client_session[AppSSO.ESI_CHARACTER_HAS_DIRECTOR_ROLE] = 'Director' in characters_roles_result.get('roles', [])
+                client_session[AppSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE] = 'Station_Manager' in characters_roles_result.get('roles', [])
 
                 # Save the character info - we re-do this on each cycle why?
                 if characters_result is not None:
@@ -608,11 +623,11 @@ class EveSSO:
                     try:
 
                         query = (
-                            sqlalchemy.select(EveTables.Character)
-                            .where(EveTables.Character.character_id == character_id)
+                            sqlalchemy.select(AppTables.Character)
+                            .where(AppTables.Character.character_id == character_id)
                         )
                         result: sqlalchemy.engine.Result = await session.execute(query)
-                        obj: EveTables.Character = result.scalar_one_or_none()
+                        obj: AppTables.Character = result.scalar_one_or_none()
                         if obj:
                             for k, v in edict.items():
                                 if k in obj.__table__.columns.keys():
@@ -621,7 +636,7 @@ class EveSSO:
                                     self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: character_id:{character_id} {k} changed from {getattr(obj, k)} to {v}")
                                     obj[k] = v
                         else:
-                            obj = EveTables.Character(**edict)
+                            obj = AppTables.Character(**edict)
 
                         session.add(obj)
 
@@ -635,25 +650,25 @@ class EveSSO:
                     periodic_credentials = {
                         "character_id": character_id,
                         "corporation_id": corporation_id,
-                        "session_id": client_session.get(EveSSO.APP_SESSION_ID, ''),
-                        "access_token_issued": datetime.datetime.fromtimestamp(client_session.get(EveSSO.ESI_ACCESS_TOKEN_ISSUED, 0), tz=datetime.timezone.utc),
-                        "access_token_expiry": datetime.datetime.fromtimestamp(client_session.get(EveSSO.ESI_ACCESS_TOKEN_EXPIRY, 0), tz=datetime.timezone.utc),
-                        "access_token": client_session.get(EveSSO.ESI_ACCESS_TOKEN, ''),
-                        "refresh_token": client_session.get(EveSSO.ESI_REFRESH_TOKEN, ''),
-                        "is_station_manager_role": bool(client_session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)),
-                        "is_director_role": bool(client_session.get(EveSSO.ESI_CHARACTER_HAS_DIRECTOR_ROLE, False)),
-                        "is_accountant_role": bool(client_session.get(EveSSO.ESI_CHARACTER_HAS_ACCOUNTANT_ROLE, False)),
-                        "is_permitted": bool(client_session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)),
-                        "is_enabled": bool(client_session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)),
+                        "session_id": client_session.get(AppSSO.APP_SESSION_ID, ''),
+                        "access_token_issued": datetime.datetime.fromtimestamp(client_session.get(AppSSO.ESI_ACCESS_TOKEN_ISSUED, 0), tz=datetime.timezone.utc),
+                        "access_token_expiry": datetime.datetime.fromtimestamp(client_session.get(AppSSO.ESI_ACCESS_TOKEN_EXPIRY, 0), tz=datetime.timezone.utc),
+                        "access_token": client_session.get(AppSSO.ESI_ACCESS_TOKEN, ''),
+                        "refresh_token": client_session.get(AppSSO.ESI_REFRESH_TOKEN, ''),
+                        "is_station_manager_role": bool(client_session.get(AppSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)),
+                        "is_director_role": bool(client_session.get(AppSSO.ESI_CHARACTER_HAS_DIRECTOR_ROLE, False)),
+                        "is_accountant_role": bool(client_session.get(AppSSO.ESI_CHARACTER_HAS_ACCOUNTANT_ROLE, False)),
+                        "is_permitted": bool(client_session.get(AppSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)),
+                        "is_enabled": bool(client_session.get(AppSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)),
                     }
 
                     query = (
-                        sqlalchemy.select(EveTables.PeriodicCredentials)
-                        .where(EveTables.PeriodicCredentials.character_id == character_id)
+                        sqlalchemy.select(AppTables.PeriodicCredentials)
+                        .where(AppTables.PeriodicCredentials.character_id == character_id)
                         .limit(1)
                     )
                     query_result: sqlalchemy.engine.Result = await session.execute(query)
-                    obj: EveTables.PeriodicCredentials = query_result.scalar_one_or_none()
+                    obj: AppTables.PeriodicCredentials = query_result.scalar_one_or_none()
                     if obj:
                         self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: character_id:{character_id} {obj}")
                         for k, v in periodic_credentials.items():
@@ -661,7 +676,7 @@ class EveSSO:
                                 setattr(obj, k, v)
                         self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: character_id:{character_id} {obj}")
                     else:
-                        obj = EveTables.PeriodicCredentials(**periodic_credentials)
+                        obj = AppTables.PeriodicCredentials(**periodic_credentials)
                     session.add(obj)
 
                 except Exception as ex:

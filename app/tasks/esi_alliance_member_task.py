@@ -11,21 +11,20 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
-from db import EveTables
-from sso import EveSSO
-from telemetry import otel, otel_add_error, otel_add_exception
+from support.telemetry import otel, otel_add_error, otel_add_exception
 
-from .task import EveTask
+from .. import AppSSO, AppTables
+from .task import AppTask
 
 
-class EveEsiAlliancMemberTask(EveTask):
+class ESIAlliancMemberTask(AppTask):
 
     @otel
     async def run(self, client_session: collections.abc.MutableMapping):
 
         corporation_id_set: typing.Final = set()
 
-        alliance_id: typing.Final = int(client_session.get(EveSSO.ESI_ALLIANCE_ID, 0))
+        alliance_id: typing.Final = int(client_session.get(AppSSO.ESI_ALLIANCE_ID, 0))
 
         # XXX: Add CAS to CAStabouts ...
         if alliance_id in [99002329]:
@@ -52,14 +51,14 @@ class EveEsiAlliancMemberTask(EveTask):
                     session.begin()
 
                     query = (
-                        sqlalchemy.delete(EveTables.AllianceCorporation)
-                        .where(EveTables.AllianceCorporation.alliance_id == alliance_id)
+                        sqlalchemy.delete(AppTables.AllianceCorporation)
+                        .where(AppTables.AllianceCorporation.alliance_id == alliance_id)
                     )
                     await session.execute(query)
 
                     obj_set = set()
                     for corporation_id in corporation_id_set:
-                        session.add(EveTables.AllianceCorporation(alliance_id=alliance_id, corporation_id=corporation_id))
+                        session.add(AppTables.AllianceCorporation(alliance_id=alliance_id, corporation_id=corporation_id))
 
                     await session.commit()
 
@@ -75,9 +74,9 @@ class EveEsiAlliancMemberTask(EveTask):
                     existing_corporation_set: typing.Final = set()
                     existing_corporation_id_set: typing.Final = set()
 
-                    query = sqlalchemy.select(EveTables.Corporation)
+                    query = sqlalchemy.select(AppTables.Corporation)
                     async for obj in await session.stream_scalars(query):
-                        obj: EveTables.Corporation
+                        obj: AppTables.Corporation
                         existing_corporation_set.add(obj)
                         existing_corporation_id_set[obj.corporation_id] = obj
 
@@ -104,7 +103,7 @@ class EveEsiAlliancMemberTask(EveTask):
                                             continue
                                         edict[k] = v
 
-                                    obj = EveTables.Corporation(**edict)
+                                    obj = AppTables.Corporation(**edict)
                                     obj_set.add(obj)
                                 else:
                                     otel_add_error(f"{response.url} -> {response.status}")

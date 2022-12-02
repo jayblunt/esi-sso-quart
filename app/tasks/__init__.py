@@ -1,8 +1,10 @@
-from .app_access_control_tasks import EveAccessControlTask
-from .app_moon_yield_tasks import EveMoonYieldTask
-from .app_tasks import EveStructurePollingTask, EveStructureTask
-from .esi_universe_tasks import (EveAllianceTask,
-                                 EveUniverseConstellationsTask,
-                                 EveUniverseRegionsTask,
-                                 EveUniverseSystemsTask)
-from .task import EveTask
+from .app_access_control_task import AppAccessControlTask
+from .app_moon_yield_task import AppMoonYieldTask
+from .app_tasks import (AppStructureNotificationTask, AppStructurePollingTask,
+                        AppStructureTask)
+from .esi_alliance_member_task import ESIAlliancMemberTask
+from .esi_backfill_tasks import (ESIAllianceBackfillTask,
+                                 ESIUniverseConstellationsBackfillTask,
+                                 ESIUniverseRegionsBackfillTask,
+                                 ESIUniverseSystemsBackfillTask)
+from .task import AppTask

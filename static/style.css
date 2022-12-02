@@ -94,7 +94,7 @@ p
     top: 1em;
     left: 1em;
     opacity: 0.75;
-    z-index: -1;
+    z-index: 1;
 }
 
 .character img

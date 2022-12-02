@@ -7,9 +7,9 @@ import quart.sessions
 
 from support.telemetry import otel
 
-from .db import EveDatabase
+from .db import AppDatabase
 from .functions import AppFunctions
-from .sso import EveSSO
+from .sso import AppSSO
 
 
 class AppTemplateCsacheEnum(enum.Enum):
@@ -22,7 +22,7 @@ class AppTemplateCsacheEnum(enum.Enum):
 
 class AppTemplates:
 
-    EVEDB: EveDatabase = None
+    EVEDB: AppDatabase = None
     CACHE: typing.Final = {
         AppTemplateCsacheEnum.CHARACTER_NAME: dict(),
         AppTemplateCsacheEnum.CORPORATION_NAME: dict(),
@@ -34,7 +34,7 @@ class AppTemplates:
     @otel
     def _login_type(input: str) -> str:
         client_session: typing.Final = quart.session
-        login_type = client_session.get(EveSSO.APP_SESSION_TYPE, "USER")
+        login_type = client_session.get(AppSSO.APP_SESSION_TYPE, "USER")
         if login_type == "CONTRIBUTOR":
             return "contributor"
         else:
@@ -131,7 +131,7 @@ class AppTemplates:
 
     @staticmethod
     @otel
-    def add_templates(app: quart.Quart, evedb: EveDatabase) -> None:
+    def add_templates(app: quart.Quart, evedb: AppDatabase) -> None:
         AppTemplates.EVEDB = evedb
         filters: typing.Final = {
             "login_type": AppTemplates._login_type,

@@ -4,6 +4,7 @@ import collections.abc
 import inspect
 import logging
 import os
+import dataclasses
 import typing
 
 import aiohttp
@@ -16,13 +17,14 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
-from ..db import EveDatabase, EveTables
 from support.telemetry import otel, otel_add_error, otel_add_exception
 
+from .. import AppDatabase, AppTables
 
-class EveTask(metaclass=abc.ABCMeta):
 
-    LIMIT_PER_HOST: typing.Final = 37
+class AppTask(metaclass=abc.ABCMeta):
+
+    LIMIT_PER_HOST: typing.Final = 13
     ERROR_SLEEP_TIME: typing.Final = 7
     ERROR_RETRY_COUNT: typing.Final = 11
 
@@ -35,9 +37,10 @@ class EveTask(metaclass=abc.ABCMeta):
     CONFIGDIR: typing.Final = "CONFIGDIR"
 
     @otel
-    def __init__(self, client_session: collections.abc.MutableMapping, db: EveDatabase, logger: logging.Logger = logging.getLogger()):
+    def __init__(self, client_session: collections.abc.MutableMapping, db: AppDatabase, outbound: asyncio.Queue, logger: logging.Logger | None = None):
         self.db: typing.Final = db
-        self.logger: typing.Final = logger
+        self.outbound: typing.Final = outbound
+        self.logger: typing.Final = logger or logging.getLogger(self.__class__.__name__)
         self.name: typing.Final = self.__class__.__name__
         self.configdir: typing.Final = os.path.abspath(client_session.get(self.CONFIGDIR, "."))
 
@@ -126,11 +129,11 @@ class EveTask(metaclass=abc.ABCMeta):
 
 
 
-class EveDatabaseTask(EveTask):
+class AppDatabaseTask(AppTask):
 
 
     @otel
-    async def _get_type(self, type_id: int, http_session: aiohttp.ClientSession) -> None | EveTables.UniverseType:
+    async def _get_type(self, type_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.UniverseType:
         url: typing.Final = f"https://esi.evetech.net/latest/universe/types/{type_id}/"
         rdict: typing.Final = await self._get_url(http_session, url)
         if rdict is not None:
@@ -142,12 +145,12 @@ class EveDatabaseTask(EveTask):
                     edict[k] = int(v)
                 else:
                     continue
-            return EveTables.UniverseType(**edict)
+            return AppTables.UniverseType(**edict)
         return None
 
 
     @otel
-    async def _get_corporation(self, corporation_id: int, http_session: aiohttp.ClientSession) -> None | EveTables.Corporation:
+    async def _get_corporation(self, corporation_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.Corporation:
         url: typing.Final = f"https://esi.evetech.net/latest/corporations/{corporation_id}/"
         rdict: typing.Final = await self._get_url(http_session, url)
         if rdict is not None:
@@ -160,12 +163,12 @@ class EveDatabaseTask(EveTask):
                 elif k not in ["name", "ticker"]:
                     continue
                 edict[k] = v
-            return EveTables.Corporation(**edict)
+            return AppTables.Corporation(**edict)
         return None
 
 
     @otel
-    async def _get_moon(self, moon_id: int, http_session: aiohttp.ClientSession) -> None | EveTables.UniverseMoon:
+    async def _get_moon(self, moon_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.UniverseMoon:
         url: typing.Final = f"https://esi.evetech.net/latest/universe/moons/{moon_id}/"
         rdict: typing.Final = await self._get_url(http_session, url)
         if rdict is not None:
@@ -177,7 +180,7 @@ class EveDatabaseTask(EveTask):
                     edict[k] = int(v)
                 else:
                     continue
-            return EveTables.UniverseMoon(**edict)
+            return AppTables.UniverseMoon(**edict)
         return None
 
 
@@ -192,7 +195,7 @@ class EveDatabaseTask(EveTask):
 
                 existing_type_id_set: typing.Final = set()
 
-                query = sqlalchemy.select(EveTables.UniverseType.type_id)
+                query = sqlalchemy.select(AppTables.UniverseType.type_id)
                 async for x in await session.stream_scalars(query):
                     existing_type_id_set.add(x)
 
@@ -226,7 +229,7 @@ class EveDatabaseTask(EveTask):
 
                 existing_moon_id_set: typing.Final = set()
 
-                query = sqlalchemy.select(EveTables.UniverseMoon.moon_id)
+                query = sqlalchemy.select(AppTables.UniverseMoon.moon_id)
                 async for x in await session.stream_scalars(query):
                     existing_moon_id_set.add(x)
 
@@ -260,7 +263,7 @@ class EveDatabaseTask(EveTask):
 
                 existing_corporation_id_set: typing.Final = set()
 
-                query = sqlalchemy.select(EveTables.Corporation.corporation_id)
+                query = sqlalchemy.select(AppTables.Corporation.corporation_id)
                 async for x in await session.stream_scalars(query):
                     existing_corporation_id_set.add(x)
 
