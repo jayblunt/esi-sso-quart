@@ -11,21 +11,20 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
-from db import EveTables
-from sso import EveSSO
-from telemetry import otel, otel_add_error, otel_add_exception
+from support.telemetry import otel, otel_add_error, otel_add_exception
 
-from .task import EveTask
+from .. import AppSSO, AppTables
+from .task import AppTask
 
 
-class EveEsiAlliancMemberTask(EveTask):
+class ESIAlliancMemberTask(AppTask):
 
     @otel
     async def run(self, client_session: collections.abc.MutableMapping):
 
         corporation_id_set: typing.Final = set()
 
-        alliance_id: typing.Final = int(client_session.get(EveSSO.ESI_ALLIANCE_ID, 0))
+        alliance_id: typing.Final = int(client_session.get(AppSSO.ESI_ALLIANCE_ID, 0))
 
         # XXX: Add CAS to CAStabouts ...
         if alliance_id in [99002329]:
@@ -46,25 +45,22 @@ class EveEsiAlliancMemberTask(EveTask):
         if alliance_id > 0 and len(corporation_id_set) > 0:
 
             try:
-                async with await self.db.sessionmaker() as session, session.begin():
+                async with await self.db.sessionmaker() as session:
+                    session: sqlalchemy.ext.asyncio.AsyncSession
 
-                    query = sqlalchemy.select(EveTables.AllianceCorporation).where(EveTables.AllianceCorporation.alliance_id == alliance_id)
-                    query_result: sqlalchemy.engine.Result = await session.execute(query)
-                    existing_obj_set: typing.Final = {x for x in query_result.scalars()}
+                    session.begin()
+
+                    query = (
+                        sqlalchemy.delete(AppTables.AllianceCorporation)
+                        .where(AppTables.AllianceCorporation.alliance_id == alliance_id)
+                    )
+                    await session.execute(query)
 
                     obj_set = set()
                     for corporation_id in corporation_id_set:
-                        obj = EveTables.AllianceCorporation(alliance_id=alliance_id, corporation_id=corporation_id)
-                        obj_set.add(obj)
+                        session.add(AppTables.AllianceCorporation(alliance_id=alliance_id, corporation_id=corporation_id))
 
-                    if len(existing_obj_set) > 0:
-                        [await session.delete(x) for x in existing_obj_set]
-
-                    if len(obj_set) > 0:
-                        session.add_all(obj_set)
-
-                    if any([len(existing_obj_set) > 0, len(obj_set) > 0]):
-                        await session.commit()
+                    await session.commit()
 
             except Exception as ex:
                 otel_add_exception(ex)
@@ -75,11 +71,14 @@ class EveEsiAlliancMemberTask(EveTask):
             try:
                 async with await self.db.sessionmaker() as session, session.begin():
 
-                    query = sqlalchemy.select(EveTables.Corporation)
-                    query_result: sqlalchemy.engine.Result = await session.execute(query)
+                    existing_corporation_set: typing.Final = set()
+                    existing_corporation_id_set: typing.Final = set()
 
-                    existing_corporation_set: typing.Final = {x for x in query_result.scalars()}
-                    existing_corporation_id_set: typing.Final = {x.corporation_id for x in existing_corporation_set}
+                    query = sqlalchemy.select(AppTables.Corporation)
+                    async for obj in await session.stream_scalars(query):
+                        obj: AppTables.Corporation
+                        existing_corporation_set.add(obj)
+                        existing_corporation_id_set[obj.corporation_id] = obj
 
                     obj_set = set()
 
@@ -104,7 +103,7 @@ class EveEsiAlliancMemberTask(EveTask):
                                             continue
                                         edict[k] = v
 
-                                    obj = EveTables.Corporation(**edict)
+                                    obj = AppTables.Corporation(**edict)
                                     obj_set.add(obj)
                                 else:
                                     otel_add_error(f"{response.url} -> {response.status}")

@@ -13,14 +13,13 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
-from db import EveTables
-from sso import EveSSO
-from telemetry import otel, otel_add_error, otel_add_exception
+from support.telemetry import otel, otel_add_error, otel_add_exception
 
-from .task import EveTask
+from .. import AppSSO, AppTables
+from .task import AppTask
 
 
-class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
+class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
 
     @property
     @abc.abstractmethod
@@ -47,7 +46,7 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
         pass
 
     @otel
-    async def _get_item(self, id: int, http_session: aiohttp.ClientSession) -> typing.Any | None:
+    async def _get_item_dict(self, id: int, http_session: aiohttp.ClientSession) -> dict | None:
         url: typing.Final = self.item_url(id)
         attempts_remaining = self.ERROR_RETRY_COUNT
         while attempts_remaining > 0:
@@ -55,7 +54,7 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
                 if response.status in [200]:
                     edict: typing.Final = self.item_dict(id, await response.json())
                     if len(edict) > 0:
-                        return self.object_class(**edict)
+                        return edict
                 else:
                     attempts_remaining -= 1
                     otel_add_error(f"{response.url} -> {response.status}")
@@ -70,8 +69,8 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
 
         self.logger.info(f"> {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
 
-        url = self.index_url()
-        access_token: typing.Final = client_session.get(EveSSO.ESI_ACCESS_TOKEN, '')
+        url: typing.Final = self.index_url()
+        access_token: typing.Final = client_session.get(AppSSO.ESI_ACCESS_TOKEN, '')
         obj_id_set: typing.Final = set(await self.get_pages(url, access_token))
 
         # cache_dict: typing.Final = dict()
@@ -80,37 +79,45 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
         #     with open(cache_filename) as ifp:
         #         cache_dict |= {self.object_id(x): x for x in [self.object_class(**edict) for edict in json.load(ifp)]}
 
+        existing_obj_id_set: typing.Final = set()
+
         try:
-            async with await self.db.sessionmaker() as session, session.begin():
+            async with await self.db.sessionmaker() as session:
+                session: sqlalchemy.ext.asyncio.AsyncSession
 
                 query = sqlalchemy.select(self.object_class)
-                query_result: sqlalchemy.engine.Result = await session.execute(query)
-                
-                existing_obj_set: typing.Final = {x for x in query_result.scalars()}
-                existing_obj_id_set: typing.Final = {self.object_id(x) for x in existing_obj_set}
-
-                obj_set: typing.Final = set()
-                missing_obj_id_set = obj_id_set - existing_obj_id_set
-                if len(missing_obj_id_set) > 0:
-                    async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as http_session:
-                        task_list: typing.Final = list()
-                        for obj_id in missing_obj_id_set:
-                            self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{str(self.object_class.__name__)}({obj_id})"))
-                            task_list.append(asyncio.create_task(self._get_item(obj_id, http_session)))
-
-                        if len(task_list) > 0:
-                            for obj in await asyncio.gather(*task_list):
-                                if obj is None:
-                                    continue
-                                obj_set.add(obj)
-
-                if len(obj_set) > 0:
-                    session.add_all(obj_set)
-                    await session.commit()
+                async for obj in await session.stream_scalars(query):
+                    existing_obj_id_set.add(self.object_id(obj))
 
         except Exception as ex:
             otel_add_exception(ex)
             self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+
+        missing_obj_id_set = obj_id_set - existing_obj_id_set
+        if len(missing_obj_id_set) > 0:
+
+            add_edict_list: typing.Final = list()
+            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as http_session:
+                task_list: typing.Final = list()
+                for obj_id in missing_obj_id_set:
+                    self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{str(self.object_class.__name__)}({obj_id})"))
+                    task_list.append(self._get_item_dict(obj_id, http_session))
+
+                if len(task_list) > 0:
+                    add_edict_list += await asyncio.gather(*task_list)
+
+            if len(add_edict_list) > 0:
+                try:
+                    async with await self.db.sessionmaker() as session:
+                        session.begin()
+                        for edict in add_edict_list:
+                            if any([edict is None, len(edict) == 0]):
+                                continue
+                            session.add(self.object_class(**edict))
+                        await session.commit()
+                except Exception as ex:
+                    otel_add_exception(ex)
+                    self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
 
         # async with await self.db.sessionmaker() as session, session.begin():
         #     existing_query = sqlalchemy.select(self.object_class)
@@ -123,11 +130,11 @@ class EveBackfillTask(EveTask, metaclass=abc.ABCMeta):
         self.logger.info(f"< {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
 
 
-class EveUniverseRegionsTask(EveBackfillTask):
+class ESIUniverseRegionsBackfillTask(ESIBackfillTask):
 
     @property
     def object_class(self) -> typing.Any:
-        return EveTables.UniverseRegion
+        return AppTables.UniverseRegion
 
     def object_id(self, obj: typing.Any) -> int:
         if isinstance(obj, self.object_class):
@@ -157,11 +164,11 @@ class EveUniverseRegionsTask(EveBackfillTask):
         return edict
 
 
-class EveUniverseConstellationsTask(EveBackfillTask):
+class ESIUniverseConstellationsBackfillTask(ESIBackfillTask):
 
     @property
     def object_class(self) -> typing.Any:
-        return EveTables.UniverseConstellation
+        return AppTables.UniverseConstellation
 
     def object_id(self, obj: typing.Any) -> int:
         if isinstance(obj, self.object_class):
@@ -191,11 +198,11 @@ class EveUniverseConstellationsTask(EveBackfillTask):
         return edict
 
 
-class EveUniverseSystemsTask(EveBackfillTask):
+class ESIUniverseSystemsBackfillTask(ESIBackfillTask):
 
     @property
     def object_class(self) -> typing.Any:
-        return EveTables.UniverseSystem
+        return AppTables.UniverseSystem
 
     def object_id(self, obj: typing.Any) -> int:
         if isinstance(obj, self.object_class):
@@ -225,11 +232,11 @@ class EveUniverseSystemsTask(EveBackfillTask):
         return edict
 
 
-class EveAllianceTask(EveBackfillTask):
+class ESIAllianceBackfillTask(ESIBackfillTask):
 
     @property
     def object_class(self) -> typing.Any:
-        return EveTables.Alliance
+        return AppTables.Alliance
 
     def object_id(self, obj: typing.Any) -> int:
         if isinstance(obj, self.object_class):

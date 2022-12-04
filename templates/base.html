@@ -2,51 +2,32 @@
 <html lang="en">
 
 <head>
-    <meta charset="utf-8" />
+    <!-- <meta charset="utf-8" /> -->
+    <meta http-equiv="content-type" content="text/html; charset=utf-8" />
     <title>{% block title %}Structures{% endblock %}</title>
     <meta property="og:locale" content="en_US" />
     <meta property="og:site_name" content="structures.castabouts.net" />
     <meta property="og:title" content="Structures: Moon Drill timer and Fuel Expiry information" />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://structures.castabouts.net" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
-    <meta name="viewport" content="width=device-width" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <!-- <meta name="viewport" content="width=device-width" /> -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <link rel="stylesheet" href="/static/style.css" />
 </head>
 
 <body>
-    <h1>Structures</h1>
+    <header>
+    {% include "header.html" %}
+    </header>
+    <main>
     {% block content %}{% endblock %}
-    </div>
-    <div class="about">
-        <p>
-            <table>
-                <tr>
-                    <td>
-                        <a href="https://github.com/jayblunt/esi-sso-quart" target="_blank"><img src="/static/GitHub-Mark-Light-32px.png" alt="GitHub" /></a>
-                    </td>
-                    <td>
-                        <a href="/about/">About</a>
-                    </td>
-                </tr>
-            </table>
-        </p>
-    </div>
-    <div class="copyright">
-        <p>
-            <table>
-                <tr>
-                    <td>© 2022 Jay Blunt. All rights reserved.</td>
-                </tr>
-                <tr>
-                    <td> All EVE related materials © 2014 CCP hf. All rights reserved.</td>
-                </tr>
-                <tr>
-                    <td>"EVE", "EVE Online", "CCP", and all related logos and images are trademarks or registered trademarks of CCP hf.</td>
-                </tr>
-            </table>
-        </p>
-    </div>
+    </main>
+    <footer>
+    {% include "footer.html" %}
+    </footer>
 </body>
 
 </html>
+
+

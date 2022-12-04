@@ -6,16 +6,16 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
-from telemetry import otel
+from support.telemetry import otel
 
 
-class EveAccessType(enum.Enum):
+class AppAccessType(enum.Enum):
     CHARACTER = 0
     CORPORATION = 1
     ALLIANCE = 2
 
 
-class EveAuthType(enum.Enum):
+class AppAuthType(enum.Enum):
     LOGIN = 0
     LOGOUT = 1
     REFRESH = 2
@@ -23,7 +23,7 @@ class EveAuthType(enum.Enum):
     LOGIN_CONTRIBUTOR = 4
 
 
-class EveTables:
+class AppTables:
 
 
     Base = sqlalchemy.orm.declarative_base()
@@ -224,7 +224,7 @@ class EveTables:
         moon = sqlalchemy.orm.relationship("UniverseMoon", viewonly=True)
 
         def __repr__(self) -> str:
-            return f"{self.__class__.__name__}(timestamp={self.timestamp}, structure_id={self.structure_id}, corporation_id={self.corporation}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time})"
+            return f"{self.__class__.__name__}(structure_id={self.structure_id}, corporation_id={self.corporation_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time}, chunk_arrival_time={self.chunk_arrival_time})"
 
 
     class CompletedExtraction(Base):
@@ -244,7 +244,7 @@ class EveTables:
         moon = sqlalchemy.orm.relationship("UniverseMoon", viewonly=True)
 
         def __repr__(self) -> str:
-            return f"{self.__class__.__name__}(timestamp={self.timestamp}, structure_id={self.structure_id}, corporation_id={self.corporation}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time}, belt_decay_time={self.belt_decay_time})"
+            return f"{self.__class__.__name__}(structure_id={self.structure_id}, corporation_id={self.corporation_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time}, chunk_arrival_time={self.chunk_arrival_time}, belt_decay_time={self.belt_decay_time})"
 
 
     class ExtractionHistory(Base):
@@ -265,6 +265,7 @@ class EveTables:
 
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(exists={self.exists}, structure_id={self.structure_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time})"
+
 
     class ExtractionQueryLog(Base):
         __tablename__ = "app_extraction_query_log"
@@ -298,12 +299,12 @@ class EveTables:
         is_station_manager_role = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
         session_id = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
         access_token_issued = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
-        access_token_exiry = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
+        access_token_expiry = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), nullable=False)
         refresh_token = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
         access_token = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
 
         def __repr__(self) -> str:
-            return f"{self.__class__.__name__}(character_id={self.character_id}, corporation_id={self.corporation_id}, is_enabled={self.is_enabled}, access_token_issued={self.access_token_issued}, access_token_exiry={self.access_token_exiry})"
+            return f"{self.__class__.__name__}(character_id={self.character_id}, corporation_id={self.corporation_id}, is_enabled={self.is_enabled}, is_director_role={self.is_director_role}, is_accountant_role={self.is_accountant_role}, is_station_manager_role={self.is_station_manager_role}, access_token_issued={self.access_token_issued}, access_token_expiry={self.access_token_expiry})"
 
 
     class PeriodicTaskTimestamp(Base):
@@ -320,7 +321,7 @@ class EveTables:
     class AccessControls(Base):
         __tablename__ = "app_access_control"
         id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
-        type = sqlalchemy.Column(sqlalchemy.Enum(EveAccessType), primary_key=True, nullable=False)
+        type = sqlalchemy.Column(sqlalchemy.Enum(AppAccessType), primary_key=True, nullable=False)
         permit = sqlalchemy.Column(sqlalchemy.Boolean, primary_key=True, nullable=False)
         trust = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
 
@@ -345,10 +346,10 @@ class EveTables:
         timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), primary_key=True, server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
         character_id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, nullable=False)
         session_id = sqlalchemy.Column(sqlalchemy.UnicodeText, nullable=False)
-        auth_type = sqlalchemy.Column(sqlalchemy.Enum(EveAuthType), nullable=False)
+        auth_type = sqlalchemy.Column(sqlalchemy.Enum(AppAuthType), nullable=False)
 
 
-class EveDatabase:
+class AppDatabase:
 
     def __init__(self, db: str, echo: bool = False) -> None:
         self._engine = sqlalchemy.ext.asyncio.create_async_engine(db, echo=echo, future=False, pool_size=8, max_overflow=0)
@@ -358,7 +359,7 @@ class EveDatabase:
     async def _initialize(self) -> None:
         if not self._initialized:
             async with self._engine.begin() as transaction:
-                await transaction.run_sync(EveTables.Base.metadata.create_all)
+                await transaction.run_sync(AppTables.Base.metadata.create_all)
             self._initialized = True
 
     @property

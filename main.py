@@ -12,16 +12,16 @@ import quart
 import quart.sessions
 import quart_session
 
-from app_functions import AppFunctions, AppRequest
-from app_templates import AppTemplates
-from db import EveDatabase, EveTables
-# from middleware import RateLimiterMiddleware
-from sso import EveSSO
-from tasks import (EveAccessControlTask, EveAllianceTask, EveMoonYieldTask,
-                   EveStructurePollingTask, EveStructureTask, EveTask,
-                   EveUniverseConstellationsTask, EveUniverseRegionsTask,
-                   EveUniverseSystemsTask)
-from telemetry import otel, otel_initialize
+from app import (AppDatabase, AppFunctions, AppRequest, AppSSO, AppTables,
+                 AppTemplates)
+from app.tasks import (AppAccessControlTask, AppMoonYieldTask,
+                       AppStructureNotificationTask, AppStructurePollingTask,
+                       AppStructureTask, AppTask, ESIAllianceBackfillTask,
+                       ESIUniverseConstellationsBackfillTask,
+                       ESIUniverseRegionsBackfillTask,
+                       ESIUniverseSystemsBackfillTask)
+# from support.middleware import RateLimiterMiddleware
+from support.telemetry import otel, otel_initialize
 
 app: typing.Final = quart.Quart(__name__)
 
@@ -39,7 +39,8 @@ app.config.from_mapping(
         "EVEONLINE_CLIENT_SECRET": os.getenv("EVEONLINE_CLIENT_SECRET", ""),
         "SQLALCHEMY_DB_URL": os.getenv("SQLALCHEMY_DB_URL", ""),
         "TEMPLATES_AUTO_RELOAD": True,
-        "SEND_FILE_MAX_AGE_DEFAULT": 300,
+        # "SEND_FILE_MAX_AGE_DEFAULT": 300,
+        "SEND_FILE_MAX_AGE_DEFAULT": 30,
         "MAX_CONTENT_LENGTH": 512 * 1024,
         "BODY_TIMEOUT": 15,
         "RESPONSE_TIMEOUT": 15,
@@ -49,18 +50,22 @@ app.config.from_mapping(
 evesso_config: typing.Final = {
     "client_id": app.config.get("EVEONLINE_CLIENT_ID"),
     "client_secret": app.config.get("EVEONLINE_CLIENT_SECRET"),
-    "scopes": ["publicData", "esi-characters.read_corporation_roles.v1",
-               "esi-corporations.read_structures.v1", "esi-industry.read_corporation_mining.v1"]
+    "scopes": [
+        "publicData",
+        "esi-characters.read_corporation_roles.v1",
+        "esi-corporations.read_structures.v1",
+        "esi-industry.read_corporation_mining.v1"
+    ]
 }
 
-evedb: typing.Final = EveDatabase(
+evedb: typing.Final = AppDatabase(
     app.config.get("SQLALCHEMY_DB_URL", "sqlite+pysqlite://"),
 )
 quart_session.Session(app)
-evesso: typing.Final = EveSSO(app, evedb, **evesso_config)
+eveevents: typing.Final = asyncio.Queue()
+evesso: typing.Final = AppSSO(app, evedb, eveevents, **evesso_config)
 evesession: typing.Final = app.session_interface.session_class(sid="global", permanent=False)
-evesession[EveTask.CONFIGDIR] = os.path.abspath(os.path.join(app.config.get("BASEDIR", "."), "data"))
-evesession[EveSSO.ESI_CHARACTER_NAME] = dict()
+evesession[AppTask.CONFIGDIR] = os.path.abspath(os.path.join(app.config.get("BASEDIR", "."), "data"))
 
 
 @app.before_serving
@@ -69,15 +74,17 @@ async def _before_serving() -> None:
     if not bool(evesession.get("setup_tasks_started", False)):
         evesession["setup_tasks_started"] = True
 
-        EveAccessControlTask(evesession, evedb, app.logger)
-        EveMoonYieldTask(evesession, evedb, app.logger)
+        AppStructureNotificationTask(evesession, evedb, eveevents, app.logger)
 
-        EveUniverseRegionsTask(evesession, evedb, app.logger)
-        EveUniverseConstellationsTask(evesession, evedb, app.logger)
-        EveUniverseSystemsTask(evesession, evedb, app.logger)
-        EveAllianceTask(evesession, evedb, app.logger)
+        ESIUniverseRegionsBackfillTask(evesession, evedb, eveevents, app.logger)
+        ESIUniverseConstellationsBackfillTask(evesession, evedb, eveevents, app.logger)
+        ESIUniverseSystemsBackfillTask(evesession, evedb, eveevents, app.logger)
+        ESIAllianceBackfillTask(evesession, evedb, eveevents, app.logger)
 
-        EveStructurePollingTask(evesession, evedb, app.logger)
+        AppAccessControlTask(evesession, evedb, eveevents, app.logger)
+        AppMoonYieldTask(evesession, evedb, eveevents, app.logger)
+
+        AppStructurePollingTask(evesession, evedb, eveevents, app.logger)
 
 
 @app.errorhandler(404)
@@ -93,13 +100,13 @@ async def _usage() -> quart.Response:
     ar: typing.Final[AppRequest] = await AppFunctions.get_app_request(evedb, quart.session, quart.request)
     if ar.character_id > 0 and ar.permitted:
 
-        permitted_data = list()
-        denied_data = list()
+        permitted_data: typing.Final = list()
+        denied_data: typing.Final = list()
 
         try:
             async with await evedb.sessionmaker() as session:
-                permitted_data = await AppFunctions.get_usage(session, True, ar.ts)
-                denied_data = await AppFunctions.get_usage(session, False, ar.ts)
+                permitted_data += await AppFunctions.get_usage(session, True, ar.ts)
+                denied_data += await AppFunctions.get_usage(session, False, ar.ts)
 
         except Exception as ex:
             app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
@@ -124,10 +131,11 @@ async def _about() -> quart.Response:
 @app.route('/moon', defaults={'moon_id': 0})
 @app.route('/moon/<int:moon_id>')
 @otel
-async def page(moon_id: int) -> quart.Response:
+async def _moon(moon_id: int) -> quart.Response:
 
     ar: typing.Final[AppRequest] = await AppFunctions.get_app_request(evedb, quart.session, quart.request)
     if ar.character_id > 0 and ar.permitted:
+
         moon_history: typing.Final = list()
         moon_yield: typing.Final = list()
 
@@ -155,24 +163,23 @@ async def page(moon_id: int) -> quart.Response:
 
 @app.route("/", methods=["GET"])
 @otel
-async def root() -> quart.Response:
+async def _root() -> quart.Response:
 
     ar: typing.Final[AppRequest] = await AppFunctions.get_app_request(evedb, quart.session, quart.request)
     if ar.character_id > 0 and ar.permitted:
 
-        if bool(ar.session.get(EveSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)):
-            EveStructureTask(ar.session, evedb, app.logger)
+        if bool(ar.session.get(AppSSO.ESI_CHARACTER_IS_STATION_MANAGER_ROLE, False)):
+            AppStructureTask(ar.session, evedb, eveevents, app.logger)
 
-        active_timer_results: typing.Final[list[EveTables.Structure]] = list()
+        active_timer_results: typing.Final[list[AppTables.Structure]] = list()
         completed_extraction_results: typing.Final = list()
         scheduled_extraction_results: typing.Final = list()
-        structure_fuel_results: typing.Final[list[EveTables.Structure]] = list()
+        structure_fuel_results: typing.Final[list[AppTables.Structure]] = list()
         last_update_results: typing.Final = list()
-        page_expires = ar.ts + datetime.timedelta(minutes=5)
+        # page_expires = ar.ts + datetime.timedelta(minutes=5)
 
         try:
             async with await evedb.sessionmaker() as session:
-
                 active_timer_results += await AppFunctions.get_active_timers(session, ar.ts)
                 completed_extraction_results += await AppFunctions.get_completed_extractions(session, ar.ts)
                 scheduled_extraction_results += await AppFunctions.get_scheduled_extractions(session, ar.ts)
@@ -182,7 +189,7 @@ async def root() -> quart.Response:
         except Exception as ex:
             app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
 
-        response = await app.make_response(
+        return await app.make_response(
             await quart.render_template(
                 "home.html",
                 character_id=ar.character_id,
@@ -195,10 +202,6 @@ async def root() -> quart.Response:
                 character_contributor=ar.contributor,
             ),
         )
-
-        response.headers['expires'] = wsgiref.handlers.format_date_time(page_expires.timestamp())
-
-        return response
 
     elif ar.character_id > 0 and not ar.permitted:
         app.logger.warning(f"{ar.character_id} not permitted")

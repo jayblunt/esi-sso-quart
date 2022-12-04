@@ -4,6 +4,7 @@ import collections.abc
 import inspect
 import logging
 import os
+import dataclasses
 import typing
 
 import aiohttp
@@ -16,13 +17,14 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
-from db import EveDatabase, EveTables
-from telemetry import otel, otel_add_error, otel_add_exception
+from support.telemetry import otel, otel_add_error, otel_add_exception
+
+from .. import AppDatabase, AppTables
 
 
-class EveTask(metaclass=abc.ABCMeta):
+class AppTask(metaclass=abc.ABCMeta):
 
-    LIMIT_PER_HOST: typing.Final = 37
+    LIMIT_PER_HOST: typing.Final = 13
     ERROR_SLEEP_TIME: typing.Final = 7
     ERROR_RETRY_COUNT: typing.Final = 11
 
@@ -35,9 +37,10 @@ class EveTask(metaclass=abc.ABCMeta):
     CONFIGDIR: typing.Final = "CONFIGDIR"
 
     @otel
-    def __init__(self, client_session: collections.abc.MutableMapping, db: EveDatabase, logger: logging.Logger = logging.getLogger()):
+    def __init__(self, client_session: collections.abc.MutableMapping, db: AppDatabase, outbound: asyncio.Queue, logger: logging.Logger | None = None):
         self.db: typing.Final = db
-        self.logger: typing.Final = logger
+        self.outbound: typing.Final = outbound
+        self.logger: typing.Final = logger or logging.getLogger(self.__class__.__name__)
         self.name: typing.Final = self.__class__.__name__
         self.configdir: typing.Final = os.path.abspath(client_session.get(self.CONFIGDIR, "."))
 
@@ -93,7 +96,7 @@ class EveTask(metaclass=abc.ABCMeta):
             if results is not None:
                 pages = list(range(2, 1 + int(maxpageno)))
 
-                task_list: typing.Final = [asyncio.create_task(self._get_url(http_session, url, {"page": x})) for x in pages]
+                task_list: typing.Final = [self._get_url(http_session, url, {"page": x}) for x in pages]
                 if len(task_list) > 0:
                     results.extend(sum(await asyncio.gather(*task_list), []))
 
@@ -106,7 +109,7 @@ class EveTask(metaclass=abc.ABCMeta):
 
         request_params = request_params or dict()
         attempts_remaining = self.ERROR_RETRY_COUNT
-        self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url} {str(request_params)}")
+        # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url} {str(request_params)}")
         while attempts_remaining > 0:
             async with await http_session.get(url, params=self.common_params | request_params) as response:
                 if response.status in [200]:
@@ -126,11 +129,11 @@ class EveTask(metaclass=abc.ABCMeta):
 
 
 
-class EveDatabaseTask(EveTask):
+class AppDatabaseTask(AppTask):
 
 
     @otel
-    async def _get_type(self, type_id: int, http_session: aiohttp.ClientSession) -> None | EveTables.UniverseType:
+    async def _get_type(self, type_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.UniverseType:
         url: typing.Final = f"https://esi.evetech.net/latest/universe/types/{type_id}/"
         rdict: typing.Final = await self._get_url(http_session, url)
         if rdict is not None:
@@ -142,12 +145,12 @@ class EveDatabaseTask(EveTask):
                     edict[k] = int(v)
                 else:
                     continue
-            return EveTables.UniverseType(**edict)
+            return AppTables.UniverseType(**edict)
         return None
 
 
     @otel
-    async def _get_corporation(self, corporation_id: int, http_session: aiohttp.ClientSession) -> None | EveTables.Corporation:
+    async def _get_corporation(self, corporation_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.Corporation:
         url: typing.Final = f"https://esi.evetech.net/latest/corporations/{corporation_id}/"
         rdict: typing.Final = await self._get_url(http_session, url)
         if rdict is not None:
@@ -160,12 +163,12 @@ class EveDatabaseTask(EveTask):
                 elif k not in ["name", "ticker"]:
                     continue
                 edict[k] = v
-            return EveTables.Corporation(**edict)
+            return AppTables.Corporation(**edict)
         return None
 
 
     @otel
-    async def _get_moon(self, moon_id: int, http_session: aiohttp.ClientSession) -> None | EveTables.UniverseMoon:
+    async def _get_moon(self, moon_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.UniverseMoon:
         url: typing.Final = f"https://esi.evetech.net/latest/universe/moons/{moon_id}/"
         rdict: typing.Final = await self._get_url(http_session, url)
         if rdict is not None:
@@ -177,7 +180,7 @@ class EveDatabaseTask(EveTask):
                     edict[k] = int(v)
                 else:
                     continue
-            return EveTables.UniverseMoon(**edict)
+            return AppTables.UniverseMoon(**edict)
         return None
 
 
@@ -187,26 +190,28 @@ class EveDatabaseTask(EveTask):
             return
 
         try:
-            async with await self.db.sessionmaker() as session, session.begin():
+            async with await self.db.sessionmaker() as session:
+                session: sqlalchemy.ext.asyncio.AsyncSession
 
-                existing_type_query = sqlalchemy.select(EveTables.UniverseType)
-                existing_type_query_result: typing.Final[sqlalchemy.engine.Result] = await session.execute(existing_type_query)
-                existing_type_id_set: typing.Final = {x.type_id for x in existing_type_query_result.scalars()}
+                existing_type_id_set: typing.Final = set()
 
-                type_obj_set: typing.Final = set()
-                async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as http_session:
-                    type_task_list: typing.Final = list()
-                    for id in type_id_set - existing_type_id_set:
-                        type_task_list.append(asyncio.create_task(self._get_type(id, http_session)))
+                query = sqlalchemy.select(AppTables.UniverseType.type_id)
+                async for x in await session.stream_scalars(query):
+                    existing_type_id_set.add(x)
 
-                    if len(type_task_list) > 0:
-                        result_list = await asyncio.gather(*type_task_list)
-                        for obj in [obj for obj in result_list if obj]:
-                            type_obj_set.add(obj)
+                missing_type_id_set = type_id_set - existing_type_id_set
+                if len(missing_type_id_set) > 0:
+                    async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as http_session:
+                        type_task_list: typing.Final = list()
+                        for id in missing_type_id_set:
+                            type_task_list.append(self._get_type(id, http_session))
 
-                if len(type_obj_set) > 0:
-                    session.add_all(type_obj_set)
-                    await session.commit()
+                        if len(type_task_list) > 0:
+                            session.begin()
+                            result_list = await asyncio.gather(*type_task_list)
+                            for obj in [obj for obj in result_list if obj]:
+                                session.add(obj)
+                            await session.commit()
 
         except Exception as ex:
             otel_add_exception(ex)
@@ -219,26 +224,28 @@ class EveDatabaseTask(EveTask):
             return
 
         try:
-            async with await self.db.sessionmaker() as session, session.begin():
+            async with await self.db.sessionmaker() as session:
+                session: sqlalchemy.ext.asyncio.AsyncSession
 
-                existing_moon_query = sqlalchemy.select(EveTables.UniverseMoon)
-                existing_moon_query_result: typing.Final[sqlalchemy.engine.Result] = await session.execute(existing_moon_query)
-                existing_moon_id_set: typing.Final = {x.moon_id for x in existing_moon_query_result.scalars()}
+                existing_moon_id_set: typing.Final = set()
 
-                moon_obj_set: typing.Final = set()
-                async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as http_session:
-                    task_list: typing.Final = list()
-                    for id in moon_id_set - existing_moon_id_set:
-                        task_list.append(asyncio.create_task(self._get_moon(id, http_session)))
+                query = sqlalchemy.select(AppTables.UniverseMoon.moon_id)
+                async for x in await session.stream_scalars(query):
+                    existing_moon_id_set.add(x)
 
-                    if len(task_list) > 0:
-                        result_list = await asyncio.gather(*task_list)
-                        for obj in [obj for obj in result_list if obj]:
-                            moon_obj_set.add(obj)
+                missing_moon_id_set = moon_id_set - existing_moon_id_set
+                if len(missing_moon_id_set) > 0:
+                    async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as http_session:
+                        task_list: typing.Final = list()
+                        for id in missing_moon_id_set:
+                            task_list.append(self._get_moon(id, http_session))
 
-                if len(moon_obj_set) > 0:
-                    session.add_all(moon_obj_set)
-                    await session.commit()
+                        if len(task_list) > 0:
+                            session.begin()
+                            result_list = await asyncio.gather(*task_list)
+                            for obj in [obj for obj in result_list if obj]:
+                                session.add(obj)
+                            await session.commit()
 
         except Exception as ex:
             otel_add_exception(ex)
@@ -251,26 +258,28 @@ class EveDatabaseTask(EveTask):
             return
 
         try:
-            async with await self.db.sessionmaker() as session, session.begin():
+            async with await self.db.sessionmaker() as session:
+                session: sqlalchemy.ext.asyncio.AsyncSession
 
-                existing_corporation_query = sqlalchemy.select(EveTables.Corporation)
-                existing_corporation_query_result: typing.Final[sqlalchemy.engine.Result] = await session.execute(existing_corporation_query)
-                existing_corporation_id_set: typing.Final = {x.corporation_id for x in existing_corporation_query_result.scalars()}
+                existing_corporation_id_set: typing.Final = set()
 
-                corporation_obj_set: typing.Final = set()
-                async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as http_session:
-                    corporation_task_list: typing.Final = list()
-                    for id in corporation_id_set - existing_corporation_id_set:
-                        corporation_task_list.append(asyncio.create_task(self._get_corporation(id, http_session)))
+                query = sqlalchemy.select(AppTables.Corporation.corporation_id)
+                async for x in await session.stream_scalars(query):
+                    existing_corporation_id_set.add(x)
 
-                    if len(corporation_task_list) > 0:
-                        result_list = await asyncio.gather(*corporation_task_list)
-                        for obj in [obj for obj in result_list if obj]:
-                            corporation_obj_set.add(obj)
+                missing_corporation_id_set = corporation_id_set - existing_corporation_id_set
+                if len(missing_corporation_id_set) > 0:
+                    async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=self.LIMIT_PER_HOST)) as http_session:
+                        corporation_task_list: typing.Final = list()
+                        for id in corporation_id_set - existing_corporation_id_set:
+                            corporation_task_list.append(self._get_corporation(id, http_session))
 
-                if len(corporation_obj_set) > 0:
-                    session.add_all(corporation_obj_set)
-                    await session.commit()
+                        if len(corporation_task_list) > 0:
+                            session.begin()
+                            result_list = await asyncio.gather(*corporation_task_list)
+                            for obj in [obj for obj in result_list if obj]:
+                                session.add(obj)
+                            await session.commit()
 
         except Exception as ex:
             otel_add_exception(ex)

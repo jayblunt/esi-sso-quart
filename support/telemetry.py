@@ -11,6 +11,7 @@ import opentelemetry.sdk.trace.export
 import opentelemetry.semconv.resource
 import opentelemetry.trace
 
+
 _OTEL_INITIALIZED: bool = False
 
 
