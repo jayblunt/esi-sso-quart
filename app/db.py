@@ -266,6 +266,7 @@ class AppTables:
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}(exists={self.exists}, structure_id={self.structure_id}, moon_id={self.moon_id}, extraction_start_time={self.extraction_start_time})"
 
+
     class ExtractionQueryLog(Base):
         __tablename__ = "app_extraction_query_log"
         timestamp = sqlalchemy.Column(sqlalchemy.DateTime(timezone=True), primary_key=True, server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)

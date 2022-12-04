@@ -626,7 +626,7 @@ class AppStructureTask(AppDatabaseTask):
 
     @otel
     async def run(self, client_session: collections.abc.MutableMapping) -> None:
-        if not client_session.get(AppSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False):
+        if not client_session.get(AppSSO.ESI_CHARACTER_IS_STATION_MANAGER_ROLE, False):
             return
 
         character_id: typing.Final = int(client_session.get(AppSSO.ESI_CHARACTER_ID, 0))
@@ -635,17 +635,18 @@ class AppStructureTask(AppDatabaseTask):
 
         now: typing.Final = datetime.datetime.now(tz=datetime.timezone.utc)
 
-        if "esi-corporations.read_structures.v1" in client_session.get(AppSSO.ESI_ACCESS_TOKEN_SCOPES, []):
+        if "esi-corporations.read_structures.v1" in client_session.get(AppSSO.ESI_SCOPES, []):
             await self.run_structures(now, character_id, corporation_id, access_token)
 
-        if "esi-industry.read_corporation_mining.v1" in client_session.get(AppSSO.ESI_ACCESS_TOKEN_SCOPES, []):
+        if "esi-industry.read_corporation_mining.v1" in client_session.get(AppSSO.ESI_SCOPES, []):
             await self.roll_extractions(now, character_id, corporation_id, access_token)
             await self.run_extractions(now, character_id, corporation_id, access_token)
 
 
 class AppStructurePollingTask(AppStructureTask):
 
-    STRUCTURE_REFRESH_INTERVAL_SECONDS: typing.Final = 300
+    # STRUCTURE_REFRESH_INTERVAL_SECONDS: typing.Final = 300
+    STRUCTURE_REFRESH_INTERVAL_SECONDS: typing.Final = 360
     # STRUCTURE_REFRESH_INTERVAL_SECONDS: typing.Final = 450
 
     @otel

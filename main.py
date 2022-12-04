@@ -12,8 +12,8 @@ import quart
 import quart.sessions
 import quart_session
 
-from app import (AppFunctions, AppRequest, AppTemplates, AppDatabase, AppSSO,
-                 AppTables)
+from app import (AppDatabase, AppFunctions, AppRequest, AppSSO, AppTables,
+                 AppTemplates)
 from app.tasks import (AppAccessControlTask, AppMoonYieldTask,
                        AppStructureNotificationTask, AppStructurePollingTask,
                        AppStructureTask, AppTask, ESIAllianceBackfillTask,
@@ -50,8 +50,12 @@ app.config.from_mapping(
 evesso_config: typing.Final = {
     "client_id": app.config.get("EVEONLINE_CLIENT_ID"),
     "client_secret": app.config.get("EVEONLINE_CLIENT_SECRET"),
-    "scopes": ["publicData", "esi-characters.read_corporation_roles.v1",
-               "esi-corporations.read_structures.v1", "esi-industry.read_corporation_mining.v1"]
+    "scopes": [
+        "publicData",
+        "esi-characters.read_corporation_roles.v1",
+        "esi-corporations.read_structures.v1",
+        "esi-industry.read_corporation_mining.v1"
+    ]
 }
 
 evedb: typing.Final = AppDatabase(
@@ -62,7 +66,6 @@ eveevents: typing.Final = asyncio.Queue()
 evesso: typing.Final = AppSSO(app, evedb, eveevents, **evesso_config)
 evesession: typing.Final = app.session_interface.session_class(sid="global", permanent=False)
 evesession[AppTask.CONFIGDIR] = os.path.abspath(os.path.join(app.config.get("BASEDIR", "."), "data"))
-evesession[AppSSO.ESI_CHARACTER_NAME] = dict()
 
 
 @app.before_serving
@@ -165,7 +168,7 @@ async def _root() -> quart.Response:
     ar: typing.Final[AppRequest] = await AppFunctions.get_app_request(evedb, quart.session, quart.request)
     if ar.character_id > 0 and ar.permitted:
 
-        if bool(ar.session.get(AppSSO.ESI_CHARACTER_HAS_STATION_MANAGER_ROLE, False)):
+        if bool(ar.session.get(AppSSO.ESI_CHARACTER_IS_STATION_MANAGER_ROLE, False)):
             AppStructureTask(ar.session, evedb, eveevents, app.logger)
 
         active_timer_results: typing.Final[list[AppTables.Structure]] = list()
