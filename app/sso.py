@@ -372,8 +372,8 @@ class AppSSO:
 
             await AppSSOFunctions.update_credentials(self.db, character_id, edict)
 
-            if self.outbound:
-                await self.outbound.put(SSOTokenRefreshEvent(character_id=character_id, session_id=session_id))
+            # if self.outbound:
+            #     await self.outbound.put(SSOTokenRefreshEvent(character_id=character_id, session_id=session_id))
 
             await AppSSOFunctions.authlog(self.db, character_id, session_id, AppAuthType.REFRESH)
 

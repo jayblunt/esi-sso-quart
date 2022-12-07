@@ -6,6 +6,7 @@ import inspect
 import logging
 import os
 import pprint
+import socket
 import traceback
 import typing
 import urllib.parse
@@ -58,7 +59,7 @@ class DiscordStructures(discord.Client):
                 if ch.name == 'structures':
                     self._default_channels[ch.guild.id] = ch
         pprint.pprint(self._default_channels)
-        await self._default_channels[self.GUILD.id].send("HELLO")
+        await self._default_channels[self.GUILD.id].send(f"startup {str(socket.gethostname())}")
                 
 
 
