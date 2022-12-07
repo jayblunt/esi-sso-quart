@@ -97,6 +97,6 @@ class AppStructureNotificationTask(AppDatabaseTask):
                     text = await quart.render_template(template_name, msg=msg)
                     await self._discord_messages.put(text)
                 except Exception as ex:
-                    raise ex
+                    self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
                     pass
         task.cancel()
