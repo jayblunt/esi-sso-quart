@@ -58,7 +58,7 @@ class DiscordStructures(discord.Client):
                 # print(f"{ch.guild}/{ch.name} {ch.last_message}")
                 if ch.name == 'structures':
                     self._default_channels[ch.guild.id] = ch
-        print(self._default_channels)
+        pprint.pprint(self._default_channels)
         await self._default_channels[self.GUILD.id].send(f"startup {str(socket.gethostname())}")
  
     # async def on_message(self, message: discord.Message):
