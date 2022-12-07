@@ -40,7 +40,7 @@ class DiscordStructures(discord.Client):
         self._message_task = None
 
     async def setup_hook(self) -> None:
-        print(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
+        # print(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
         self._message_task = self.loop.create_task(self.message_task())
 
     async def message_task(self) -> None:
@@ -51,25 +51,23 @@ class DiscordStructures(discord.Client):
             await self._default_channels[self.GUILD.id].send(str(msg))
 
     async def on_ready(self):
-        print(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {self.user} ({self.user.id} / {self.user.name})")
+        # print(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {self.user} ({self.user.id} / {self.user.name})")
         await self.user.edit(username=self.USERNAME)
         for ch in self.get_all_channels():
             if ch.type == discord.ChannelType.text:
-                print(f"{ch.guild}/{ch.name} {ch.last_message}")
+                # print(f"{ch.guild}/{ch.name} {ch.last_message}")
                 if ch.name == 'structures':
                     self._default_channels[ch.guild.id] = ch
-        pprint.pprint(self._default_channels)
+        print(self._default_channels)
         await self._default_channels[self.GUILD.id].send(f"startup {str(socket.gethostname())}")
-                
+ 
+    # async def on_message(self, message: discord.Message):
+    #     if any([message.author.bot, message.author.id == self.user.id]):
+    #         return
 
-
-    async def on_message(self, message: discord.Message):
-        if any([message.author.bot, message.author.id == self.user.id]):
-            return
-
-        print(str(message))
-        await message.add_reaction('\N{WHITE HEAVY CHECK MARK}')
-        await message.channel.send("sup", delete_after=10.0)
+    #     print(str(message))
+    #     await message.add_reaction('\N{WHITE HEAVY CHECK MARK}')
+    #     await message.channel.send("sup", delete_after=10.0)
 
 
 class AppStructureNotificationTask(AppDatabaseTask):
