@@ -1,26 +1,24 @@
 import asyncio
 import collections
 import collections.abc
-import datetime
 import inspect
 import logging
 import os
 import pprint
 import socket
-import traceback
 import typing
-import urllib.parse
 
 import discord
 import discord.app_commands
 import discord.ext.commands
 import discord.ui
 import opentelemetry.trace
+import quart
 
-from support.telemetry import otel, otel_add_exception
+from support.telemetry import otel
 
-from .. import (AppDatabase, AppSSO, AppTables, MoonExtractionCompletedEvent,
-                MoonExtractionScheduledEvent, StructureStateChangedEvent)
+from .. import (AppDatabase, MoonExtractionCompletedEvent,
+                MoonExtractionScheduledEvent)
 from .task import AppDatabaseTask
 
 
@@ -86,5 +84,19 @@ class AppStructureNotificationTask(AppDatabaseTask):
         while True:
             msg = await self.outbound.get()
             self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {msg}")
+            template_name: str = None
+            if isinstance(msg, MoonExtractionScheduledEvent):
+                template_name = 'discord_moon_extraction_scheduled.txt'
+            elif isinstance(msg, MoonExtractionCompletedEvent):
+                template_name = 'discord_moon_extraction_completed.txt'
+
             await self._discord_messages.put(msg)
+
+            if template_name is not None:
+                try:
+                    text = await quart.render_template(template_name, msg=msg)
+                    await self._discord_messages.put(text)
+                except Exception as ex:
+                    raise ex
+                    pass
         task.cancel()

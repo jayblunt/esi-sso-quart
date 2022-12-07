@@ -3,7 +3,6 @@ import datetime
 import functools
 import itertools
 
-
 counter = itertools.count()
 
 
@@ -13,40 +12,42 @@ class AppEvent:
     ts: datetime.datetime = dataclasses.field(default_factory=functools.partial(datetime.datetime.now, tz=datetime.timezone.utc))
 
 
+@dataclasses.dataclass(frozen=True)
+class AppCharacterEvent:
+    character_id: int = 0
+
 
 @dataclasses.dataclass(frozen=True)
-class SSOLoginEvent(AppEvent):
-    character_id: int = 0
+class SSOLoginEvent(AppCharacterEvent):
     session_id: str = None
     login_type: str = None
 
 
 @dataclasses.dataclass(frozen=True)
-class SSOTokenRefreshEvent(AppEvent):
-    character_id: int = 0
-    session_id: str = None
-
-@dataclasses.dataclass(frozen=True)
-class SSOLogoutEvent(AppEvent):
-    character_id: int = 0
+class SSOTokenRefreshEvent(AppCharacterEvent):
     session_id: str = None
 
 
 @dataclasses.dataclass(frozen=True)
-class StructureEvent(AppEvent):
+class SSOLogoutEvent(AppCharacterEvent):
+    session_id: str = None
+
+
+@dataclasses.dataclass(frozen=True)
+class AppStructureEvent(AppEvent):
     structure_id: int = 0
     corporation_id: int = 0
 
 
 @dataclasses.dataclass(frozen=True)
-class MoonExtractionScheduledEvent(StructureEvent):
+class MoonExtractionScheduledEvent(AppStructureEvent):
     moon_id: int = 0
     extraction_start_time: datetime.datetime = None
     chunk_arrival_time: datetime.datetime = None
 
 
 @dataclasses.dataclass(frozen=True)
-class MoonExtractionCompletedEvent(StructureEvent):
+class MoonExtractionCompletedEvent(AppStructureEvent):
     moon_id: int = 0
     extraction_start_time: datetime.datetime = None
     chunk_arrival_time: datetime.datetime = None
@@ -54,7 +55,7 @@ class MoonExtractionCompletedEvent(StructureEvent):
 
 
 @dataclasses.dataclass(frozen=True)
-class StructureStateChangedEvent(StructureEvent):
+class StructureStateChangedEvent(AppStructureEvent):
     system_id: int = 0
     exists: bool = False
     state: str = None
