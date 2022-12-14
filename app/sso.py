@@ -155,6 +155,12 @@ class AppSSO:
     ERROR_SLEEP_TIME: typing.Final = 11
     ERROR_RETRY_COUNT: typing.Final = 7
 
+    # ESI throws off a 504 at daily restart, so let's double the retry
+    # waiting period for those.
+    ERROR_SLEEP_MODIFIERS: typing.Final = {
+        504: 5
+    }
+
     @otel
     def __init__(self,
                  app: quart.Quart,
@@ -262,7 +268,7 @@ class AppSSO:
                     if response.status in [400, 403]:
                         return None
                     if attempts_remaining > 0:
-                        await asyncio.sleep(self.ERROR_SLEEP_TIME)
+                        await asyncio.sleep(self.ERROR_SLEEP_TIME * self.ERROR_SLEEP_MODIFIERS.get(response.status, 1))
 
         return None
 
@@ -281,7 +287,7 @@ class AppSSO:
                     if response.status in [400, 403]:
                         return None
                     if attempts_remaining > 0:
-                        await asyncio.sleep(self.ERROR_SLEEP_TIME)
+                        await asyncio.sleep(self.ERROR_SLEEP_TIME * self.ERROR_SLEEP_MODIFIERS.get(response.status, 1))
 
         return None
 
