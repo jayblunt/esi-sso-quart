@@ -158,7 +158,7 @@ class AppSSO:
     # ESI throws off a 504 at daily restart, so let's double the retry
     # waiting period for those.
     ERROR_SLEEP_MODIFIERS: typing.Final = {
-        504: 5
+        504: 11
     }
 
     @otel
