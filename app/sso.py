@@ -572,9 +572,8 @@ class AppSSO:
         token_response = dict()
         async with aiohttp.ClientSession(headers=post_session_headers) as http_session:
             token_response = await self._post_url(http_session, post_token_url, post_body)
-
-        if token_response is None:
-            token_response = dict()
+            if token_response is None:
+                token_response = dict()
 
         edict: typing.Final = await self.esi_decode_token(session_id, token_response)
         if edict is None:
@@ -614,9 +613,8 @@ class AppSSO:
                 "client_id": self.client_id
             }
             token_response = await self._post_url(http_session, post_token_url, post_body)
-
-        if token_response is None:
-            token_response = dict()
+            if token_response is None:
+                token_response = dict()
 
         return await self.esi_decode_token(session_id, token_response)
 
