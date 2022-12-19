@@ -374,6 +374,7 @@ class AppSSO:
             session_id: typing.Final = refresh_obj.session_id
             refresh_token: typing.Final = refresh_obj.refresh_token
 
+            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh {refresh_obj.character_id} / {refresh_obj.corporation_id}")
             edict = await self.esi_sso_refresh(session_id, refresh_token)
             if edict is None:
                 self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh failed for {refresh_obj.character_id}")
