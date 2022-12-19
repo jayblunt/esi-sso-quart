@@ -158,7 +158,8 @@ class AppSSO:
     # ESI throws off a 504 at daily restart, so let's double the retry
     # waiting period for those.
     ERROR_SLEEP_MODIFIERS: typing.Final = {
-        504: 11
+        500: 11,
+        504: 11,
     }
 
     @otel
@@ -264,8 +265,7 @@ class AppSSO:
                 else:
                     attempts_remaining -= 1
                     otel_add_error(f"{response.url} -> {response.status}")
-                    self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {response.url} -> {response.status}")
-                    self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {response.url} -> {await response.text()}")
+                    self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {response.url} -> {response.status} / {await response.text()}")
                     if response.status in [400, 403]:
                         return None
                     if attempts_remaining > 0:
@@ -284,8 +284,7 @@ class AppSSO:
                 else:
                     attempts_remaining -= 1
                     otel_add_error(f"{response.url} -> {response.status}")
-                    self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {response.url} -> {response.status}")
-                    self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {response.url} -> {await response.text()}")
+                    self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {response.url} -> {response.status} / {await response.text()}")
                     if response.status in [400, 403]:
                         return None
                     if attempts_remaining > 0:
