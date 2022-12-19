@@ -388,7 +388,9 @@ class AppSSO:
             await AppSSOFunctions.authlog(self.db, character_id, session_id, AppAuthType.REFRESH)
 
     @otel
-    async def esi_decode_token(self, session_id: str, token_response: dict) -> dict | None:
+    async def esi_decode_token(self, session_id: str, token_response: dict | None) -> dict | None:
+
+        token_response = token_response or dict()
 
         required_response_keys: typing.Final = ["access_token", "token_type", "refresh_token"]
         if not all(map(lambda x: bool(token_response.get(x)), required_response_keys)):
@@ -571,6 +573,9 @@ class AppSSO:
         async with aiohttp.ClientSession(headers=post_session_headers) as http_session:
             token_response = await self._post_url(http_session, post_token_url, post_body)
 
+        if token_response is None:
+            token_response = dict()
+
         edict: typing.Final = await self.esi_decode_token(session_id, token_response)
         if edict is None:
             quart.abort(500, "invalid token_response")
@@ -609,6 +614,9 @@ class AppSSO:
                 "client_id": self.client_id
             }
             token_response = await self._post_url(http_session, post_token_url, post_body)
+
+        if token_response is None:
+            token_response = dict()
 
         return await self.esi_decode_token(session_id, token_response)
 
