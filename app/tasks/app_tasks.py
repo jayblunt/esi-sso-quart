@@ -389,7 +389,7 @@ class AppStructureTask(AppDatabaseTask):
                         continue
 
                     same_attributes = True
-                    for attribute in [x for x in obj.__table__.columns.keys() if x not in ['timestamp']]:
+                    for attribute in [x for x in obj.__table__.columns.keys() if x not in ['timestamp', 'character_id']]:
                         if getattr(obj, attribute) != getattr(existing_obj, attribute):
                             self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {structure_id} {attribute} {getattr(existing_obj, attribute)} -> {getattr(obj, attribute)}")
                             setattr(existing_obj, attribute, getattr(obj, attribute))
@@ -605,7 +605,7 @@ class AppStructureTask(AppDatabaseTask):
                         continue
 
                     same_attributes = True
-                    for attribute in [x for x in obj.__table__.columns.keys() if x not in ['timestamp']]:
+                    for attribute in [x for x in obj.__table__.columns.keys() if x not in ['timestamp', 'character_id']]:
                         if getattr(obj, attribute) != getattr(existing_obj, attribute):
                             self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {structure_id} {attribute} {getattr(existing_obj, attribute)} -> {getattr(obj, attribute)}")
                             setattr(existing_obj, attribute, getattr(obj, attribute))
@@ -787,17 +787,3 @@ class AppStructurePollingTask(AppStructureTask):
             except Exception as ex:
                 otel_add_exception(ex)
                 self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
-
-
-class AppStructureNotificationTask(AppDatabaseTask):
-
-    @otel
-    def __init__(self, client_session: collections.abc.MutableMapping, db: AppDatabase, outbound: asyncio.Queue, logger: logging.Logger | None = None) -> None:
-        super().__init__(client_session, db, outbound, logger)
-
-    async def run(self, client_session: collections.abc.MutableSet):
-        # tracer: typing.Final = opentelemetry.trace.get_tracer_provider().get_tracer(inspect.currentframe().f_code.co_name)
-        while True:
-            msg = await self.outbound.get()
-            self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {msg}")
-

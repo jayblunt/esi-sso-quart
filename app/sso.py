@@ -155,6 +155,13 @@ class AppSSO:
     ERROR_SLEEP_TIME: typing.Final = 11
     ERROR_RETRY_COUNT: typing.Final = 7
 
+    # ESI throws off a 504 at daily restart, so let's double the retry
+    # waiting period for those.
+    ERROR_SLEEP_MODIFIERS: typing.Final = {
+        500: 11,
+        504: 11,
+    }
+
     @otel
     def __init__(self,
                  app: quart.Quart,
@@ -258,11 +265,11 @@ class AppSSO:
                 else:
                     attempts_remaining -= 1
                     otel_add_error(f"{response.url} -> {response.status}")
-                    self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {response.url} -> {response.status}")
+                    self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {response.url} -> {response.status} / {await response.text()}")
                     if response.status in [400, 403]:
                         return None
                     if attempts_remaining > 0:
-                        await asyncio.sleep(self.ERROR_SLEEP_TIME)
+                        await asyncio.sleep(self.ERROR_SLEEP_TIME * self.ERROR_SLEEP_MODIFIERS.get(response.status, 1))
 
         return None
 
@@ -277,11 +284,11 @@ class AppSSO:
                 else:
                     attempts_remaining -= 1
                     otel_add_error(f"{response.url} -> {response.status}")
-                    self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {response.url} -> {response.status}")
+                    self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {response.url} -> {response.status} / {await response.text()}")
                     if response.status in [400, 403]:
                         return None
                     if attempts_remaining > 0:
-                        await asyncio.sleep(self.ERROR_SLEEP_TIME)
+                        await asyncio.sleep(self.ERROR_SLEEP_TIME * self.ERROR_SLEEP_MODIFIERS.get(response.status, 1))
 
         return None
 
@@ -366,19 +373,23 @@ class AppSSO:
             session_id: typing.Final = refresh_obj.session_id
             refresh_token: typing.Final = refresh_obj.refresh_token
 
+            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh {refresh_obj.character_id} / {refresh_obj.corporation_id}")
             edict = await self.esi_sso_refresh(session_id, refresh_token)
             if edict is None:
+                self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh failed for {refresh_obj.character_id}")
                 edict = failure_edict
 
             await AppSSOFunctions.update_credentials(self.db, character_id, edict)
 
-            if self.outbound:
-                await self.outbound.put(SSOTokenRefreshEvent(character_id=character_id, session_id=session_id))
+            # if self.outbound:
+            #     await self.outbound.put(SSOTokenRefreshEvent(character_id=character_id, session_id=session_id))
 
             await AppSSOFunctions.authlog(self.db, character_id, session_id, AppAuthType.REFRESH)
 
     @otel
-    async def esi_decode_token(self, session_id: str, token_response: dict) -> dict | None:
+    async def esi_decode_token(self, session_id: str, token_response: dict | None) -> dict | None:
+
+        token_response = token_response or dict()
 
         required_response_keys: typing.Final = ["access_token", "token_type", "refresh_token"]
         if not all(map(lambda x: bool(token_response.get(x)), required_response_keys)):
@@ -560,6 +571,8 @@ class AppSSO:
         token_response = dict()
         async with aiohttp.ClientSession(headers=post_session_headers) as http_session:
             token_response = await self._post_url(http_session, post_token_url, post_body)
+            if token_response is None:
+                token_response = dict()
 
         edict: typing.Final = await self.esi_decode_token(session_id, token_response)
         if edict is None:
@@ -599,6 +612,8 @@ class AppSSO:
                 "client_id": self.client_id
             }
             token_response = await self._post_url(http_session, post_token_url, post_body)
+            if token_response is None:
+                token_response = dict()
 
         return await self.esi_decode_token(session_id, token_response)
 

@@ -363,11 +363,11 @@ class AppDatabase:
             self._initialized = True
 
     @property
-    async def engine(self) -> sqlalchemy.ext.asyncio.engine.AsyncEngine:
+    def engine(self) -> sqlalchemy.ext.asyncio.engine.AsyncEngine:
         return self._engine
 
     @otel
     async def sessionmaker(self) -> sqlalchemy.ext.asyncio.AsyncSession:
         if self._sessionmaker is None:
-            self._sessionmaker = sqlalchemy.orm.sessionmaker(await self.engine, expire_on_commit=False, class_=sqlalchemy.ext.asyncio.AsyncSession)
+            self._sessionmaker = sqlalchemy.orm.sessionmaker(self.engine, expire_on_commit=False, class_=sqlalchemy.ext.asyncio.AsyncSession)
         return self._sessionmaker()

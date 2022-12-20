@@ -4,7 +4,6 @@ import collections.abc
 import inspect
 import logging
 import os
-import dataclasses
 import typing
 
 import aiohttp
