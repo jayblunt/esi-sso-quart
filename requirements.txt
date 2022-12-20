@@ -1,7 +1,6 @@
 aiohttp
 aioredis
 asyncpg
-discord
 hypercorn
 python-dateutil
 python-jose
