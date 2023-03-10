@@ -1,0 +1,55 @@
+{% extends "base.html" %} {% block content %} <div class="box">
+    <h3>Introduction</h3>
+    <p>EVE has no great way to monitor structures for organizations that do not fit in the Alliance / Corp structure of EVE.</p>
+    <p><a href="/">This site</a> attemtps to do that.</p>
+</div>
+<div class="box">
+    <h3>Logging In</h3>
+    <p>This site uses <a href="https://support.eveonline.com/hc/en-us/articles/205381192-Single-Sign-On-SSO-">EVE Online Single Sign On</a>.</p>
+    <p>This site has no access to your login information - all login is via CCP's <a href="https://docs.esi.evetech.net/docs/sso/">Oauth2</a> service.</p>
+    <p>The CCP "Help & Support" site has a page that shows which <a href="https://community.eveonline.com/support/third-party-applications/">third party applications</a> you have granted permissions to. This site is the "Structures
+        and Minerals" entry.</p>
+    <p>Regular users will want to login as a <a href="/sso/login/user">User</a>. This enables viewing of structure information, with mininal login data - it uses public information about your character (name / corp / allience) for access control.</p>
+    <p>If you manage structures and want to contribute your structure information, then login as a <a href="/sso/login/contributor">Contributor</a>. You will need the in-game corporate roles of "Station Manager" and "Accountant" (see <a
+            href="https://support.eveonline.com/hc/en-us/articles/203217712-Roles-Listing">this article</a> for more information about corporation roles). </p>
+    <p>If you are not sure how you are logged in, look at your character image at the top of the window. If your character has a thin border the color of the foreground - you are logged in as a User. If your character has a thick border
+        in yellow - you are logged in as a Contributor. </p>
+    <p>If you want to login with more than one character at the same time, then you can visit the <a href="/sso/login/user">user</a> and <a href="/sso/login/contributor">contributor</a> login links directly.</p>
+</div>
+<div class="box">
+    <h3>Permissions</h3>
+    <p>This site has a permissions system based on Alliances / Corporations / Users.</p>
+    <p>CCP does not (currently) have a way to access in-game ACL information from outside-of-game. So the site has no way of knowing if you are included / excluded in in-game ACLs.</p>
+    <p>If you get a "Permission Denied" page in error, please contact <a href="https://zkillboard.com/character/92923556/">Jay Blunt</a> in-game to get the permissions fixed.</p>
+</div>
+<div class="box">
+    <h3>Logging Out</h3>
+    <p>This site will try and maintain your login session. If you change IP address or some other Internet voodooo, it will assume you have logged out.</p>
+    <p>If you navigate away from ths site without explictly logging out .. the site will try and remember you for next time.</p>
+    <p>If you click your character image, you will be logged out.</p>
+    <p>If you are logged out, you will be served the login page when you visit.</p>
+</div>
+<div class="box">
+    <h3>"I have an idea how I can make this better"</h3>
+    <p>Great! I need all the help <a href="https://zkillboard.com/character/92923556/">I</a> can get!</p>
+    <p>The source code for all this is on <a href="https://github.com/jayblunt/esi-sso-quart">GitHub</a>. It is licensed under the <a href="https://opensource.org/licenses/MIT">MIT</a> license.</p>
+    <p>Pull Requests are welcome and I am happy to include credit on the site. Issues .. are also welcome, but please give as much information as possible.</p>
+</div>
+<div class="box">
+    <h3>"I have a question ..."</h3>
+    <p>.. contact <a href="https://zkillboard.com/character/92923556/">Jay Blunt</a> in-game ..</p>
+</div>
+<div class="box">
+    <h3>Technical Info</h3>
+    <p>This site is mostly async python with aiohttp and sqlalchemy.</p>
+    <p> The server is a <a href="https://www.vultr.com">www.vultr.com</a> virtual server. It is running <a href="https://www.openbsd.org">OpenBSD</a>. The framework used is <a href="https://quart.palletsprojects.com/en/latest/">Quart</a>.
+        The TLS reverse proxy is <a href="https://nginx.org/">nginx</a>. </p>
+</div>
+<div class="box">
+    <h3>Credits</h3>
+    <p><a href="https://zkillboard.com/character/93692517/">Freeman Powell</a> for the orignal inspiration, and for their patience. Thank you for fueling all of the structures.</p>
+    <p><a href="https://zkillboard.com/character/95718018/">Meta Space</a>, <a href="https://zkillboard.com/character/1751073359/">GRRRvana</a> for being early Contributors.</p>
+    <p><a href="https://zkillboard.com/character/2112072729/">Ghost Buelle</a> for understanding that developer requests are .. endless.</p>
+    <p><a href="https://zkillboard.com/character/95266872/">beer- thirty</a> for, well, being beer- thirty..</p>
+    <p>.. and everyone I have omitted. let me know ...</p>
+</div> {% endblock %}

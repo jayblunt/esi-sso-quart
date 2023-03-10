@@ -1,0 +1,6 @@
+[tool.pyright]
+ignore = ["other"]
+reportOptionalIterable = false
+
+[tool.flake8]
+max-line-length = 240

@@ -1,0 +1,18 @@
+aiohttp
+aioredis
+asyncpg
+discord
+hypercorn
+python-dateutil
+python-jose
+quart
+quart-session
+redis
+SQLAlchemy
+uvicorn
+# opentelemetry-exporter-otlp-proto-grpc
+opentelemetry-exporter-otlp-proto-http 
+opentelemetry-instrumentation
+opentelemetry-instrumentation-asyncpg
+opentelemetry-instrumentation-asgi
+opentelemetry-instrumentation-aiohttp-client

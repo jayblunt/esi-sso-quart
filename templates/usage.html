@@ -1,0 +1,60 @@
+{% extends "base.html" %} {% block content %} {% if permitted_usage %}
+<div class="box">
+    <h3>Recent Users</h3>
+    <table>
+        <thead>
+            <tr>
+                <th class="align_left">User</th>
+                <th>Count</th>
+                <th>Last</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for x in permitted_usage %}
+            <tr>
+                <td class="align_left"><a href="{{ x.id|zkillboard_character }}" target="_blank">{{ x.id|esi_character_name }}</a></td>
+                <td>{{ x.count }}</td>
+                <td>{{ x.last|datetime }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+{% endif %}
+{% if denied_usage %}
+<div class="box">
+    <h3>Recent Denied Users</h3>
+    <table>
+        <thead>
+            <tr>
+                <th class="align_left">User</th>
+                <th>Count</th>
+                <th>Last</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for x in denied_usage %}
+            <tr>
+                <td class="align_left"><a href="{{ x.id|zkillboard_character }}" target="_blank">{{ x.id|esi_character_name }}</a></td>
+                <td>{{ x.count }}</td>
+                <td>{{ x.last|datetime }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+{% endif %} {% endblock %}

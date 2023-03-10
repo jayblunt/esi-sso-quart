@@ -1,0 +1,13 @@
+{% if character_id %}
+<div class="character">
+    <div class="{{ character_id|login_type }}">
+        <a href="/sso/logout"><img width="128" height="128" alt="{{character_id|esi_character_name}}" src="https://images.evetech.net/characters/{{character_id}}/portrait?size=128" /></a>
+    </div>
+</div>
+{% endif %}
+<div class="topright">
+    <a href="/">structures.castabouts.net</a>
+</div>
+<div class="headerbox">
+    <p>&nbsp;</p>
+</div>

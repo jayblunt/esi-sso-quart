@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% block content %}
+{% if active_timers %}
+<div class="box">
+    <h3>Active Structure Timers</h3>
+    <table>
+        <thead>
+            <tr>
+                <th class="align_left">Corporation</th>
+                <th class="align_left">Structure</th>
+                <th class="align_left">System</th>
+                <th class="align_left">State</th>
+                <th>Timer Expiry</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for x in active_timers %}
+            <tr>
+                <td class="align_left"><a href="{{ x.corporation_id|zkillboard_corporation }}" target="_blank">{{ x.corporation_id|esi_corporation_name }} </a></td>
+                <td class="align_left">{{ x.name }}</td>
+                <td class="align_left"><a href="{{ x.system_id|zkillboard_system }}" target="_blank">{{ x.system_id|esi_system_name }}</a></td>
+                <td class="align_left">{{ x.state|structure_state }}</td>
+                <td>{{ x.state_timer_end|datetime }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+{% endif %}
+{% if structures_without_fuel %}
+<div class="box">
+    <h3>Structures Without Fuel</h3>
+    <table>
+        <thead>
+            <tr>
+                <th class="align_left">Corporation</th>
+                <th class="align_left">Structure</th>
+                <th class="align_left">System</th>
+                <th class="align_left">State</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for x in structures_without_fuel %}
+            <tr>
+                <td class="align_left"><a href="{{ x.corporation_id|zkillboard_corporation }}" target="_blank"> {{ x.corporation_id|esi_corporation_name }} </a></td>
+                <td class="align_left">{{ x.name }}</td>
+                <td class="align_left"><a href="{{ x.system_id|zkillboard_system }}" target="_blank">{{ x.system_id|esi_system_name }}</a></td>
+                <td class="align_left">{{ x.state|structure_state }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+{% endif %}
+{% if scheduled_extractions or completed_extractions or unscheduled_extractions %}
+<div class="box">
+    <h3>Moon Drill Extractions</h3>
+    <table>
+        <thead>
+            <tr>
+                <th class="align_left">Corporation</th>
+                <th class="align_left">Structure</th>
+                <th class="align_left">Moon</th>
+                <th>Fuel Expiry</th>
+                <th>Chunk Ready</th>
+                <th>Belt Decay</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% if completed_extractions %}
+            {% for x in completed_extractions %}
+            <tr class="{{x.timestamp|timestamp_age}}">
+                <td class="align_left"><a href="{{ x.corporation_id|zkillboard_corporation }}" target="_blank"> {{ x.corporation_id|esi_corporation_name }} </a></td>
+                <td class="align_left">{{ x.structure.name }}</td>
+                <td class="align_left"><a href="/moon/{{ x.moon.moon_id }}">{{ x.moon.name }}</a></td>
+                <td>{{ x.structure.fuel_expires|datetime }}</td>
+                <td>{{ x.chunk_arrival_time|datetime }}</td>
+                <td>{{ x.belt_decay_time|datetime }}</td>
+            </tr>
+            {% endfor %}
+            {% endif %}
+            {% if scheduled_extractions and completed_extractions %}
+            <tr>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
+            </tr>
+            {% endif %}
+            {% if scheduled_extractions %}
+            {% for x in scheduled_extractions %}
+            <tr class="{{x.timestamp|timestamp_age}}">
+                <td class="align_left"><a href="{{ x.corporation_id|zkillboard_corporation }}" target="_blank"> {{ x.corporation_id|esi_corporation_name }} </a></td>
+                <td class="align_left">{{ x.structure.name }}</td>
+                <td class="align_left"><a href="/moon/{{ x.moon.moon_id }}">{{ x.moon.name }}</a></td>
+                <td>{{ x.structure.fuel_expires|datetime }}</td>
+                <td>{{ x.chunk_arrival_time|datetime }}</td>
+                <td></td>
+            </tr>
+            {% endfor %}
+            {% endif %}
+            {% if ( scheduled_extractions or completed_extractions ) and unscheduled_extractions %}
+            <tr>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
+            </tr>
+            {% endif %}
+            {% for x in unscheduled_extractions %}
+            <tr class="{{x.timestamp|timestamp_age}}">
+                <td class="align_left"><a href="{{ x.corporation_id|zkillboard_corporation }}" target="_blank"> {{ x.corporation.name }} </a></td>
+                <td class="align_left">{{ x.structure.name }}</td>
+                <td class="align_left"><a href="/moon/{{ x.moon.moon_id }}">{{ x.moon.name }}</a></td>
+                <td>{{ x.structure.fuel_expires|datetime }}</td>
+                <td>NOT SCHEDULED</td>
+                <td></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+{% endif %}
+{% if structure_fuel_expiries %}
+<div class="box">
+    <h3>Structure Fuel Expiries</h3>
+    <table>
+        <thead>
+            <tr>
+                <th class="align_left">Corporation</th>
+                <th class="align_left">Structure</th>
+                <th class="align_left">System</th>
+                <th>Fuel Expiry</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for x in structure_fuel_expiries %}
+            <tr class="{{x.timestamp|timestamp_age}}">
+                <td class="align_left"><a href="{{ x.corporation_id|zkillboard_corporation }}" target="_blank">{{ x.corporation.name }}</a></td>
+                <td class="align_left">{{ x.name }}</td>
+                <td class="align_left"><a href="{{ x.system_id|zkillboard_system }}" target="_blank">{{ x.system_id|esi_system_name }}</a></td>
+                <td>{{ x.fuel_expires|datetime }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+{% endif %}
+{% if last_update %}
+<div class="box">
+    <h3>Most Recent Structure Update</h3>
+    <table>
+        <thead>
+            <tr>
+                <th class="align_left">Corporation {% if character_contributor %} (Character){% endif %}</th>
+                <th>Last Update</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for x in last_update %}
+            <tr>
+                <td class="align_left"><a href="{{ x.corporation_id|zkillboard_corporation }}" target="_blank">{{ x.corporation_id|esi_corporation_name }}</a>
+                    {% if character_contributor %} (<a href="{{ x.character_id|zkillboard_character }}" target="_blank">{{ x.character_id|esi_character_name }}</a>){% endif %}
+                </td>
+                <td>{{ x.timestamp|datetime }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td></td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+    {% if character_contributor %}
+    <p>Note: only contributors see contributor character names. users see contributor corporation names only.</p>
+    {% endif %}
+</div>
+{% endif %}
+{% if character_contributor %}
+<div class="box">
+    <h3>Recent Usage</h3>
+    <p>Recent <a href="/usage/">usage information</a> is available.</p>
+</div>
+{% endif %}
+{% endblock %}

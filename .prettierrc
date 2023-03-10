@@ -1,0 +1,15 @@
+{
+  "tabWidth": 2,
+  "useTabs": false,
+  "overrides": [
+    {
+      "files": "**/*.html", 
+      "options": {
+        "printWidth": 240,
+        "proseWrap": "never",
+        "htmlWhitespaceSensitivity": "css"
+      }
+    }
+  ]
+
+}

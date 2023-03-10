@@ -1,0 +1,55 @@
+{% extends "base.html" %} {% block content %}
+<div class="box">
+    {% if moon_id %}<h3>{{moon_id|esi_moon_name}}</h3>{% endif %}
+    {% if moon_yield %}
+    <table>
+        <thead>
+            <tr>
+                <!-- <th class="align_left"></th> -->
+                <th class="align_left">Moon Ore</th>
+                <th class="align_left">Percentage</th>
+            </tr>
+        </thead>
+        <tbody> {% for x in moon_yield %} <tr>
+                <!-- <td class="align_left"><img width="16" height="16" alt="{{x.type_id|esi_type_name}}" src="https://images.evetech.net/types/{{x.type_id}}/icon?size=32"></td> -->
+                <td class="align_left">{{x.type_id|esi_type_name}}</td>
+                <td class="align_left">{{x.yield_percent|percentage}}</td>
+            </tr> {% endfor %} </tbody>
+        <tfoot>
+            <tr>
+                <!-- <td></td> -->
+                <td></td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+    {% endif %} {% if moon_history and weekday_names and timeofday_names %} <h3>Extraction History</h3>
+    <table>
+        <thead>
+            <tr>
+                <th class="align_left">Date</th>
+                <th class="align_left">Day of Week</th>
+                <th class="align_left">Time of Day</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="align_left">&nbsp;</td>
+                <td class="align_left">{% for wdn in weekday_names %}{{wdn}}&nbsp;{% endfor %}</td>
+                <td class="align_left">{% for tod in timeofday_names %}{{tod}}&nbsp;{% endfor %}</td>
+            </tr> {% for x in moon_history %} <tr>
+                <td class="align_left">{{ x.extraction.chunk_arrival_time|date }}</td>
+                <td class="align_left">{% for wdn in weekday_names %}<span class="{% if loop.index0 == x.dow %}dow_on{% else %}dow_off{% endif %}">{{wdn}}</span>&nbsp;{% endfor %}</td>
+                <td class="align_left">{% for tod in timeofday_names %}<span class="{% if loop.index0 == x.tod %}dow_on{% else %}dow_off{% endif %}">{{tod}}</span>&nbsp;{% endfor %}</td>
+            </tr> {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <!-- <td></td> -->
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table> {% endif %}
+</div> {% endblock %}
