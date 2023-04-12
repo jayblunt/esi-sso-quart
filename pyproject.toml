@@ -1,5 +1,5 @@
 [tool.pyright]
-ignore = ["other"]
+ignore = ["other", "utility_conversion.py"]
 reportOptionalIterable = false
 
 [tool.flake8]

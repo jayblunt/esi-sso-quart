@@ -50,50 +50,11 @@ class AppTask(metaclass=abc.ABCMeta):
         pass
 
     @property
-    def common_params(self) -> dict:
+    def request_params(self) -> dict:
         return {
             "datasource": "tranquility",
             "language": "en",
         }
-
-    @otel
-    async def get_pages(self, url: str, access_token: str) -> list | None:
-
-        session_headers: typing.Final = dict()
-        if len(access_token) > 0:
-            session_headers["Authorization"] = f"Bearer {access_token}"
-
-        async with aiohttp.ClientSession(headers=session_headers) as http_session:
-            maxpageno: int = 0
-            results = None
-
-            attempts_remaining = AppConstants.ESI_ERROR_RETRY_COUNT
-            while attempts_remaining > 0:
-                async with await http_session.get(url, params=self.common_params) as response:
-                    if response.status in [200]:
-                        maxpageno = int(response.headers.get('X-Pages', 1))
-                        results = list()
-                        results.extend(await response.json())
-                        break
-                    else:
-                        attempts_remaining -= 1
-                        otel_add_error(f"{response.url} -> {response.status}")
-                        self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
-                        if response.status in [400, 403]:
-                            attempts_remaining = 0
-                        if attempts_remaining > 0:
-                            await asyncio.sleep(AppConstants.ESI_ERROR_SLEEP_TIME * AppConstants.ESI_ERROR_SLEEP_MODIFIERS.get(response.status, 1))
-
-            if results is not None:
-                pages = list(range(2, 1 + int(maxpageno)))
-
-                task_list: typing.Final = [AppESI.get_url(http_session, url, self.common_params | {"page": x}) for x in pages]
-                if len(task_list) > 0:
-                    results.extend(sum(await asyncio.gather(*task_list), []))
-
-            return results
-
-        return None
 
 
 class AppDatabaseTask(AppTask):
@@ -102,7 +63,7 @@ class AppDatabaseTask(AppTask):
     @otel
     async def _get_type(self, type_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.UniverseType:
         url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/universe/types/{type_id}/"
-        rdict: typing.Final = await AppESI.get_url(http_session, url, self.common_params)
+        rdict: typing.Final = await AppESI.get_url(http_session, url, request_params=self.request_params)
         if rdict is not None:
             edict: typing.Final = dict()
             for k, v in rdict.items():
@@ -119,7 +80,7 @@ class AppDatabaseTask(AppTask):
     @otel
     async def _get_corporation(self, corporation_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.Corporation:
         url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/corporations/{corporation_id}/"
-        rdict: typing.Final = await AppESI.get_url(http_session, url, self.common_params)
+        rdict: typing.Final = await AppESI.get_url(http_session, url, request_params=self.request_params)
         if rdict is not None:
             edict: typing.Final = dict({
                 "corporation_id": corporation_id
@@ -137,7 +98,7 @@ class AppDatabaseTask(AppTask):
     @otel
     async def _get_moon(self, moon_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.UniverseMoon:
         url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/universe/moons/{moon_id}/"
-        rdict: typing.Final = await AppESI.get_url(http_session, url, self.common_params)
+        rdict: typing.Final = await AppESI.get_url(http_session, url, request_params=self.request_params)
         if rdict is not None:
             edict: typing.Final = dict()
             for k, v in rdict.items():

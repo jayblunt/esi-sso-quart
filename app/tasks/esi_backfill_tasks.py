@@ -15,7 +15,7 @@ import sqlalchemy.sql
 
 from support.telemetry import otel, otel_add_error, otel_add_exception
 
-from .. import AppSSO, AppTables, AppConstants
+from .. import AppConstants, AppESI, AppSSO, AppTables
 from .task import AppTask
 
 
@@ -50,7 +50,7 @@ class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
         url: typing.Final = self.item_url(id)
         attempts_remaining = AppConstants.ESI_ERROR_RETRY_COUNT
         while attempts_remaining > 0:
-            async with await http_session.get(url, params=self.common_params) as response:
+            async with await http_session.get(url, params=self.request_params) as response:
                 if response.status in [200]:
                     edict: typing.Final = self.item_dict(id, await response.json())
                     if len(edict) > 0:
@@ -74,7 +74,7 @@ class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
 
         url: typing.Final = self.index_url()
         access_token: typing.Final = client_session.get(AppSSO.ESI_ACCESS_TOKEN, '')
-        obj_id_set: typing.Final = set(await self.get_pages(url, access_token))
+        obj_id_set: typing.Final = set(await AppESI.get_pages(url, access_token, request_params=self.request_params))
 
         # cache_dict: typing.Final = dict()
         # cache_filename: typing.Final = os.path.join(self.configdir, f"{self.__class__.__name__}.json")

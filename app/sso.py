@@ -189,7 +189,7 @@ class AppSSO:
         self.logout_route: typing.Final = logout_route
         self.callback_route: typing.Final = callback_route
 
-        self.common_params: typing.Final = dict()
+        self.request_params: typing.Final = dict()
         self.configuration: dict = dict()
         self.jwks_uri: str
         self.jwks: list[dict] = list()
@@ -258,7 +258,7 @@ class AppSSO:
             session_headers["Authorization"] = f"Bearer {esi_access_token}"
 
         async with aiohttp.ClientSession(headers=session_headers) as http_session:
-            return await AppESI.get_url(http_session, url, self.common_params) or dict()
+            return await AppESI.get_url(http_session, url, request_params=self.request_params) or dict()
 
     @otel
     async def _get_jwks(self, url: str) -> list:
@@ -418,9 +418,9 @@ class AppSSO:
             }
 
             task_list: typing.Final = list()
-            task_list.append(AppESI.get_url(http_session, f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/characters/{character_id}/", self.common_params | request_params))
+            task_list.append(AppESI.get_url(http_session, f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/characters/{character_id}/", request_params=self.request_params | request_params))
             if "esi-characters.read_corporation_roles.v1" in scopes:
-                task_list.append(AppESI.get_url(http_session, f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/characters/{character_id}/roles/", self.common_params | request_params))
+                task_list.append(AppESI.get_url(http_session, f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/characters/{character_id}/roles/", request_params=self.request_params | request_params))
 
             for result in await asyncio.gather(*task_list):
                 if result is None:
@@ -590,7 +590,7 @@ class AppSSO:
         }
 
         async with aiohttp.ClientSession() as http_session:
-            status_result = await AppESI.get_url(http_session, f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/status/", self.common_params | request_params)
+            status_result = await AppESI.get_url(http_session, f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/status/", request_params=self.request_params | request_params)
             status_result = status_result or dict()
             self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {str(status_result)}")
             if all([int(status_result.get("players", 0)) > 128, bool(status_result.get("vip", False)) is False]):

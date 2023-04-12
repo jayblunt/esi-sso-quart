@@ -33,7 +33,7 @@ class ESIAlliancMemberTask(AppTask):
         if alliance_id > 0:
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=AppConstants.ESI_LIMIT_PER_HOST)) as http_session:
                 url = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/alliances/{alliance_id}/corporations/"
-                async with await http_session.get(url, params=self.common_params) as response:
+                async with await http_session.get(url, params=self.request_params) as response:
                     # print(f"{response.url} -> {response.status}")
                     if response.status in [200]:
                         for corporation_id in list(await response.json()):
@@ -87,7 +87,7 @@ class ESIAlliancMemberTask(AppTask):
                             # print(f"corporation_id: {corporation_id}")
 
                             url = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/corporations/{corporation_id}/"
-                            async with await http_session.get(url, params=self.common_params) as response:
+                            async with await http_session.get(url, params=self.request_params) as response:
                                 # print(f"{response.url} -> {response.status}")
                                 if response.status in [200]:
                                     edict: typing.Final = dict({

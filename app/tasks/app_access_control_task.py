@@ -22,10 +22,10 @@ class AppAccessControlTask(AppTask):
         self.logger.info(f"> {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
 
         acl_bootstrap_set: typing.Final = {
-            AppTables.AccessControls(type=AppAccessType.ALLIANCE, id=99002329, permit=True),
-            AppTables.AccessControls(type=AppAccessType.CORPORATION, id=1000169, permit=True),
-            AppTables.AccessControls(type=AppAccessType.CORPORATION, id=98508146, permit=True),
-            AppTables.AccessControls(type=AppAccessType.CORPORATION, id=98629865, permit=True),
+            AppTables.AccessControls(type=AppAccessType.ALLIANCE, id=99002329, permit=True, trust=True),
+            AppTables.AccessControls(type=AppAccessType.CORPORATION, id=1000169, permit=True, trust=True),
+            AppTables.AccessControls(type=AppAccessType.CORPORATION, id=98508146, permit=True, trust=True),
+            AppTables.AccessControls(type=AppAccessType.CORPORATION, id=98629865, permit=True, trust=True),
         }
 
         try:

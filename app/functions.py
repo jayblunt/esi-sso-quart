@@ -58,7 +58,7 @@ class AppFunctions:
                         contributor=contributor,
                         suspect=suspect)
 
-        if ar.character_id > 0 and ar.character_id not in AppConstants.MAGIC_CHARACTERS:
+        if ar.character_id > 0:
             try:
                 async with await evedb.sessionmaker() as db_session, db_session.begin():
                     db_session: sqlalchemy.ext.asyncio.AsyncSession
@@ -115,7 +115,7 @@ class AppFunctions:
         query = (
             sqlalchemy.select(AppTables.ScheduledExtraction)
             .where(
-                AppTables.ScheduledExtraction.chunk_arrival_time > now,
+                AppTables.ScheduledExtraction.natural_decay_time > now,
                 AppTables.ScheduledExtraction.extraction_start_time <= now,
             )
             .order_by(AppTables.ScheduledExtraction.chunk_arrival_time)
@@ -371,7 +371,7 @@ class AppFunctions:
         async with await evedb.sessionmaker() as session:
             query = (
                 sqlalchemy.select(AppTables.Configuration.value)
-                .where(AppTables.Configuration.key == key) 
+                .where(AppTables.Configuration.key == key)
             )
 
             query_result: sqlalchemy.engine.Result = await session.execute(query)
