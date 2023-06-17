@@ -1,29 +1,33 @@
-{% extends "base.html" %} {% block content %}
-<div class="box">
+{% extends "base.html" %}
+{% block content %}
+<section>
     {% if moon_id %}<h3>{{moon_id|esi_moon_name}}</h3>{% endif %}
     {% if moon_yield %}
+    <p></p>
     <table>
         <thead>
             <tr>
-                <!-- <th class="align_left"></th> -->
                 <th class="align_left">Moon Ore</th>
                 <th class="align_left">Percentage</th>
             </tr>
         </thead>
         <tbody> {% for x in moon_yield %} <tr>
-                <!-- <td class="align_left"><img width="16" height="16" alt="{{x.type_id|esi_type_name}}" src="https://images.evetech.net/types/{{x.type_id}}/icon?size=32"></td> -->
                 <td class="align_left">{{x.type_id|esi_type_name}}</td>
                 <td class="align_left">{{x.yield_percent|percentage}}</td>
             </tr> {% endfor %} </tbody>
         <tfoot>
             <tr>
-                <!-- <td></td> -->
                 <td></td>
                 <td></td>
             </tr>
         </tfoot>
     </table>
-    {% endif %} {% if moon_history and weekday_names and timeofday_names %} <h3>Extraction History</h3>
+</section>
+{% endif %}
+{% if moon_history and weekday_names and timeofday_names %}
+<section>
+    <h3>Extraction History</h3>
+    <p></p>
     <table>
         <thead>
             <tr>
@@ -45,11 +49,12 @@
         </tbody>
         <tfoot>
             <tr>
-                <!-- <td></td> -->
                 <td></td>
                 <td></td>
                 <td></td>
             </tr>
         </tfoot>
-    </table> {% endif %}
-</div> {% endblock %}
+    </table>
+    {% endif %}
+</section>
+{% endblock %}

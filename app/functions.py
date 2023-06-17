@@ -1,3 +1,4 @@
+import collections
 import dataclasses
 import datetime
 import functools
@@ -30,6 +31,7 @@ class AppRequest:
     trusted: bool = False
     contributor: bool = False
     suspect: bool = False
+    magic_character: bool = False
 
 
 class AppFunctions:
@@ -45,7 +47,9 @@ class AppFunctions:
         permitted: typing.Final = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id)
         trusted: typing.Final = await AppFunctions.is_trusted(evedb, character_id, corpporation_id, alliance_id)
         contributor: typing.Final = await AppFunctions.is_contributor(evedb, character_id, corpporation_id, alliance_id)
-        suspect: typing.Final = character_id in AppConstants.SUSPECT_CHARACTERS
+        suspect: typing.Final = character_id in AppConstants.MAGIC_SUSPECTS
+        magic_character: typing.Final = character_id in AppConstants.MAGIC_ADMINS | AppConstants.MAGIC_CONTRIBUTORS
+
 
         session[AppSSO.REQUEST_PATH] = quart.request.path
 
@@ -56,7 +60,8 @@ class AppFunctions:
                         permitted=permitted,
                         trusted=trusted,
                         contributor=contributor,
-                        suspect=suspect)
+                        suspect=suspect,
+                        magic_character=magic_character)
 
         if ar.character_id > 0:
             try:
@@ -197,6 +202,24 @@ class AppFunctions:
         )
 
         return [x async for x in await session.stream_scalars(query)]
+
+    @staticmethod
+    @otel
+    async def get_structure_counts(session: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> dict[int, int]:
+        query = (
+            sqlalchemy.select(AppTables.Structure)
+            .where(
+                AppTables.Structure.fuel_expires != sqlalchemy.sql.expression.null(),
+                AppTables.Structure.fuel_expires > now,
+            )
+        )
+
+        results: dict[int, int] = collections.defaultdict(int)
+        async for x in await session.stream_scalars(query):
+            x: AppTables.Structure
+            results[x.corporation_id] += 1
+
+        return results
 
     @staticmethod
     @otel
@@ -412,7 +435,7 @@ class AppFunctions:
     @staticmethod
     @otel
     async def is_contributor(evedb: AppDatabase, character_id: int, corpporation_id: int, alliance_id: int) -> bool:
-        if character_id in AppConstants.MAGIC_CHARACTERS:
+        if character_id in AppConstants.MAGIC_ADMINS | AppConstants.MAGIC_CONTRIBUTORS:
             return True
 
         is_permitted = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id, check_trust=False)

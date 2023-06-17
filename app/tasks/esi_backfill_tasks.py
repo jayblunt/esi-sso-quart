@@ -2,6 +2,7 @@ import abc
 import asyncio
 import collections
 import collections.abc
+import http
 import inspect
 import typing
 
@@ -51,7 +52,7 @@ class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
         attempts_remaining = AppConstants.ESI_ERROR_RETRY_COUNT
         while attempts_remaining > 0:
             async with await http_session.get(url, params=self.request_params) as response:
-                if response.status in [200]:
+                if response.status in [http.HTTPStatus.OK]:
                     edict: typing.Final = self.item_dict(id, await response.json())
                     if len(edict) > 0:
                         return edict
@@ -59,7 +60,7 @@ class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
                     attempts_remaining -= 1
                     otel_add_error(f"{response.url} -> {response.status}")
                     self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
-                    if response.status in [400, 403]:
+                    if response.status in [http.HTTPStatus.BAD_REQUEST, http.HTTPStatus.FORBIDDEN]:
                         attempts_remaining = 0
                     if attempts_remaining > 0:
                         await asyncio.sleep(AppConstants.ESI_ERROR_SLEEP_TIME * AppConstants.ESI_ERROR_SLEEP_MODIFIERS.get(response.status, 1))
@@ -75,12 +76,6 @@ class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
         url: typing.Final = self.index_url()
         access_token: typing.Final = client_session.get(AppSSO.ESI_ACCESS_TOKEN, '')
         obj_id_set: typing.Final = set(await AppESI.get_pages(url, access_token, request_params=self.request_params))
-
-        # cache_dict: typing.Final = dict()
-        # cache_filename: typing.Final = os.path.join(self.configdir, f"{self.__class__.__name__}.json")
-        # if os.path.exists(cache_filename):
-        #     with open(cache_filename) as ifp:
-        #         cache_dict |= {self.object_id(x): x for x in [self.object_class(**edict) for edict in json.load(ifp)]}
 
         existing_obj_id_set: typing.Final = set()
 
@@ -122,14 +117,6 @@ class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
                     otel_add_exception(ex)
                     self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
 
-        # async with await self.db.sessionmaker() as session, session.begin():
-        #     existing_query = sqlalchemy.select(self.object_class)
-        #     existing_query_result = await session.execute(existing_query)
-        #     existing_obj_list: typing.Final = [{x: getattr(result, x) for x in result.__table__.columns.keys()} for result in existing_query_result.scalars()]
-        #     if len(existing_obj_list) > 0:
-        #         with open(cache_filename, "w") as ofp:
-        #             json.dump(existing_obj_list, ofp, indent=4)
-
         self.logger.info(f"< {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
 
 
@@ -149,7 +136,6 @@ class ESIUniverseRegionsBackfillTask(ESIBackfillTask):
 
     def item_url(self, id: int) -> str:
         url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/universe/regions/{id}/"
-        # print(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url}")
         return url
 
     def item_dict(self, id: int, input: dict) -> dict:
@@ -163,7 +149,6 @@ class ESIUniverseRegionsBackfillTask(ESIBackfillTask):
                 edict[k] = int(v)
             else:
                 continue
-        # print(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {edict}")
         return edict
 
 
@@ -183,7 +168,6 @@ class ESIUniverseConstellationsBackfillTask(ESIBackfillTask):
 
     def item_url(self, id: int) -> str:
         url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/universe/constellations/{id}/"
-        # print(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url}")
         return url
 
     def item_dict(self, id: int, input: dict) -> dict:
@@ -197,7 +181,6 @@ class ESIUniverseConstellationsBackfillTask(ESIBackfillTask):
                 edict[k] = int(v)
             else:
                 continue
-        # print(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {edict}")
         return edict
 
 
@@ -217,7 +200,6 @@ class ESIUniverseSystemsBackfillTask(ESIBackfillTask):
 
     def item_url(self, id: int) -> str:
         url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/universe/systems/{id}/"
-        # print(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url}")
         return url
 
     def item_dict(self, id: int, input: dict) -> dict:
@@ -231,7 +213,6 @@ class ESIUniverseSystemsBackfillTask(ESIBackfillTask):
                 edict[k] = int(v)
             else:
                 continue
-        # print(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {edict}")
         return edict
 
 
@@ -251,7 +232,6 @@ class ESIAllianceBackfillTask(ESIBackfillTask):
 
     def item_url(self, id: int) -> str:
         url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/alliances/{id}/"
-        # print(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url}")
         return url
 
     def item_dict(self, id: int, input: dict) -> dict:
@@ -262,5 +242,4 @@ class ESIAllianceBackfillTask(ESIBackfillTask):
             if k not in ["name", "ticker"]:
                 continue
             edict[k] = v
-        # print(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {edict}")
         return edict

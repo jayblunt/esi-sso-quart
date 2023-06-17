@@ -1,6 +1,7 @@
 {% extends "base.html" %} {% block content %} {% if permitted_usage %}
-<div class="box">
+<section>
     <h3>Recent Users</h3>
+    <p></p>
     <table>
         <thead>
             <tr>
@@ -26,11 +27,12 @@
             </tr>
         </tfoot>
     </table>
-</div>
+</section>
 {% endif %}
 {% if denied_usage %}
-<div class="box">
+<section>
     <h3>Recent Denied Users</h3>
+    <p></p>
     <table>
         <thead>
             <tr>
@@ -56,5 +58,5 @@
             </tr>
         </tfoot>
     </table>
-</div>
+</section>
 {% endif %} {% endblock %}

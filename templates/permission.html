@@ -1,5 +1,8 @@
-{% extends "base.html" %} {% block content %} <div class="box">
+{% extends "base.html" %}
+{% block content %}
+<section>
     <h3>Permission Denied</h3>
-    <p>Hello {{ character_id|esi_character_name }}. You are not currently permissioned to see this information.</p>
-    <p>If this is in error, please contact Jay Blunt in-game.</p>
-</div> {% endblock %}
+        <p>Hello {{ character_id|esi_character_name }}. You are not currently permissioned to see this information.</p>
+        <p>If this is in error, please contact Jay Blunt in-game.</p>
+</section>
+{% endblock %}

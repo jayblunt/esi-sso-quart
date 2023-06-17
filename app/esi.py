@@ -1,4 +1,5 @@
 import asyncio
+import http
 import inspect
 import logging
 import typing
@@ -46,13 +47,13 @@ class AppESI:
         attempts_remaining = AppConstants.ESI_ERROR_RETRY_COUNT
         while attempts_remaining > 0:
             async with await http_session.get(url, headers=request_headers, params=request_params) as response:
-                if response.status in [200]:
+                if response.status in [http.HTTPStatus.OK]:
                     return await response.json()
                 else:
                     attempts_remaining -= 1
                     otel_add_error(f"{response.url} -> {response.status}")
                     self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {response.url} -> {response.status} / {await response.text()}")
-                    if response.status in [400, 403]:
+                    if response.status in [http.HTTPStatus.BAD_REQUEST, http.HTTPStatus.FORBIDDEN]:
                         attempts_remaining = 0
                     if attempts_remaining > 0:
                         await asyncio.sleep(AppConstants.ESI_ERROR_SLEEP_TIME * AppConstants.ESI_ERROR_SLEEP_MODIFIERS.get(response.status, 1))
@@ -65,13 +66,13 @@ class AppESI:
         attempts_remaining = AppConstants.ESI_ERROR_RETRY_COUNT
         while attempts_remaining > 0:
             async with await http_session.post(url, headers=request_headers, data=body, params=request_params) as response:
-                if response.status in [200]:
+                if response.status in [http.HTTPStatus.OK]:
                     return await response.json()
                 else:
                     attempts_remaining -= 1
                     otel_add_error(f"{response.url} -> {response.status}")
                     self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {response.url} -> {response.status} / {await response.text()}")
-                    if response.status in [400, 403]:
+                    if response.status in [http.HTTPStatus.BAD_REQUEST, http.HTTPStatus.FORBIDDEN]:
                         attempts_remaining = 0
                     if attempts_remaining > 0:
                         await asyncio.sleep(AppConstants.ESI_ERROR_SLEEP_TIME * AppConstants.ESI_ERROR_SLEEP_MODIFIERS.get(response.status, 1))
@@ -116,7 +117,7 @@ class AppESI:
             attempts_remaining = AppConstants.ESI_ERROR_RETRY_COUNT
             while attempts_remaining > 0:
                 async with await http_session.get(url, params=request_params) as response:
-                    if response.status in [200]:
+                    if response.status in [http.HTTPStatus.OK]:
                         maxpageno = int(response.headers.get('X-Pages', 1))
                         results = list()
                         results.extend(await response.json())
@@ -125,7 +126,7 @@ class AppESI:
                         attempts_remaining -= 1
                         otel_add_error(f"{response.url} -> {response.status}")
                         self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
-                        if response.status in [400, 403]:
+                        if response.status in [http.HTTPStatus.BAD_REQUEST, http.HTTPStatus.FORBIDDEN]:
                             attempts_remaining = 0
                         if attempts_remaining > 0:
                             await asyncio.sleep(AppConstants.ESI_ERROR_SLEEP_TIME * AppConstants.ESI_ERROR_SLEEP_MODIFIERS.get(response.status, 1))

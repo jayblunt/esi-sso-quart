@@ -1,4 +1,5 @@
 import collections.abc
+import http
 import inspect
 import typing
 
@@ -13,7 +14,7 @@ import sqlalchemy.sql
 
 from support.telemetry import otel, otel_add_error, otel_add_exception
 
-from .. import AppSSO, AppTables, AppConstants
+from .. import AppConstants, AppSSO, AppTables
 from .task import AppTask
 
 
@@ -34,8 +35,7 @@ class ESIAlliancMemberTask(AppTask):
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=AppConstants.ESI_LIMIT_PER_HOST)) as http_session:
                 url = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/alliances/{alliance_id}/corporations/"
                 async with await http_session.get(url, params=self.request_params) as response:
-                    # print(f"{response.url} -> {response.status}")
-                    if response.status in [200]:
+                    if response.status in [http.HTTPStatus.OK]:
                         for corporation_id in list(await response.json()):
                             corporation_id_set.add(int(corporation_id))
                     else:
@@ -80,16 +80,13 @@ class ESIAlliancMemberTask(AppTask):
 
                     obj_set = set()
 
-                    # print(f"existing_corporation_id_set: {existing_corporation_id_set}")
                     async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=AppConstants.ESI_LIMIT_PER_HOST)) as http_session:
 
                         for corporation_id in corporation_id_set - existing_corporation_id_set:
-                            # print(f"corporation_id: {corporation_id}")
 
                             url = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/corporations/{corporation_id}/"
                             async with await http_session.get(url, params=self.request_params) as response:
-                                # print(f"{response.url} -> {response.status}")
-                                if response.status in [200]:
+                                if response.status in [http.HTTPStatus.OK]:
                                     edict: typing.Final = dict({
                                         "corporation_id": corporation_id
                                     })

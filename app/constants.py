@@ -18,5 +18,8 @@ class AppConstants:
         504: 37,
     }
 
-    MAGIC_CHARACTERS: typing.Final = []
-    SUSPECT_CHARACTERS: typing.Final = []
+    MAGIC_ADMINS: typing.Final = {}
+    MAGIC_CONTRIBUTORS: typing.Final = {}
+    MAGIC_SUSPECTS: typing.Final = {}
+
+    STRUCTURE_REFRESH_INTERVAL_SECONDS: typing.Final = 540

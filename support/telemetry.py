@@ -3,12 +3,17 @@ import functools
 import typing
 
 import opentelemetry.exporter.otlp.proto.http.trace_exporter
+import opentelemetry.exporter.otlp.proto.grpc.metric_exporter
 import opentelemetry.instrumentation.aiohttp_client
 import opentelemetry.instrumentation.asyncpg
 import opentelemetry.sdk.resources
 import opentelemetry.sdk.trace
 import opentelemetry.sdk.trace.export
+import opentelemetry.instrumentation.system_metrics
+import opentelemetry.sdk.metrics
+import opentelemetry.sdk.metrics.export
 import opentelemetry.semconv.resource
+import opentelemetry.metrics
 import opentelemetry.trace
 
 
@@ -20,18 +25,37 @@ def otel_initialize() -> opentelemetry.trace.Tracer:
     global _OTEL_INITIALIZED
     if not _OTEL_INITIALIZED:
 
-        # opentelemetry.instrumentation.aiohttp_client.AioHttpClientInstrumentor().instrument()
-        # opentelemetry.instrumentation.asyncpg.AsyncPGInstrumentor().instrument()
+        trace_exporter: typing.Final = opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter()
 
-        provider: typing.Final = opentelemetry.sdk.trace.TracerProvider()
+        span_processor: typing.Final = opentelemetry.sdk.trace.export.BatchSpanProcessor(trace_exporter)
 
-        exporter: typing.Final = opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter()
+        trace_provider: typing.Final = opentelemetry.sdk.trace.TracerProvider()
 
-        processor: typing.Final = opentelemetry.sdk.trace.export.BatchSpanProcessor(exporter)
+        trace_provider.add_span_processor(span_processor)
 
-        provider.add_span_processor(processor)
+        opentelemetry.trace.set_tracer_provider(trace_provider)
 
-        opentelemetry.trace.set_tracer_provider(provider)
+        instrumentor = opentelemetry.instrumentation.aiohttp_client.AioHttpClientInstrumentor()
+        if not instrumentor.is_instrumented_by_opentelemetry:
+            instrumentor.instrument
+
+        # instrumentor = opentelemetry.instrumentation.asyncpg.AsyncPGInstrumentor()
+        # if not instrumentor.is_instrumented_by_opentelemetry:
+        #     instrumentor.instrument()
+
+        meter_exporter: typing.Final = opentelemetry.exporter.otlp.proto.grpc.metric_exporter.OTLPMetricExporter()
+
+        meter_provider: typing.Final = opentelemetry.sdk.metrics.MeterProvider(
+            metric_readers=[opentelemetry.sdk.metrics.export.PeriodicExportingMetricReader(
+                export_interval_millis=600_000,
+                exporter=meter_exporter)],
+        )
+
+        opentelemetry.metrics.set_meter_provider(meter_provider)
+
+        instrumentor = opentelemetry.instrumentation.system_metrics.SystemMetricsInstrumentor()
+        if not instrumentor.is_instrumented_by_opentelemetry:
+            instrumentor.instrument()
 
         _OTEL_INITIALIZED = True
 

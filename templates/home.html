@@ -1,8 +1,20 @@
 {% extends "base.html" %}
 {% block content %}
+
+{% if magic_character %}
+<section>
+    <p>Note: Your character is configured to see the same pages as a contributor, even if you are logged in as a user.</p>
+</section>
+{% endif %}
+
+<section id="news">
+{% include "news.html" %}
+</section>
+
 {% if active_timers %}
-<div class="box">
+<section id="active_timers">
     <h3>Active Structure Timers</h3>
+    <p></p>
     <table>
         <thead>
             <tr>
@@ -24,20 +36,14 @@
             </tr>
             {% endfor %}
         </tbody>
-        <tfoot>
-            <tr>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-            </tr>
-        </tfoot>
     </table>
-</div>
+</section>
 {% endif %}
+
 {% if structures_without_fuel %}
-<div class="box">
+<section id="structures_without_fuel">
     <h3>Structures Without Fuel</h3>
+    <p></p>
     <table>
         <thead>
             <tr>
@@ -57,23 +63,17 @@
             </tr>
             {% endfor %}
         </tbody>
-        <tfoot>
-            <tr>
-                <td></td>
-                <td></td>
-                <td></td>
-            </tr>
-        </tfoot>
     </table>
-</div>
+</section>
 {% endif %}
+
 {% if scheduled_extractions or completed_extractions or unscheduled_extractions %}
-<div class="box">
+<section id="extractions">
     <h3>Moon Drill Extractions</h3>
+    <p></p>
     <table>
         <thead>
             <tr>
-                <th class="align_left">Corporation</th>
                 <th class="align_left">Structure</th>
                 <th class="align_left">Moon</th>
                 <th>Fuel Expiry</th>
@@ -85,7 +85,6 @@
             {% if completed_extractions %}
             {% for x in completed_extractions %}
             <tr class="{{x.timestamp|timestamp_age}}">
-                <td class="align_left"><a href="{{ x.corporation_id|zkillboard_corporation }}" target="_blank"> {{ x.corporation_id|esi_corporation_name }} </a></td>
                 <td class="align_left">{{ x.structure.name }}</td>
                 <td class="align_left"><a href="/moon/{{ x.moon.moon_id }}">{{ x.moon.name }}</a></td>
                 <td>{{ x.structure.fuel_expires|datetime }}</td>
@@ -101,13 +100,11 @@
                 <td>&nbsp;</td>
                 <td>&nbsp;</td>
                 <td>&nbsp;</td>
-                <td>&nbsp;</td>
             </tr>
             {% endif %}
             {% if scheduled_extractions %}
             {% for x in scheduled_extractions %}
             <tr class="{{x.timestamp|timestamp_age}}">
-                <td class="align_left"><a href="{{ x.corporation_id|zkillboard_corporation }}" target="_blank"> {{ x.corporation_id|esi_corporation_name }} </a></td>
                 <td class="align_left">{{ x.structure.name }}</td>
                 <td class="align_left"><a href="/moon/{{ x.moon.moon_id }}">{{ x.moon.name }}</a></td>
                 <td>{{ x.structure.fuel_expires|datetime }}</td>
@@ -123,12 +120,10 @@
                 <td>&nbsp;</td>
                 <td>&nbsp;</td>
                 <td>&nbsp;</td>
-                <td>&nbsp;</td>
             </tr>
             {% endif %}
             {% for x in unscheduled_extractions %}
             <tr class="{{x.timestamp|timestamp_age}}">
-                <td class="align_left"><a href="{{ x.corporation_id|zkillboard_corporation }}" target="_blank"> {{ x.corporation.name }} </a></td>
                 <td class="align_left">{{ x.structure.name }}</td>
                 <td class="align_left"><a href="/moon/{{ x.moon.moon_id }}">{{ x.moon.name }}</a></td>
                 <td>{{ x.structure.fuel_expires|datetime }}</td>
@@ -137,88 +132,76 @@
             </tr>
             {% endfor %}
         </tbody>
-        <tfoot>
-            <tr>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-            </tr>
-        </tfoot>
     </table>
-</div>
+</section>
 {% endif %}
+
 {% if structure_fuel_expiries %}
-<div class="box">
+<section id="fuel_expiries">
     <h3>Structure Fuel Expiries</h3>
+    <p></p>
     <table>
         <thead>
             <tr>
-                <th class="align_left">Corporation</th>
                 <th class="align_left">Structure</th>
                 <th class="align_left">System</th>
+                <th class="align_left">Corporation</th>
                 <th>Fuel Expiry</th>
             </tr>
         </thead>
         <tbody>
             {% for x in structure_fuel_expiries %}
             <tr class="{{x.timestamp|timestamp_age}}">
-                <td class="align_left"><a href="{{ x.corporation_id|zkillboard_corporation }}" target="_blank">{{ x.corporation.name }}</a></td>
                 <td class="align_left">{{ x.name }}</td>
                 <td class="align_left"><a href="{{ x.system_id|zkillboard_system }}" target="_blank">{{ x.system_id|esi_system_name }}</a></td>
+                <td class="align_left"><a href="{{ x.corporation_id|zkillboard_corporation }}" target="_blank">{{ x.corporation.name }}</a></td>
                 <td>{{ x.fuel_expires|datetime }}</td>
             </tr>
             {% endfor %}
         </tbody>
-        <tfoot>
-            <tr>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-            </tr>
-        </tfoot>
     </table>
-</div>
+</section>
 {% endif %}
+
 {% if last_update %}
-<div class="box">
+<section id="last_update">
     <h3>Most Recent Structure Update</h3>
+    <p></p>
     <table>
         <thead>
             <tr>
-                <th class="align_left">Corporation {% if character_contributor %} (Character){% endif %}</th>
+                <th class="align_left">Corporation</th>
+                {% if character_contributor %}
+                <th class="align_left">Character</th>
+                {% else %}
+                <th class="align_left">&nbsp;</th>
+                {% endif %}
+                {% if structure_counts %}
+                <th>Structures</th>
+                {% endif %}
                 <th>Last Update</th>
             </tr>
         </thead>
         <tbody>
             {% for x in last_update %}
             <tr>
-                <td class="align_left"><a href="{{ x.corporation_id|zkillboard_corporation }}" target="_blank">{{ x.corporation_id|esi_corporation_name }}</a>
-                    {% if character_contributor %} (<a href="{{ x.character_id|zkillboard_character }}" target="_blank">{{ x.character_id|esi_character_name }}</a>){% endif %}
-                </td>
+                <td class="align_left"><a href="{{ x.corporation_id|zkillboard_corporation }}" target="_blank">{{ x.corporation_id|esi_corporation_name }}</a></td>
+                {% if character_contributor %}
+                <td class="align_left"><a href="{{ x.character_id|zkillboard_character }}" target="_blank">{{ x.character_id|esi_character_name }}</a></td>
+                {% else %}
+                <th class="align_left">&nbsp;</th>
+                {% endif %}
+                {% if structure_counts %}
+                <td>{{ structure_counts[loop.index0] }}</td>
+                {% endif %}
                 <td>{{ x.timestamp|datetime }}</td>
             </tr>
             {% endfor %}
         </tbody>
-        <tfoot>
-            <tr>
-                <td></td>
-                <td></td>
-            </tr>
-        </tfoot>
     </table>
     {% if character_contributor %}
     <p>Note: only contributors see contributor character names. users see contributor corporation names only.</p>
     {% endif %}
-</div>
-{% endif %}
-{% if character_contributor %}
-<div class="box">
-    <h3>Recent Usage</h3>
-    <p>Recent <a href="/usage/">usage information</a> is available.</p>
-</div>
+</section>
 {% endif %}
 {% endblock %}

@@ -370,7 +370,7 @@ class AppTables:
 class AppDatabase:
 
     def __init__(self, db: str, echo: bool = False) -> None:
-        self._engine: typing.Final = sqlalchemy.ext.asyncio.create_async_engine(db, echo=echo, future=False, pool_size=8, max_overflow=0)
+        self._engine: typing.Final = sqlalchemy.ext.asyncio.create_async_engine(db, echo=echo, pool_size=8, max_overflow=4)
         self._sessionmaker = None
         self._initialized = False
 

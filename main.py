@@ -18,7 +18,6 @@ from app.tasks import (AppAccessControlTask, AppMoonYieldTask,
                        ESIUniverseConstellationsBackfillTask,
                        ESIUniverseRegionsBackfillTask,
                        ESIUniverseSystemsBackfillTask)
-# from support.middleware import RateLimiterMiddleware
 from support.telemetry import otel, otel_initialize
 
 app: typing.Final = quart.Quart(__name__)
@@ -185,7 +184,7 @@ async def _root() -> quart.ResponseReturnValue:
         structure_fuel_results: typing.Final[list[AppTables.Structure]] = list()
         structures_without_fuel_results: typing.Final[list[AppTables.Structure]] = list()
         last_update_results: typing.Final = list()
-        # page_expires = ar.ts + datetime.timedelta(minutes=5)
+        structure_counts: typing.Final = list()
 
         try:
             async with await evedb.sessionmaker() as session:
@@ -196,24 +195,28 @@ async def _root() -> quart.ResponseReturnValue:
                 structure_fuel_results.extend(await AppFunctions.get_structure_fuel_expiries(session, ar.ts))
                 structures_without_fuel_results.extend(await AppFunctions.get_structures_without_fuel(session, ar.ts))
                 last_update_results.extend(await AppFunctions.get_refresh_times(session, ar.ts))
+                structure_count_dict: typing.Final = await AppFunctions.get_structure_counts(session, ar.ts)
+                for last_update in last_update_results:
+                    last_update: AppTables.PeriodicTaskTimestamp
+                    structure_counts.append(structure_count_dict.get(last_update.corporation_id, 0))
 
         except Exception as ex:
             app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
 
-        return await app.make_response(
-            await quart.render_template(
-                "home.html",
-                character_id=ar.character_id,
-                active_timers=active_timer_results,
-                completed_extractions=completed_extraction_results,
-                scheduled_extractions=scheduled_extraction_results,
-                structure_fuel_expiries=structure_fuel_results,
-                structures_without_fuel=structures_without_fuel_results,
-                unscheduled_extractions=unscheduled_extraction_results,
-                last_update=last_update_results,
-                character_trusted=ar.trusted,
-                character_contributor=ar.contributor,
-            ),
+        return await quart.render_template(
+            "home.html",
+            character_id=ar.character_id,
+            active_timers=active_timer_results,
+            completed_extractions=completed_extraction_results,
+            scheduled_extractions=scheduled_extraction_results,
+            structure_fuel_expiries=structure_fuel_results,
+            structures_without_fuel=structures_without_fuel_results,
+            unscheduled_extractions=unscheduled_extraction_results,
+            last_update=last_update_results,
+            structure_counts=structure_counts,
+            character_trusted=ar.trusted,
+            character_contributor=ar.contributor,
+            magic_character=ar.magic_character
         )
 
     elif ar.character_id > 0 and not ar.permitted:
@@ -273,11 +276,6 @@ if __name__ == "__main__":
             app.asgi_app = opentelemetry.instrumentation.asgi.OpenTelemetryMiddleware(
                 app.asgi_app
             )
-
-            # app.asgi_app = RateLimiterMiddleware(
-            #     app.asgi_app,
-            #     threshold=32
-            # )
 
             app.asgi_app = ProxyHeadersMiddleware(
                 app.asgi_app, trusted_hosts=app_trusted_hosts

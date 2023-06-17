@@ -2,6 +2,7 @@ import asyncio
 import base64
 import collections.abc
 import datetime
+import http
 import inspect
 import typing
 import urllib.parse
@@ -76,7 +77,7 @@ class AppSSOFunctions:
         return False
 
     @staticmethod
-    async def update_credentials(db: AppDatabase, character_id: int, edict: dict) -> bool:
+    async def update_credentials(db: AppDatabase, character_id: int, edict: dict, keep_enabled: bool) -> bool:
         if not character_id > 0:
             return False
 
@@ -109,7 +110,7 @@ class AppSSOFunctions:
                 )
                 await session.execute(query)
 
-                session.add(AppTables.PeriodicCredentials(
+                obj = AppTables.PeriodicCredentials(
                     character_id=edict.get(AppSSO.ESI_CHARACTER_ID, 0),
                     corporation_id=edict.get(AppSSO.ESI_CORPORATION_ID, 0),
                     is_permitted=bool(edict.get(AppSSO.ESI_CHARACTER_IS_STATION_MANAGER_ROLE, False)),
@@ -122,7 +123,13 @@ class AppSSOFunctions:
                     access_token_expiry=edict.get(AppSSO.ESI_ACCESS_TOKEN_EXPIRY, epoch),
                     refresh_token=edict.get(AppSSO.ESI_REFRESH_TOKEN, ''),
                     access_token=edict.get(AppSSO.ESI_ACCESS_TOKEN, '')
-                ))
+                )
+
+                if not keep_enabled:
+                    obj.is_enabled = False
+                    obj.is_permitted = False
+
+                session.add(obj)
 
                 await session.commit()
             return True
@@ -320,7 +327,7 @@ class AppSSO:
                 await asyncio.sleep(refresh_interval.total_seconds())
                 continue
 
-            failure_edict: typing.Final = {
+            fallback_edict: typing.Final = {
                 AppSSO.APP_SESSION_ID: refresh_obj.session_id,
                 AppSSO.ESI_CHARACTER_ID: refresh_obj.character_id,
                 AppSSO.ESI_CORPORATION_ID: refresh_obj.corporation_id,
@@ -336,14 +343,16 @@ class AppSSO:
             character_id: typing.Final = int(refresh_obj.character_id)
             session_id: typing.Final = refresh_obj.session_id
             refresh_token: typing.Final = refresh_obj.refresh_token
+            keep_enabled = True
 
             self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh {refresh_obj.character_id} / {refresh_obj.corporation_id}")
             edict = await self.esi_sso_refresh(session_id, refresh_token)
             if len(edict) == 0:
                 self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh failed for {refresh_obj.character_id}")
-                edict = failure_edict
+                edict = fallback_edict
+                keep_enabled = False
 
-            await AppSSOFunctions.update_credentials(self.db, character_id, edict)
+            await AppSSOFunctions.update_credentials(self.db, character_id, edict, keep_enabled)
 
             # if self.outbound:
             #     await self.outbound.put(SSOTokenRefreshEvent(character_id=character_id, session_id=session_id))
@@ -352,6 +361,8 @@ class AppSSO:
 
     @otel
     async def esi_decode_token(self, session_id: str, token_response: dict) -> dict:
+
+        token_response = token_response or dict()
 
         required_response_keys: typing.Final = ["access_token", "token_type", "refresh_token"]
         if not all(map(lambda x: bool(token_response.get(x)), required_response_keys)):
@@ -517,14 +528,14 @@ class AppSSO:
 
         required_callback_keys: typing.Final = ["code", "state"]
         if not all(map(lambda x: bool(quart.request.args.get(x)), required_callback_keys)):
-            quart.abort(500, f"invalid call to {self.callback_route}")
+            quart.abort(http.HTTPStatus.BAD_REQUEST, f"invalid call to {self.callback_route}")
 
         if quart.request.args["state"] != session_id:
-            quart.abort(500, f"invalid session state in {self.callback_route}")
+            quart.abort(http.HTTPStatus.BAD_REQUEST, f"invalid session state in {self.callback_route}")
 
         post_token_url = self.configuration.get('token_endpoint', str())
         if not AppESI.valid_url(post_token_url):
-            quart.abort(500, f"invalid token_endpoint in {self.callback_route}")
+            quart.abort(http.HTTPStatus.SERVICE_UNAVAILABLE, f"invalid token_endpoint in {self.callback_route}")
 
         basic_auth: typing.Final = f"{self.client_id}:{self.client_secret}"
         post_session_headers: typing.Final = {
@@ -538,16 +549,16 @@ class AppSSO:
 
         token_response = dict()
         async with aiohttp.ClientSession(headers=post_session_headers) as http_session:
-            token_response = await AppESI.post_url(http_session, post_token_url, post_body)
+            token_response = await AppESI.post_url(http_session, post_token_url, post_body) or dict()
 
         edict: typing.Final = await self.esi_decode_token(session_id, token_response)
         if len(edict) == 0:
-            quart.abort(500, "invalid token_response")
+            quart.abort(http.HTTPStatus.BAD_GATEWAY, "invalid token_response")
 
         edict: dict
         character_id: typing.Final = edict.get(AppSSO.ESI_CHARACTER_ID, 0)
 
-        await AppSSOFunctions.update_credentials(self.db, character_id, edict)
+        await AppSSOFunctions.update_credentials(self.db, character_id, edict, True)
         await self.esi_update_client_session(client_session, character_id, edict)
 
         login_type = AppAuthType.LOGIN_USER
@@ -577,7 +588,7 @@ class AppSSO:
                 "refresh_token": refresh_token,
                 "client_id": self.client_id
             }
-            token_response = await AppESI.post_url(http_session, post_token_url, post_body)
+            token_response = await AppESI.post_url(http_session, post_token_url, post_body) or dict()
 
         return await self.esi_decode_token(session_id, token_response)
 
@@ -590,8 +601,7 @@ class AppSSO:
         }
 
         async with aiohttp.ClientSession() as http_session:
-            status_result = await AppESI.get_url(http_session, f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/status/", request_params=self.request_params | request_params)
-            status_result = status_result or dict()
+            status_result = await AppESI.get_url(http_session, f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/status/", request_params=self.request_params | request_params) or dict()
             self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {str(status_result)}")
             if all([int(status_result.get("players", 0)) > 128, bool(status_result.get("vip", False)) is False]):
                 return True

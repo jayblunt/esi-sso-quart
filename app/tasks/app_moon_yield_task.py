@@ -1,8 +1,9 @@
+import asyncio
 import collections
 import collections.abc
-import dataclasses
 import inspect
 import json
+import logging
 import os
 import typing
 
@@ -19,8 +20,7 @@ from .. import AppTables
 from .task import AppDatabaseTask
 
 
-@dataclasses.dataclass(frozen=True)
-class MoonYieldData:
+class MoonYieldData(typing.NamedTuple):
     type_id: int
     system_id: int
     planet_id: int
@@ -35,20 +35,28 @@ class AppMoonYieldTask(AppDatabaseTask):
 
         self.logger.info(f"> {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
 
-        moon_data_list: typing.Final = list()
         moon_data_filename: typing.Final = os.path.abspath(os.path.join(self.configdir, "moon_data.json"))
 
-        try:
-            if not os.path.exists(moon_data_filename):
-                self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: moon_data_filename:{moon_data_filename}")
+        @otel
+        def read_moon_data(logger: logging.Logger, filename: str) -> list:
 
-            if os.path.exists(moon_data_filename):
-                with open(moon_data_filename) as ifp:
-                    [moon_data_list.append(MoonYieldData(**edict)) for edict in json.load(ifp)]
+            moon_data_list: typing.Final = list()
 
-        except Exception as ex:
-            otel_add_exception(ex)
-            self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+            try:
+                if not os.path.exists(moon_data_filename):
+                    logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: moon_data_filename:{moon_data_filename}")
+
+                if os.path.exists(moon_data_filename):
+                    with open(moon_data_filename) as ifp:
+                        [moon_data_list.append(MoonYieldData(**edict)) for edict in json.load(ifp)]
+
+            except Exception as ex:
+                otel_add_exception(ex)
+                logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+
+            return moon_data_list
+
+        moon_data_list: typing.Final = await asyncio.to_thread(read_moon_data, self.logger, moon_data_filename)
 
         if len(moon_data_list) == 0:
             self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: moon_data_list:{moon_data_list}")

@@ -31,7 +31,7 @@ class AppCommonState:
         self.logger: typing.Final = logger or logging.getLogger(self.__class__.__name__)
         self.name: typing.Final = self.__class__.__name__
 
-    async def query_scalar_set(self, query: sqlalchemy.sql.Select) -> set:
+    async def query_scalar_set(self, query: sqlalchemy.sql.Select) -> set():
         try:
             async with await self.db.sessionmaker() as session:
                 session: sqlalchemy.ext.asyncio.AsyncSession
@@ -624,10 +624,6 @@ class AppStructureTask(AppDatabaseTask):
 
 class AppStructurePollingTask(AppStructureTask):
 
-    # STRUCTURE_REFRESH_INTERVAL_SECONDS: typing.Final = 300
-    STRUCTURE_REFRESH_INTERVAL_SECONDS: typing.Final = 360
-    # STRUCTURE_REFRESH_INTERVAL_SECONDS: typing.Final = 450
-
     @otel
     async def get_available_periodic_credentials(self, now: datetime.datetime) -> dict[int, AppTables.PeriodicCredentials]:
 
@@ -716,7 +712,7 @@ class AppStructurePollingTask(AppStructureTask):
     @otel
     async def run_once(self, client_session: collections.abc.MutableSet):
 
-        refresh_interval: typing.Final = datetime.timedelta(seconds=self.STRUCTURE_REFRESH_INTERVAL_SECONDS)
+        refresh_interval: typing.Final = datetime.timedelta(seconds=AppConstants.STRUCTURE_REFRESH_INTERVAL_SECONDS)
         now: typing.Final = datetime.datetime.now(tz=datetime.timezone.utc)
 
         available_corporation_id_dict: typing.Final = await self.get_available_periodic_credentials(now)
