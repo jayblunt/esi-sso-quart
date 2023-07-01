@@ -267,6 +267,8 @@ class AppSSO:
         async with aiohttp.ClientSession(headers=session_headers) as http_session:
             return await AppESI.get_url(http_session, url, request_params=self.request_params) or dict()
 
+        return dict()
+
     @otel
     async def _get_jwks(self, url: str) -> list:
         payload: typing.Final = await self._get_json(url)

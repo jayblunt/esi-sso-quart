@@ -1,5 +1,4 @@
 import collections.abc
-import http
 import inspect
 import typing
 
@@ -12,9 +11,9 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
-from support.telemetry import otel, otel_add_error, otel_add_exception
+from support.telemetry import otel, otel_add_exception
 
-from .. import AppConstants, AppSSO, AppTables
+from .. import AppConstants, AppSSO, AppTables, AppESI
 from .task import AppTask
 
 
@@ -34,13 +33,10 @@ class ESIAlliancMemberTask(AppTask):
         if alliance_id > 0:
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=AppConstants.ESI_LIMIT_PER_HOST)) as http_session:
                 url = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/alliances/{alliance_id}/corporations/"
-                async with await http_session.get(url, params=self.request_params) as response:
-                    if response.status in [http.HTTPStatus.OK]:
-                        for corporation_id in list(await response.json()):
-                            corporation_id_set.add(int(corporation_id))
-                    else:
-                        otel_add_error(f"{response.url} -> {response.status}")
-                        self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
+                response = await AppESI.get_url(http_session, url, self.request_params)
+                if response is not None:
+                    for corporation_id in list(response):
+                        corporation_id_set.add(int(corporation_id))
 
         if alliance_id > 0 and len(corporation_id_set) > 0:
 
@@ -85,24 +81,21 @@ class ESIAlliancMemberTask(AppTask):
                         for corporation_id in corporation_id_set - existing_corporation_id_set:
 
                             url = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/corporations/{corporation_id}/"
-                            async with await http_session.get(url, params=self.request_params) as response:
-                                if response.status in [http.HTTPStatus.OK]:
-                                    edict: typing.Final = dict({
-                                        "corporation_id": corporation_id
-                                    })
+                            response = await AppESI.get_url(http_session, url, self.request_params)
+                            if response is not None:
+                                edict: typing.Final = dict({
+                                    "corporation_id": corporation_id
+                                })
 
-                                    for k, v in dict(await response.json()).items():
-                                        if k in ["alliance_id"]:
-                                            v = int(v)
-                                        elif k not in ["name", "ticker"]:
-                                            continue
-                                        edict[k] = v
+                                for k, v in dict(response).items():
+                                    if k in ["alliance_id"]:
+                                        v = int(v)
+                                    elif k not in ["name", "ticker"]:
+                                        continue
+                                    edict[k] = v
 
-                                    obj = AppTables.Corporation(**edict)
-                                    obj_set.add(obj)
-                                else:
-                                    otel_add_error(f"{response.url} -> {response.status}")
-                                    self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
+                                obj = AppTables.Corporation(**edict)
+                                obj_set.add(obj)
 
                     if len(obj_set) > 0:
                         session.add_all(obj_set)

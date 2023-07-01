@@ -116,7 +116,7 @@ def otel_add_error(description: str | None = None) -> None:
 
     span = opentelemetry.trace.get_current_span()
     if span.is_recording():
-        span.set_status(opentelemetry.trace.Status(opentelemetry.trace.StatusCode.ERROR), description=description)
+        span.set_status(status=opentelemetry.trace.StatusCode.ERROR, description=description)
 
 
 def otel_add_exception(ex: Exception) -> None:
@@ -127,4 +127,4 @@ def otel_add_exception(ex: Exception) -> None:
     span = opentelemetry.trace.get_current_span()
     if span.is_recording():
         span.record_exception(ex)
-        span.set_status(opentelemetry.trace.Status(opentelemetry.trace.StatusCode.ERROR))
+        span.set_status(status=opentelemetry.trace.StatusCode.ERROR)

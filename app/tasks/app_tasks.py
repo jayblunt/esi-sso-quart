@@ -717,6 +717,7 @@ class AppStructurePollingTask(AppStructureTask):
 
         available_corporation_id_dict: typing.Final = await self.get_available_periodic_credentials(now)
         if len(available_corporation_id_dict.keys()) == 0:
+            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {len(available_corporation_id_dict.keys())=}")
             await asyncio.sleep(refresh_interval.total_seconds())
             return
 
@@ -728,6 +729,7 @@ class AppStructurePollingTask(AppStructureTask):
         if oldest_corporation_timestamp + refresh_interval > now:
             remaining_interval: datetime.timedelta = (oldest_corporation_timestamp + refresh_interval) - (now)
             # remaining_sleep_interval = min(refresh_interval.total_seconds(), remaining_interval.total_seconds())
+            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {oldest_corporation_id=}, {oldest_corporation_timestamp=}, {remaining_interval=}")
             await asyncio.sleep(remaining_interval.total_seconds())
             return
 

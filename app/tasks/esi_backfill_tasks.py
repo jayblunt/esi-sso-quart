@@ -51,19 +51,32 @@ class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
         url: typing.Final = self.item_url(id)
         attempts_remaining = AppConstants.ESI_ERROR_RETRY_COUNT
         while attempts_remaining > 0:
-            async with await http_session.get(url, params=self.request_params) as response:
-                if response.status in [http.HTTPStatus.OK]:
-                    edict: typing.Final = self.item_dict(id, await response.json())
-                    if len(edict) > 0:
-                        return edict
-                else:
-                    attempts_remaining -= 1
-                    otel_add_error(f"{response.url} -> {response.status}")
-                    self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
-                    if response.status in [http.HTTPStatus.BAD_REQUEST, http.HTTPStatus.FORBIDDEN]:
-                        attempts_remaining = 0
-                    if attempts_remaining > 0:
-                        await asyncio.sleep(AppConstants.ESI_ERROR_SLEEP_TIME * AppConstants.ESI_ERROR_SLEEP_MODIFIERS.get(response.status, 1))
+            try:
+                async with await http_session.get(url, params=self.request_params) as response:
+                    if response.status in [http.HTTPStatus.OK]:
+                        edict: typing.Final = self.item_dict(id, await response.json())
+                        if len(edict) > 0:
+                            return edict
+                    else:
+                        attempts_remaining -= 1
+                        otel_add_error(f"{response.url} -> {response.status}")
+                        self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
+                        if response.status in [http.HTTPStatus.BAD_REQUEST, http.HTTPStatus.FORBIDDEN]:
+                            attempts_remaining = 0
+                        if attempts_remaining > 0:
+                            await asyncio.sleep(AppConstants.ESI_ERROR_SLEEP_TIME * AppConstants.ESI_ERROR_SLEEP_MODIFIERS.get(response.status, 1))
+
+            except aiohttp.client_exceptions.ClientConnectionError as ex:
+                attempts_remaining -= 1
+                otel_add_error(f"{url} -> {ex}")
+                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url=}, {ex=}")
+                if attempts_remaining > 0:
+                    await asyncio.sleep(AppConstants.ESI_ERROR_SLEEP_TIME)
+
+            except Exception as ex:
+                otel_add_error(f"{url} -> {ex}")
+                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url=}, {ex=}")
+                break
 
         self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {id} -> {None}")
         return None
@@ -95,6 +108,7 @@ class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
         if len(missing_obj_id_set) > 0:
 
             add_edict_list: typing.Final = list()
+
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=AppConstants.ESI_LIMIT_PER_HOST)) as http_session:
                 task_list: typing.Final = list()
                 for obj_id in missing_obj_id_set:
