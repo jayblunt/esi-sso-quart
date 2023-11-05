@@ -2,8 +2,10 @@ import collections
 import dataclasses
 import datetime
 import functools
+import hashlib
 import inspect
 import typing
+import urllib.parse
 
 import quart
 import quart.sessions
@@ -12,6 +14,7 @@ import sqlalchemy.ext.asyncio
 import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
+import sqlalchemy.sql.functions
 
 from support.telemetry import otel, otel_add_event
 
@@ -81,10 +84,11 @@ class AppFunctions:
     @otel
     async def get_active_timers(session: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list[AppTables.Structure]:
 
+        timer_window: typing.Final = datetime.timedelta(minutes=15)
         query = (
             sqlalchemy.select(AppTables.Structure)
             .where(
-                AppTables.Structure.state_timer_end > now,
+                AppTables.Structure.state_timer_end > now - timer_window,
             )
             .join(AppTables.Structure.system)
             .join(AppTables.Structure.corporation)
@@ -102,8 +106,10 @@ class AppFunctions:
         query = (
             sqlalchemy.select(AppTables.CompletedExtraction)
             .where(
-                AppTables.CompletedExtraction.belt_decay_time > now,
-                AppTables.CompletedExtraction.chunk_arrival_time <= now,
+                sqlalchemy.and_(
+                    AppTables.CompletedExtraction.belt_decay_time > now,
+                    AppTables.CompletedExtraction.chunk_arrival_time <= now,
+                )
             )
             .order_by(AppTables.CompletedExtraction.chunk_arrival_time)
             .options(sqlalchemy.orm.selectinload(AppTables.CompletedExtraction.structure))
@@ -120,8 +126,10 @@ class AppFunctions:
         query = (
             sqlalchemy.select(AppTables.ScheduledExtraction)
             .where(
-                AppTables.ScheduledExtraction.natural_decay_time > now,
-                AppTables.ScheduledExtraction.extraction_start_time <= now,
+                sqlalchemy.and_(
+                    AppTables.ScheduledExtraction.natural_decay_time > now,
+                    AppTables.ScheduledExtraction.extraction_start_time <= now,
+                )
             )
             .order_by(AppTables.ScheduledExtraction.chunk_arrival_time)
             .options(sqlalchemy.orm.selectinload(AppTables.ScheduledExtraction.structure))
@@ -138,24 +146,20 @@ class AppFunctions:
         query = (
             sqlalchemy.select(AppTables.CompletedExtraction)
             .where(
-                sqlalchemy.and_(
-                    AppTables.CompletedExtraction.structure_id.in_(
-                        sqlalchemy.select(AppTables.Structure.structure_id)
-                        .where(
-                            sqlalchemy.and_(
-                                AppTables.Structure.has_moon_drill == sqlalchemy.sql.expression.true(),
-                                AppTables.Structure.structure_id.notin_(
-                                    sqlalchemy.select(sqlalchemy.distinct(AppTables.ScheduledExtraction.structure_id))
-                                ),
-                            )
+                AppTables.CompletedExtraction.structure_id.in_(
+                    sqlalchemy.select(AppTables.Structure.structure_id)
+                    .where(
+                        sqlalchemy.and_(
+                            AppTables.Structure.has_moon_drill == sqlalchemy.sql.expression.true(),
+                            AppTables.Structure.structure_id.notin_(
+                                sqlalchemy.select(AppTables.ScheduledExtraction.structure_id)
+                                .where(now <= AppTables.ScheduledExtraction.natural_decay_time)
+                            ),
                         )
-                    ),
-                    AppTables.CompletedExtraction.structure_id.in_(
-                        sqlalchemy.select(AppTables.Structure.structure_id)
                     )
                 )
             )
-            .order_by(AppTables.CompletedExtraction.chunk_arrival_time)
+            .order_by(AppTables.CompletedExtraction.natural_decay_time)
             .options(sqlalchemy.orm.selectinload(AppTables.CompletedExtraction.structure))
             .options(sqlalchemy.orm.selectinload(AppTables.CompletedExtraction.corporation))
             .options(sqlalchemy.orm.selectinload(AppTables.CompletedExtraction.moon))
@@ -170,8 +174,10 @@ class AppFunctions:
         query = (
             sqlalchemy.select(AppTables.Structure)
             .where(
-                AppTables.Structure.fuel_expires != sqlalchemy.sql.expression.null(),
-                AppTables.Structure.fuel_expires > now,
+                sqlalchemy.and_(
+                    AppTables.Structure.fuel_expires != sqlalchemy.sql.expression.null(),
+                    AppTables.Structure.fuel_expires > now,
+                )
             )
             .join(AppTables.Structure.system)
             .join(AppTables.Structure.corporation)
@@ -209,8 +215,10 @@ class AppFunctions:
         query = (
             sqlalchemy.select(AppTables.Structure)
             .where(
-                AppTables.Structure.fuel_expires != sqlalchemy.sql.expression.null(),
-                AppTables.Structure.fuel_expires > now,
+                sqlalchemy.and_(
+                    AppTables.Structure.fuel_expires != sqlalchemy.sql.expression.null(),
+                    AppTables.Structure.fuel_expires > now,
+                )
             )
         )
 
@@ -270,7 +278,7 @@ class AppFunctions:
             .order_by(sqlalchemy.desc(AppTables.ExtractionHistory.chunk_arrival_time))
             # .options(sqlalchemy.orm.selectinload(EveTables.ExtractionHistory.corporation))
             # .options(sqlalchemy.orm.selectinload(EveTables.ExtractionHistory.moon))
-            .limit(12)
+            .limit(10)
         )
 
         results = list()
@@ -283,6 +291,144 @@ class AppFunctions:
                 'tod': cat.hour // 3,
             })
         return results
+
+    @staticmethod
+    @otel
+    async def get_moon_structure(session: sqlalchemy.ext.asyncio.AsyncSession, moon_id: int, now: datetime.datetime) -> AppTables.StructureHistory:
+
+        structure_id = None
+        if structure_id is None:
+            query = (
+                sqlalchemy.select(
+                    AppTables.ScheduledExtraction.structure_id
+                )
+                .where(
+                    sqlalchemy.and_(
+                        AppTables.ScheduledExtraction.moon_id == moon_id,
+                        AppTables.ScheduledExtraction.chunk_arrival_time > now,
+                    )
+                )
+            )
+
+            query_result: sqlalchemy.engine.Result = await session.execute(query)
+            structure_id = query_result.scalar_one_or_none()
+
+        if structure_id is None:
+            query = (
+                sqlalchemy.select(
+                    AppTables.ExtractionHistory.structure_id
+                )
+                .where(
+                    sqlalchemy.and_(
+                        AppTables.ExtractionHistory.exists == sqlalchemy.sql.expression.true(),
+                        AppTables.ExtractionHistory.moon_id == moon_id,
+                        AppTables.ExtractionHistory.chunk_arrival_time <= now,
+                    )
+                )
+                .order_by(sqlalchemy.desc(AppTables.ExtractionHistory.chunk_arrival_time))
+                .limit(1)
+            )
+
+            query_result: sqlalchemy.engine.Result = await session.execute(query)
+            structure_id = query_result.scalar_one_or_none()
+
+        if structure_id is None:
+            return None
+
+        query = (
+            sqlalchemy.select(AppTables.StructureHistory)
+            .where(
+                sqlalchemy.and_(
+                    AppTables.StructureHistory.exists == sqlalchemy.sql.expression.true(),
+                    AppTables.StructureHistory.structure_id == structure_id,
+                )
+            )
+            .order_by(sqlalchemy.desc(AppTables.StructureHistory.id))
+            .limit(1)
+            .options(sqlalchemy.orm.selectinload(AppTables.StructureHistory.corporation))
+        )
+
+        query_result: sqlalchemy.engine.Result = await session.execute(query)
+        moon_structure = query_result.scalar_one_or_none()
+        return moon_structure
+
+    @staticmethod
+    @otel
+    async def get_moon_mining_history(session: sqlalchemy.ext.asyncio.AsyncSession, moon_id: int, now: datetime.datetime) -> list[AppTables.ExtractionHistory]:
+
+        query = (
+            sqlalchemy.select(
+                AppTables.ExtractionHistory.structure_id,
+                AppTables.ExtractionHistory.corporation_id,
+                AppTables.ExtractionHistory.chunk_arrival_time
+            )
+            .where(
+                sqlalchemy.and_(
+                    AppTables.ExtractionHistory.exists == sqlalchemy.sql.expression.true(),
+                    AppTables.ExtractionHistory.moon_id == moon_id,
+                    AppTables.ExtractionHistory.chunk_arrival_time <= now,
+                )
+            )
+            .order_by(sqlalchemy.desc(AppTables.ExtractionHistory.chunk_arrival_time))
+            .limit(1)
+        )
+
+        query_result: sqlalchemy.engine.Result = await session.execute(query)
+        observer_id, corporation_id, chunk_arrival_time = query_result.one_or_none()
+
+        # XXX Don't report this corp's history
+        if corporation_id in [98540393]:
+            return list()
+
+        previous_chunk_arrival_date = None
+        if isinstance(chunk_arrival_time, datetime.datetime):
+            previous_chunk_arrival_date = chunk_arrival_time.date()
+
+        if observer_id is None or previous_chunk_arrival_date is None:
+            return list()
+
+        observer_history_id_query = (
+            sqlalchemy.select(sqlalchemy.sql.functions.max(AppTables.ObserverHistory.id))
+            .where(
+                sqlalchemy.and_(
+                    AppTables.ObserverHistory.observer_id == observer_id,
+                    AppTables.ObserverHistory.last_updated >= previous_chunk_arrival_date
+                )
+            )
+        )
+
+        max_id_sq_result: sqlalchemy.engine.Result = await session.execute(observer_history_id_query)
+        observer_history_id = max_id_sq_result.scalar_one_or_none()
+
+        if observer_id is None or previous_chunk_arrival_date is None or observer_history_id is None:
+            return list()
+
+        # print(f"{observer_id=}, {previous_chunk_arrival_date=}, {observer_history_id=}")
+
+        q = (
+            sqlalchemy.select(
+                AppTables.ObserverRecordHistory.observer_id,
+                AppTables.ObserverRecordHistory.character_id,
+                AppTables.ObserverRecordHistory.type_id,
+                sqlalchemy.sql.functions.sum(AppTables.ObserverRecordHistory.quantity).label("quantity"),
+            )
+            .where(
+                sqlalchemy.and_(
+                    AppTables.ObserverRecordHistory.observer_id == observer_id,
+                    AppTables.ObserverRecordHistory.observer_history_id == observer_history_id,
+                    AppTables.ObserverRecordHistory.last_updated >= previous_chunk_arrival_date,
+                )
+            )
+            .group_by(AppTables.ObserverRecordHistory.observer_id, AppTables.ObserverRecordHistory.character_id, AppTables.ObserverRecordHistory.type_id)
+        )
+
+        character_results = collections.defaultdict(functools.partial(collections.defaultdict, int))
+        character_totals = collections.defaultdict(int)
+        async for observer_id, character_id, type_id, quantity in await session.stream(q):
+            character_results[character_id][type_id] = quantity
+            character_totals[character_id] += quantity
+
+        return [(x, dict(character_results[x])) for x in sorted(character_totals, key=character_totals.get, reverse=True)]
 
     @staticmethod
     @otel
@@ -311,7 +457,7 @@ class AppFunctions:
 
     @staticmethod
     @otel
-    async def get_character_name(evedb: AppDatabase, character_id: int) -> str | None:
+    async def get_character_name(evedb: AppDatabase, character_id: int) -> str:
         async with await evedb.sessionmaker() as session:
             query = (
                 sqlalchemy.select(AppTables.Character.name)
@@ -324,7 +470,7 @@ class AppFunctions:
 
     @staticmethod
     @otel
-    async def get_corporation_name(evedb: AppDatabase, corporation_id: int) -> str | None:
+    async def get_corporation_name(evedb: AppDatabase, corporation_id: int) -> str:
         async with await evedb.sessionmaker() as session:
             query = (
                 sqlalchemy.select(AppTables.Corporation.name)
@@ -337,7 +483,7 @@ class AppFunctions:
 
     @staticmethod
     @otel
-    async def get_structure_name(evedb: AppDatabase, structure_id: int) -> str | None:
+    async def get_structure_name(evedb: AppDatabase, structure_id: int) -> str:
         async with await evedb.sessionmaker() as session:
             query = (
                 sqlalchemy.select(AppTables.StructureHistory.name)
@@ -351,7 +497,7 @@ class AppFunctions:
 
     @staticmethod
     @otel
-    async def get_system_name(evedb: AppDatabase, system_id: int) -> str | None:
+    async def get_system_name(evedb: AppDatabase, system_id: int) -> str:
         async with await evedb.sessionmaker() as session:
             query = (
                 sqlalchemy.select(AppTables.UniverseSystem.name)
@@ -364,7 +510,7 @@ class AppFunctions:
 
     @staticmethod
     @otel
-    async def get_moon_name(evedb: AppDatabase, moon_id: int) -> str | None:
+    async def get_moon_name(evedb: AppDatabase, moon_id: int) -> str:
         async with await evedb.sessionmaker() as session:
             query = (
                 sqlalchemy.select(AppTables.UniverseMoon.name)
@@ -377,7 +523,7 @@ class AppFunctions:
 
     @staticmethod
     @otel
-    async def get_type_name(evedb: AppDatabase, type_id: int) -> str | None:
+    async def get_type_name(evedb: AppDatabase, type_id: int) -> str:
         async with await evedb.sessionmaker() as session:
             query = (
                 sqlalchemy.select(AppTables.UniverseType.name)

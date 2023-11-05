@@ -8,10 +8,8 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
+from app import AppAccessType, AppTables, AppTask
 from support.telemetry import otel, otel_add_exception
-
-from .. import AppAccessType, AppTables
-from .task import AppTask
 
 
 class AppAccessControlTask(AppTask):
@@ -44,6 +42,6 @@ class AppAccessControlTask(AppTask):
 
         except Exception as ex:
             otel_add_exception(ex)
-            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
 
         self.logger.info(f"< {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")

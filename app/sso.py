@@ -283,7 +283,7 @@ class AppSSO:
                     self.jwks = new_jwks
             except Exception as ex:
                 otel_add_exception(ex)
-                self.app.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+                self.app.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
 
     async def _refresh_token_task(self) -> None:
         refresh_buffer: typing.Final = datetime.timedelta(seconds=60)
@@ -307,7 +307,7 @@ class AppSSO:
 
             except Exception as ex:
                 otel_add_exception(ex)
-                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
                 await asyncio.sleep(refresh_interval.total_seconds())
                 continue
 
@@ -392,7 +392,7 @@ class AppSSO:
                 decoded_acess_token = jose.jwt.decode(token_response["access_token"], key=jwt_key, issuer=self.JWT_ISSUERS, audience=self.JWT_AUDIENCE)
             except jose.exceptions.JWTError as ex:
                 otel_add_exception(ex)
-                self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+                self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
                 return dict()
 
         # if decoded_acess_token is not None:
@@ -541,8 +541,8 @@ class AppSSO:
 
         basic_auth: typing.Final = f"{self.client_id}:{self.client_secret}"
         post_session_headers: typing.Final = {
-            "Authorization": f"Basic {base64.urlsafe_b64encode(basic_auth.encode('utf-8')).decode()}",
-            "Host": self.configuration.get("issuer"),
+            "Authorization": f"Basic {base64.urlsafe_b64encode(basic_auth.encode()).decode()!s}",
+            "Host": urllib.parse.urlparse(self.configuration.get("issuer")).netloc,
         }
         post_body: typing.Final = {
             "grant_type": "authorization_code",

@@ -11,10 +11,8 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
+from app import AppConstants, AppESI, AppSSO, AppTables, AppTask
 from support.telemetry import otel, otel_add_exception
-
-from .. import AppConstants, AppSSO, AppTables, AppESI
-from .task import AppTask
 
 
 class ESIAlliancMemberTask(AppTask):
@@ -60,7 +58,7 @@ class ESIAlliancMemberTask(AppTask):
 
             except Exception as ex:
                 otel_add_exception(ex)
-                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
 
         if len(corporation_id_set) > 0:
 
@@ -103,4 +101,4 @@ class ESIAlliancMemberTask(AppTask):
 
             except Exception as ex:
                 otel_add_exception(ex)
-                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")

@@ -14,10 +14,8 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
+from app import AppDatabaseTask, AppTables
 from support.telemetry import otel, otel_add_exception
-
-from .. import AppTables
-from .task import AppDatabaseTask
 
 
 class MoonYieldData(typing.NamedTuple):
@@ -52,19 +50,29 @@ class AppMoonYieldTask(AppDatabaseTask):
 
             except Exception as ex:
                 otel_add_exception(ex)
-                logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+                logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
 
             return moon_data_list
 
         moon_data_list: typing.Final = await asyncio.to_thread(read_moon_data, self.logger, moon_data_filename)
 
         if len(moon_data_list) == 0:
-            self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: moon_data_list:{moon_data_list}")
-            self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: moon_data_filename:{moon_data_filename}")
+            self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {moon_data_list=}")
+            self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {moon_data_filename=}")
+
+        type_id_set: typing.Final = set()
+
+        bootstrap = {35835, 35825, 35832,
+            35826, 35836, 35833, 45496, 45499, 45501, 45513, 45495,
+            45500, 45494, 45490, 45492, 45504, 45511, 45493, 45491,
+            45497, 45498, 45510, 45512, 46280, 46282, 46292, 46288,
+            46284, 46302, 46296, 46281, 46297, 46293, 46298, 46316,
+            46308, 46318, 46283, 46300, 46301, 46303}
+        for x in bootstrap:
+            type_id_set.add(x)
 
         if len(moon_data_list) > 0:
 
-            type_id_set: typing.Final = set()
             existing_id_set: typing.Final = set(map(lambda x: x.moon_id, moon_data_list))
             if len(existing_id_set) > 0:
                 try:
@@ -80,7 +88,7 @@ class AppMoonYieldTask(AppDatabaseTask):
 
                 except Exception as ex:
                     otel_add_exception(ex)
-                    self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+                    self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
 
             try:
                 async with await self.db.sessionmaker() as session, session.begin():
@@ -98,9 +106,9 @@ class AppMoonYieldTask(AppDatabaseTask):
 
             except Exception as ex:
                 otel_add_exception(ex)
-                self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+                self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
 
-            if len(type_id_set) > 0:
-                await self.backfill_types(type_id_set)
+        if len(type_id_set) > 0:
+            await self.backfill_types(type_id_set)
 
         self.logger.info(f"< {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")

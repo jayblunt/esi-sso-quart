@@ -137,6 +137,14 @@ class AppTemplates:
 
     @staticmethod
     @otel
+    def _commafiy(n: int) -> str:
+        try:
+            return f"{int(n):,d}"
+        except ValueError:
+            return str(n)
+
+    @staticmethod
+    @otel
     def add_templates(app: quart.Quart, evedb: AppDatabase) -> None:
         AppTemplates.EVEDB = evedb
         filters: typing.Final = {
@@ -154,6 +162,7 @@ class AppTemplates:
             "datetime": AppTemplates._datetime,
             "date": AppTemplates._date,
             "percentage": AppTemplates._percentage,
+            "commafy": AppTemplates._commafiy,
         }
         for k, v in filters.items():
             app.add_template_filter(v, k)

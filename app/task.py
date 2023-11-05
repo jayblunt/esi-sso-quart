@@ -1,13 +1,16 @@
 import abc
 import asyncio
 import collections.abc
+import datetime
 import inspect
 import logging
 import os
+import traceback
 import typing
 
 import aiohttp
 import aiohttp.client_exceptions
+import dateutil.parser
 import sqlalchemy
 import sqlalchemy.engine
 import sqlalchemy.exc
@@ -16,9 +19,8 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
+from app import AppConstants, AppDatabase, AppESI, AppTables
 from support.telemetry import otel, otel_add_error, otel_add_exception
-
-from .. import AppConstants, AppDatabase, AppESI, AppTables
 
 
 class AppTask(metaclass=abc.ABCMeta):
@@ -69,11 +71,41 @@ class AppDatabaseTask(AppTask):
             for k, v in rdict.items():
                 if k in ["name"]:
                     edict[k] = v
-                elif k in ["type_id", "group_id", "market_group_id"]:
+                elif k in ["mass", "volume"]:
+                    edict[k] = float(v)
+                elif k in ["group_id", "icon_id", "market_group_id", "type_id"]:
                     edict[k] = int(v)
                 else:
                     continue
             return AppTables.UniverseType(**edict)
+        return None
+
+
+    @otel
+    async def _get_character(self, character_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.Corporation:
+        url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/characters/{character_id}/"
+        rdict: typing.Final = await AppESI.get_url(http_session, url, request_params=self.request_params)
+        if rdict is not None:
+            edict: typing.Final = dict({
+                "character_id": character_id
+            })
+            for k, v in rdict.items():
+                if k in ["alliance_id", "corporation_id"]:
+                    edict[k] = int(v)
+                elif k in ["birthday"]:
+                    edict[k] = dateutil.parser.parse(v).replace(tzinfo=datetime.timezone.utc)
+                elif k not in ["name"]:
+                    continue
+                edict[k] = v
+
+            conversions: typing.Final = {
+                'birthday': lambda x: dateutil.parser.parse(str(x)).replace(tzinfo=datetime.timezone.utc)
+            }
+            for k, v in conversions.items():
+                if k in edict.keys():
+                    edict[k] = v(edict[k])
+
+            return AppTables.Character(**edict)
         return None
 
 
@@ -154,7 +186,7 @@ class AppDatabaseTask(AppTask):
 
         except Exception as ex:
             otel_add_exception(ex)
-            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
 
 
     @otel
@@ -199,7 +231,53 @@ class AppDatabaseTask(AppTask):
 
         except Exception as ex:
             otel_add_exception(ex)
-            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
+
+
+    @otel
+    async def backfill_characters(self, character_id_set: set) -> None:
+        if not len(character_id_set) > 0:
+            return
+
+        try:
+            async with await self.db.sessionmaker() as session:
+                session: sqlalchemy.ext.asyncio.AsyncSession
+
+                existing_character_id_set: typing.Final = set()
+
+                if len(character_id_set) == 1:
+                    character_id = list(character_id_set)[0]
+                    query = (
+                        sqlalchemy.select(AppTables.Character.character_id)
+                        .where(AppTables.Character.character_id == character_id)
+                        .limit(1)
+                    )
+                    query_result: sqlalchemy.engine.Result = await session.execute(query)
+                    if query_result.scalar_one_or_none() is not None:
+                        existing_character_id_set.add(character_id)
+                else:
+                    query = sqlalchemy.select(AppTables.Character.character_id)
+                    async for x in await session.stream_scalars(query):
+                        existing_character_id_set.add(x)
+
+                missing_character_id_set = character_id_set - existing_character_id_set
+                if len(missing_character_id_set) > 0:
+                    async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=AppConstants.ESI_LIMIT_PER_HOST)) as http_session:
+                        character_task_list: typing.Final = list()
+                        for id in character_id_set - existing_character_id_set:
+                            character_task_list.append(self._get_character(id, http_session))
+
+                        if len(character_task_list) > 0:
+                            session.begin()
+                            result_list = await asyncio.gather(*character_task_list)
+                            for obj in [obj for obj in result_list if obj]:
+                                session.add(obj)
+                            await session.commit()
+
+        except Exception as ex:
+            otel_add_exception(ex)
+            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
+            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {traceback.format_exc()=}")
 
 
     @otel
@@ -244,4 +322,4 @@ class AppDatabaseTask(AppTask):
 
         except Exception as ex:
             otel_add_exception(ex)
-            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")

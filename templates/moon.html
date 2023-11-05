@@ -2,6 +2,29 @@
 {% block content %}
 <section>
     {% if moon_id %}<h3>{{moon_id|esi_moon_name}}</h3>{% endif %}
+    {% if moon_structure %}
+    <p></p>
+    <table>
+        <thead>
+            <tr>
+                <th class="align_left">Structure</th>
+                <th class="align_left">System</th>
+                <th class="align_left">Corporation</th>
+                <th>Fuel Expiry</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr class="{{moon_structure.timestamp|timestamp_age}}">
+                <td class="align_left">{{ moon_structure.name }}</td>
+                <td class="align_left"><a href="{{ moon_structure.system_id|zkillboard_system }}" target="_blank">{{
+                        moon_structure.system_id|esi_system_name }}</a></td>
+                <td class="align_left"><a href="{{ moon_structure.corporation_id|zkillboard_corporation }}"
+                        target="_blank">{{ moon_structure.corporation.name }}</a></td>
+                <td>{{ moon_structure.fuel_expires|datetime }}</td>
+            </tr>
+        </tbody>
+    </table>
+    {% endif %}
     {% if moon_yield %}
     <p></p>
     <table>
@@ -24,7 +47,47 @@
     </table>
 </section>
 {% endif %}
-{% if moon_history and weekday_names and timeofday_names %}
+{% if miners and mined_quantity and mined_types %}
+<section>
+    <h3>Mining History</h3>
+    <p></p>
+    <p>Work-in-Progress: Should be miner activity since the most recent extraction. Layout still a mess.</p>
+    <p></p>
+    <table>
+        <thead>
+            <tr>
+                <th class="align_left">Character</th>
+                {% for type_id in mined_types %}
+                <th>{{type_id|esi_type_name}}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for character_id in miners %}
+            <tr>
+                <td class="align_left"><a href="{{ character_id|zkillboard_character }}" target="_blank">{{
+                        character_id|esi_character_name }}</a></td>
+                {% for type_id in mined_types %}
+                {% if mined_quantity[character_id][type_id] %}
+                <td>{{ mined_quantity[character_id][type_id]|commafy }}</td>
+                {% else %}
+                <td>&nbsp;</td>
+                {% endif %}
+                {% endfor %}
+            </tr> {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td></td>
+                {% for type_id in mined_types %}
+                <td></td>
+                {% endfor %}
+            </tr>
+        </tfoot>
+    </table>
+</section>
+{% endif %}
+{% if moon_extraction_history and weekday_names and timeofday_names %}
 <section>
     <h3>Extraction History</h3>
     <p></p>
@@ -41,10 +104,14 @@
                 <td class="align_left">&nbsp;</td>
                 <td class="align_left">{% for wdn in weekday_names %}{{wdn}}&nbsp;{% endfor %}</td>
                 <td class="align_left">{% for tod in timeofday_names %}{{tod}}&nbsp;{% endfor %}</td>
-            </tr> {% for x in moon_history %} <tr>
+            </tr> {% for x in moon_extraction_history %} <tr>
                 <td class="align_left">{{ x.extraction.chunk_arrival_time|date }}</td>
-                <td class="align_left">{% for wdn in weekday_names %}<span class="{% if loop.index0 == x.dow %}dow_on{% else %}dow_off{% endif %}">{{wdn}}</span>&nbsp;{% endfor %}</td>
-                <td class="align_left">{% for tod in timeofday_names %}<span class="{% if loop.index0 == x.tod %}dow_on{% else %}dow_off{% endif %}">{{tod}}</span>&nbsp;{% endfor %}</td>
+                <td class="align_left">{% for wdn in weekday_names %}<span
+                        class="{% if loop.index0 == x.dow %}dow_on{% else %}dow_off{% endif %}">{{wdn}}</span>&nbsp;{%
+                    endfor %}</td>
+                <td class="align_left">{% for tod in timeofday_names %}<span
+                        class="{% if loop.index0 == x.tod %}dow_on{% else %}dow_off{% endif %}">{{tod}}</span>&nbsp;{%
+                    endfor %}</td>
             </tr> {% endfor %}
         </tbody>
         <tfoot>

@@ -2,6 +2,7 @@ import asyncio
 import inspect
 import logging
 import os
+import http
 import typing
 import uuid
 
@@ -11,14 +12,14 @@ import quart.sessions
 import quart_session
 
 from app import (AppDatabase, AppFunctions, AppRequest, AppSSO, AppTables,
-                 AppTemplates)
-from app.tasks import (AppAccessControlTask, AppMoonYieldTask,
-                       AppStructureNotificationTask, AppStructurePollingTask,
-                       AppStructureTask, AppTask, ESIAllianceBackfillTask,
-                       ESIUniverseConstellationsBackfillTask,
-                       ESIUniverseRegionsBackfillTask,
-                       ESIUniverseSystemsBackfillTask)
+                 AppTask, AppTemplates)
 from support.telemetry import otel, otel_initialize
+from tasks import (AppAccessControlTask, AppMoonYieldTask,
+                   AppStructureNotificationTask, AppStructurePollingTask,
+                   AppStructureTask, ESIAllianceBackfillTask,
+                   ESIUniverseConstellationsBackfillTask,
+                   ESIUniverseRegionsBackfillTask,
+                   ESIUniverseSystemsBackfillTask)
 
 app: typing.Final = quart.Quart(__name__)
 
@@ -28,18 +29,21 @@ app.config.from_mapping({
     "DEBUG": False,
     "PORT": 5050,
     "SECRET_KEY": uuid.uuid4().hex,
+
     "SESSION_TYPE": "redis",
     "SESSION_REVERSE_PROXY": True,
     "SESSION_PERMANENT": True,
     # "SESSION_PROTECTION": True,
     "SESSION_COOKIE_HTTPONLY": True,
+    "SESSION_COOKIE_SAMESITE": "Lax",
+    # "SESSION_COOKIE_SECURE": True,
+
     "BASEDIR": os.path.dirname(os.path.realpath(__file__)),
     "EVEONLINE_CLIENT_ID": os.getenv("EVEONLINE_CLIENT_ID", ""),
     "EVEONLINE_CLIENT_SECRET": os.getenv("EVEONLINE_CLIENT_SECRET", ""),
     "SQLALCHEMY_DB_URL": os.getenv("SQLALCHEMY_DB_URL", ""),
     "TEMPLATES_AUTO_RELOAD": True,
-    # "SEND_FILE_MAX_AGE_DEFAULT": 300,
-    "SEND_FILE_MAX_AGE_DEFAULT": 30,
+    "SEND_FILE_MAX_AGE_DEFAULT": 300,
     "MAX_CONTENT_LENGTH": 512 * 1024,
     "BODY_TIMEOUT": 15,
     "RESPONSE_TIMEOUT": 15,
@@ -109,12 +113,14 @@ async def _usage() -> quart.ResponseReturnValue:
                 denied_data.extend(await AppFunctions.get_usage(session, False, ar.ts))
 
         except Exception as ex:
-            app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
+            app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex=}")
 
         return await quart.render_template(
             "usage.html",
             character_id=ar.character_id,
-            permitted_usage=permitted_data, denied_usage=denied_data)
+            permitted_usage=permitted_data,
+            denied_usage=denied_data
+        )
 
     return quart.redirect("/about/")
 
@@ -123,9 +129,19 @@ async def _usage() -> quart.ResponseReturnValue:
 @otel
 async def _about() -> quart.ResponseReturnValue:
 
-    _: typing.Final = await AppFunctions.get_app_request(evedb, quart.session, quart.request)
+    ar: typing.Final = await AppFunctions.get_app_request(evedb, quart.session, quart.request)
 
-    return await quart.render_template("about.html")
+    return await quart.render_template(
+        "about.html",
+        character_id=ar.character_id,
+        is_about_page=True
+    )
+
+
+@app.route('/robots.txt', methods=["GET"])
+@otel
+async def _robots() -> quart.ResponseReturnValue:
+    return quart.redirect('/static/robots.txt')
 
 
 @app.route('/moon', defaults={'moon_id': 0}, methods=["GET"])
@@ -139,24 +155,42 @@ async def _moon(moon_id: int) -> quart.ResponseReturnValue:
 
     elif ar.character_id > 0 and ar.permitted:
 
-        moon_history: typing.Final = list()
+        moon_extraction_history: typing.Final = list()
+        moon_mining_history: typing.Final = list()
         moon_yield: typing.Final = list()
+        moon_structure = None
 
         try:
             async with await evedb.sessionmaker() as session:
-                moon_history.extend(await AppFunctions.get_moon_history(session, moon_id, ar.ts))
+                moon_structure = await AppFunctions.get_moon_structure(session, moon_id, ar.ts)
                 moon_yield.extend(await AppFunctions.get_moon_yield(session, moon_id, ar.ts))
+                moon_extraction_history.extend(await AppFunctions.get_moon_history(session, moon_id, ar.ts))
+                moon_mining_history.extend(await AppFunctions.get_moon_mining_history(session, moon_id, ar.ts))
 
         except Exception as ex:
-            app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
+            app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex=}")
+
+        mined_types_set = set()
+        miner_list = list()
+        mined_quantity_dict = dict()
+        if any([ar.contributor, ar.magic_character]):
+            for character_id, mining_history_dict in moon_mining_history:
+                for type_id in mining_history_dict.keys():
+                    mined_types_set.add(type_id)
+                miner_list.append(character_id)
+                mined_quantity_dict[character_id] = mining_history_dict
 
         time_chunking = 3
         return await quart.render_template(
             "moon.html",
             character_id=ar.character_id,
             moon_id=moon_id,
-            moon_history=moon_history,
+            moon_structure=moon_structure,
             moon_yield=moon_yield,
+            moon_extraction_history=moon_extraction_history,
+            miners=miner_list,
+            mined_quantity=mined_quantity_dict,
+            mined_types=sorted(list(mined_types_set)),
             weekday_names=['M', 'T', 'W', 'T', 'F', 'S', 'S'],
             timeofday_names=[f"{(x-time_chunking):02d}-{(x):02d}" for x in range(time_chunking, 24 + time_chunking) if x % time_chunking == 0],
         )
@@ -201,7 +235,7 @@ async def _root() -> quart.ResponseReturnValue:
                     structure_counts.append(structure_count_dict.get(last_update.corporation_id, 0))
 
         except Exception as ex:
-            app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex}")
+            app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex=}")
 
         return await quart.render_template(
             "home.html",
@@ -216,7 +250,8 @@ async def _root() -> quart.ResponseReturnValue:
             structure_counts=structure_counts,
             character_trusted=ar.trusted,
             character_contributor=ar.contributor,
-            magic_character=ar.magic_character
+            magic_character=ar.magic_character,
+            is_homne_page=True
         )
 
     elif ar.character_id > 0 and not ar.permitted:
@@ -224,6 +259,7 @@ async def _root() -> quart.ResponseReturnValue:
         return await quart.render_template(
             "permission.html",
             character_id=ar.character_id,
+            is_homne_page=True
         )
 
     return await quart.render_template("login.html")
@@ -256,6 +292,10 @@ if __name__ == "__main__":
 
         app_trusted_hosts: typing.Final = ["127.0.0.1", "::1"]
         app_bind_hosts: typing.Final = [x for x in app_trusted_hosts]
+
+        script_name: typing.Final = os.path.splitext(os.path.basename(__file__))[0]
+        with open(os.path.join(app.config.get("BASEDIR", "."), f"{script_name}.pid"), 'w') as ofp:
+            ofp.write(f"{os.getpid()}{os.linesep}")
 
         # XXX: hack for development server.
         development_flag_file = os.path.join(app.config.get("BASEDIR", "."), "development.txt")

@@ -36,7 +36,7 @@ class AppESI:
         return u
 
     @otel
-    async def get(self, http_session: aiohttp.ClientSession, url: str, request_headers: dict | None, request_params: dict | None) -> list | None:
+    async def get(self, http_session: aiohttp.ClientSession, url: str, request_headers: dict | None, request_params: dict | None) -> list:
 
         # u = self.url(url, request_params)
         # request_etag: typing.Final = await self.redis.getex(str(u))
@@ -61,20 +61,20 @@ class AppESI:
 
             except aiohttp.client_exceptions.ClientConnectionError as ex:
                 attempts_remaining -= 1
-                otel_add_error(f"{url} -> {ex}")
+                otel_add_error(f"{url} -> {ex=}")
                 self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url=}, {ex=}")
                 if attempts_remaining > 0:
                     await asyncio.sleep(AppConstants.ESI_ERROR_SLEEP_TIME)
 
             except Exception as ex:
-                otel_add_error(f"{url} -> {ex}")
+                otel_add_error(f"{url} -> {ex=}")
                 self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url=}, {ex=}")
                 break
 
         return None
 
     @otel
-    async def post(self, http_session: aiohttp.ClientSession, url: str, body: dict, request_headers: dict | None, request_params: dict | None) -> list | None:
+    async def post(self, http_session: aiohttp.ClientSession, url: str, body: dict, request_headers: dict | None, request_params: dict | None) -> list:
 
         attempts_remaining = AppConstants.ESI_ERROR_RETRY_COUNT
         while attempts_remaining > 0:
@@ -93,13 +93,13 @@ class AppESI:
 
             except aiohttp.client_exceptions.ClientConnectionError as ex:
                 attempts_remaining -= 1
-                otel_add_error(f"{url} -> {ex}")
+                otel_add_error(f"{url} -> {ex=}")
                 self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url=}, {ex=}")
                 if attempts_remaining > 0:
                     await asyncio.sleep(AppConstants.ESI_ERROR_SLEEP_TIME)
 
             except Exception as ex:
-                otel_add_error(f"{url} -> {ex}")
+                otel_add_error(f"{url} -> {ex=}")
                 self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url=}, {ex=}")
                 break
 
@@ -113,23 +113,23 @@ class AppESI:
             return all([u.scheme, u.netloc])
         except Exception as ex:
             self: typing.Final = AppESI.factory()
-            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url} -> {ex}")
+            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url} -> {ex=}")
             return False
 
     @staticmethod
-    async def get_url(http_session: aiohttp.ClientSession, url: str, request_headers: dict | None = None, request_params: dict | None = None) -> list | None:
+    async def get_url(http_session: aiohttp.ClientSession, url: str, request_headers: dict | None = None, request_params: dict | None = None) -> list:
 
         self: typing.Final = AppESI.factory()
         return await self.get(http_session, url, request_headers, request_params)
 
     @staticmethod
-    async def post_url(http_session: aiohttp.ClientSession, url: str, request_body: dict, request_headers: dict | None = None, request_params: dict | None = None) -> list | None:
+    async def post_url(http_session: aiohttp.ClientSession, url: str, request_body: dict, request_headers: dict | None = None, request_params: dict | None = None) -> list:
 
         self: typing.Final = AppESI.factory()
         return await self.post(http_session, url, request_body, request_headers, request_params)
 
     @staticmethod
-    async def get_pages(url: str, access_token: str, request_params: dict | None = None) -> list | None:
+    async def get_pages(url: str, access_token: str, request_params: dict | None = None) -> list:
 
         session_headers: typing.Final = dict()
         if len(access_token) > 0:
@@ -160,13 +160,13 @@ class AppESI:
 
                 except aiohttp.ClientConnectionError as ex:
                     attempts_remaining -= 1
-                    otel_add_error(f"{url} -> {ex}")
+                    otel_add_error(f"{url} -> {ex=}")
                     self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url=}, {ex=}")
                     if attempts_remaining > 0:
                         await asyncio.sleep(AppConstants.ESI_ERROR_SLEEP_TIME)
 
                 except Exception as ex:
-                    otel_add_error(f"{url} -> {ex}")
+                    otel_add_error(f"{url} -> {ex=}")
                     self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url=}, {ex=}")
                     break
 

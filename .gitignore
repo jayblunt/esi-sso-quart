@@ -1,5 +1,6 @@
 # Byte-compiled / optimized / DLL files
 python3.10-env/
+python3.11-env/
 __pycache__/
 *.py[cod]
 *$py.class
@@ -132,3 +133,4 @@ dmypy.json
 other
 local
 development.txt
+main.pid

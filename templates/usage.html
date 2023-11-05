@@ -13,7 +13,8 @@
         <tbody>
             {% for x in permitted_usage %}
             <tr>
-                <td class="align_left"><a href="{{ x.id|zkillboard_character }}" target="_blank">{{ x.id|esi_character_name }}</a></td>
+                <td class="align_left"><a href="{{ x.id|zkillboard_character }}" target="_blank">{{
+                        x.id|esi_character_name }}</a></td>
                 <td>{{ x.count }}</td>
                 <td>{{ x.last|datetime }}</td>
             </tr>
@@ -44,7 +45,8 @@
         <tbody>
             {% for x in denied_usage %}
             <tr>
-                <td class="align_left"><a href="{{ x.id|zkillboard_character }}" target="_blank">{{ x.id|esi_character_name }}</a></td>
+                <td class="align_left"><a href="{{ x.id|zkillboard_character }}" target="_blank">{{
+                        x.id|esi_character_name }}</a></td>
                 <td>{{ x.count }}</td>
                 <td>{{ x.last|datetime }}</td>
             </tr>

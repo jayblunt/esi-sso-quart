@@ -14,10 +14,8 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
+from app import AppConstants, AppESI, AppSSO, AppTables, AppTask
 from support.telemetry import otel, otel_add_error, otel_add_exception
-
-from .. import AppConstants, AppESI, AppSSO, AppTables
-from .task import AppTask
 
 
 class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
@@ -47,7 +45,7 @@ class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
         pass
 
     @otel
-    async def _get_item_dict(self, id: int, http_session: aiohttp.ClientSession) -> dict | None:
+    async def _get_item_dict(self, id: int, http_session: aiohttp.ClientSession) -> dict:
         url: typing.Final = self.item_url(id)
         attempts_remaining = AppConstants.ESI_ERROR_RETRY_COUNT
         while attempts_remaining > 0:
@@ -68,13 +66,13 @@ class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
 
             except aiohttp.client_exceptions.ClientConnectionError as ex:
                 attempts_remaining -= 1
-                otel_add_error(f"{url} -> {ex}")
+                otel_add_error(f"{url=} -> {ex=}")
                 self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url=}, {ex=}")
                 if attempts_remaining > 0:
                     await asyncio.sleep(AppConstants.ESI_ERROR_SLEEP_TIME)
 
             except Exception as ex:
-                otel_add_error(f"{url} -> {ex}")
+                otel_add_error(f"{url=} -> {ex=}")
                 self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url=}, {ex=}")
                 break
 
@@ -102,7 +100,7 @@ class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
 
         except Exception as ex:
             otel_add_exception(ex)
-            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
 
         missing_obj_id_set = obj_id_set - existing_obj_id_set
         if len(missing_obj_id_set) > 0:
@@ -129,7 +127,7 @@ class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
                         await session.commit()
                 except Exception as ex:
                     otel_add_exception(ex)
-                    self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex}")
+                    self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
 
         self.logger.info(f"< {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
 
