@@ -580,7 +580,7 @@ class AppSSO:
         token_response = dict()
 
         post_session_headers: typing.Final = {
-            "Host": self.configuration["issuer"],
+            "Host": urllib.parse.urlparse(self.configuration.get("issuer")).netloc
         }
 
         async with aiohttp.ClientSession(headers=post_session_headers) as http_session:
