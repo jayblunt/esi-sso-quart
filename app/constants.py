@@ -7,7 +7,7 @@ class AppConstants:
     ESI_API_ROOT: typing.Final = "https://esi.evetech.net/"
     ESI_API_VERSION: typing.Final = "latest"
 
-    ESI_LIMIT_PER_HOST: typing.Final = 13
+    ESI_LIMIT_PER_HOST: typing.Final = 3
     ESI_ERROR_SLEEP_TIME: typing.Final = 7
     ESI_ERROR_RETRY_COUNT: typing.Final = 11
 

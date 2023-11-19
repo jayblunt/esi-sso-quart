@@ -1,4 +1,6 @@
+import asyncio
 import collections.abc
+import http
 import inspect
 import typing
 
@@ -11,7 +13,7 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
-from app import AppConstants, AppESI, AppSSO, AppTables, AppTask
+from app import AppConstants, AppESI, AppESIResult, AppSSO, AppTables, AppTask
 from support.telemetry import otel, otel_add_exception
 
 
@@ -31,9 +33,9 @@ class ESIAlliancMemberTask(AppTask):
         if alliance_id > 0:
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=AppConstants.ESI_LIMIT_PER_HOST)) as http_session:
                 url = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/alliances/{alliance_id}/corporations/"
-                response = await AppESI.get_url(http_session, url, self.request_params)
-                if response is not None:
-                    for corporation_id in list(response):
+                esi_result = await AppESI.get_url(http_session, url, self.request_params)
+                if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and esi_result.data is not None:
+                    for corporation_id in list(esi_result.data):
                         corporation_id_set.add(int(corporation_id))
 
         if alliance_id > 0 and len(corporation_id_set) > 0:
@@ -76,24 +78,29 @@ class ESIAlliancMemberTask(AppTask):
 
                     async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=AppConstants.ESI_LIMIT_PER_HOST)) as http_session:
 
+                        task_list: typing.Final = list()
                         for corporation_id in corporation_id_set - existing_corporation_id_set:
-
                             url = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/corporations/{corporation_id}/"
-                            response = await AppESI.get_url(http_session, url, self.request_params)
-                            if response is not None:
-                                edict: typing.Final = dict({
-                                    "corporation_id": corporation_id
-                                })
+                            task_list.append(AppESI.get_url(http_session, url, self.request_params))
 
-                                for k, v in dict(response).items():
-                                    if k in ["alliance_id"]:
-                                        v = int(v)
-                                    elif k not in ["name", "ticker"]:
-                                        continue
-                                    edict[k] = v
+                        if len(task_list) > 0:
+                            for esi_result in await asyncio.gather(*task_list):
+                                esi_result: AppESIResult
 
-                                obj = AppTables.Corporation(**edict)
-                                obj_set.add(obj)
+                                if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and esi_result.data is not None:
+                                    edict: typing.Final = dict({
+                                        "corporation_id": corporation_id
+                                    })
+
+                                    for k, v in dict(esi_result.data).items():
+                                        if k in ["alliance_id"]:
+                                            v = int(v)
+                                        elif k not in ["name", "ticker"]:
+                                            continue
+                                        edict[k] = v
+
+                                    obj = AppTables.Corporation(**edict)
+                                    obj_set.add(obj)
 
                     if len(obj_set) > 0:
                         session.add_all(obj_set)

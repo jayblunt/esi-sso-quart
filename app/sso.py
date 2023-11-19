@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import collections.abc
+import dataclasses
 import datetime
 import http
 import inspect
@@ -24,7 +25,7 @@ from support.telemetry import otel, otel_add_exception
 
 from .constants import AppConstants
 from .db import AppAuthType, AppDatabase, AppTables
-from .esi import AppESI
+from .esi import AppESI, AppESIResult
 from .events import SSOLoginEvent, SSOLogoutEvent, SSOTokenRefreshEvent
 
 
@@ -142,7 +143,6 @@ class AppSSO:
 
     CONNFIGURATION_URL: typing.Final = 'https://login.eveonline.com/.well-known/oauth-authorization-server'
 
-    JWT_ISSUERS: typing.Final = ["login.eveonline.com", "https://login.eveonline.com"]
     JWT_AUDIENCE: typing.Final = "EVE Online"
 
     APP_SESSION_TYPE: typing.Final = "session_type"
@@ -265,7 +265,9 @@ class AppSSO:
             session_headers["Authorization"] = f"Bearer {esi_access_token}"
 
         async with aiohttp.ClientSession(headers=session_headers) as http_session:
-            return await AppESI.get_url(http_session, url, request_params=self.request_params) or dict()
+            esi_result = await AppESI.get_url(http_session, url, request_params=self.request_params)
+            if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and esi_result.data is not None:
+                return esi_result.data
 
         return dict()
 
@@ -316,6 +318,11 @@ class AppSSO:
                 await asyncio.sleep(refresh_interval.total_seconds())
                 continue
 
+            if not isinstance(refresh_obj, AppTables.PeriodicCredentials):
+                self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: no permitted credentials")
+                await asyncio.sleep(refresh_interval.total_seconds())
+                continue
+
             if refresh_obj.access_token_expiry > now + refresh_buffer:
                 remaining_interval: datetime.timedelta = (refresh_obj.access_token_expiry) - (now + refresh_buffer)
                 remaining_sleep_interval = min(refresh_interval.total_seconds(), remaining_interval.total_seconds())
@@ -323,7 +330,7 @@ class AppSSO:
                 await asyncio.sleep(remaining_sleep_interval)
                 continue
 
-            esi_status = await self.esi_status()
+            esi_status = await AppESI.get_status()
             if esi_status is False:
                 self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: esi is not really available")
                 await asyncio.sleep(refresh_interval.total_seconds())
@@ -389,7 +396,7 @@ class AppSSO:
         decoded_acess_token = None
         if jwt_key is not None:
             try:
-                decoded_acess_token = jose.jwt.decode(token_response["access_token"], key=jwt_key, issuer=self.JWT_ISSUERS, audience=self.JWT_AUDIENCE)
+                decoded_acess_token = jose.jwt.decode(token_response["access_token"], key=jwt_key, issuer=self.configuration.get('issuer'), audience=self.JWT_AUDIENCE)
             except jose.exceptions.JWTError as ex:
                 otel_add_exception(ex)
                 self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
@@ -398,13 +405,15 @@ class AppSSO:
         # if decoded_acess_token is not None:
         #     await AppSSOFunctions.debuglog(self.db, decoded_acess_token)
 
-        return await self.esi_unpack_token_data(session_id, token_response, decoded_acess_token)
+        return decoded_acess_token
 
     @otel
-    async def esi_unpack_token_data(self, session_id: str, token_response: dict, decoded_acess_token: dict) -> dict:
+    async def esi_unpack_token_response(self, session_id: str, token_response: dict) -> dict:
         now: typing.Final = datetime.datetime.now(tz=datetime.timezone.utc)
 
-        # decoded_acess_token = decoded_acess_token or dict()
+        decoded_acess_token = await self.esi_decode_token(session_id, token_response)
+        if decoded_acess_token is None:
+            return dict()
 
         character_id: typing.Final = int(decoded_acess_token.get('sub', '0').split(':')[-1])
         if not character_id > 0:
@@ -424,7 +433,7 @@ class AppSSO:
         session_headers: typing.Final = {
             "Authorization": f"Bearer {access_token}"
         }
-        async with aiohttp.ClientSession(headers=session_headers) as http_session:
+        async with aiohttp.ClientSession(headers=session_headers, connector=aiohttp.TCPConnector(limit_per_host=AppConstants.ESI_LIMIT_PER_HOST)) as http_session:
             request_params: typing.Final = {
                 "datasource": "tranquility",
                 "language": "en"
@@ -435,16 +444,18 @@ class AppSSO:
             if "esi-characters.read_corporation_roles.v1" in scopes:
                 task_list.append(AppESI.get_url(http_session, f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/characters/{character_id}/roles/", request_params=self.request_params | request_params))
 
-            for result in await asyncio.gather(*task_list):
-                if result is None:
+            for esi_result in await asyncio.gather(*task_list):
+                esi_result: AppESIResult
+                if esi_result is None:
                     continue
-                result: dict = result
-                if len(result) == 0:
+                if esi_result.status not in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] or esi_result.data is None:
                     continue
-                if bool(result.get('roles', False)):
-                    character_roles_result |= result
-                elif bool(result.get('name', False)):
-                    character_result |= result
+                if len(esi_result.data) == 0:
+                    continue
+                if bool(esi_result.data.get('roles', False)):
+                    character_roles_result |= esi_result.data
+                elif bool(esi_result.data.get('name', False)):
+                    character_result |= esi_result.data
 
         conversions: typing.Final = {
             'birthday': lambda x: dateutil.parser.parse(str(x)).replace(tzinfo=datetime.timezone.utc)
@@ -542,18 +553,20 @@ class AppSSO:
         basic_auth: typing.Final = f"{self.client_id}:{self.client_secret}"
         post_session_headers: typing.Final = {
             "Authorization": f"Basic {base64.urlsafe_b64encode(basic_auth.encode()).decode()!s}",
-            "Host": urllib.parse.urlparse(self.configuration.get("issuer")).netloc,
-        }
-        post_body: typing.Final = {
-            "grant_type": "authorization_code",
-            "code": quart.request.args['code'],
+            "Host": urllib.parse.urlparse(post_token_url).netloc,
         }
 
         token_response = dict()
         async with aiohttp.ClientSession(headers=post_session_headers) as http_session:
-            token_response = await AppESI.post_url(http_session, post_token_url, post_body) or dict()
+            post_body: typing.Final = {
+                "grant_type": "authorization_code",
+                "code": quart.request.args['code'],
+            }
+            post_result: typing.Final = await AppESI.post_url(http_session, post_token_url, post_body)
+            if post_result.status == http.HTTPStatus.OK:
+                token_response = post_result.data
 
-        edict: typing.Final = await self.esi_decode_token(session_id, token_response)
+        edict: typing.Final = await self.esi_unpack_token_response(session_id, token_response)
         if len(edict) == 0:
             quart.abort(http.HTTPStatus.BAD_GATEWAY, "invalid token_response")
 
@@ -577,38 +590,24 @@ class AppSSO:
     @otel
     async def esi_sso_refresh(self, session_id: str, refresh_token: str) -> dict:
 
-        token_response = dict()
+        post_token_url: typing.Final = self.configuration['token_endpoint']
 
         post_session_headers: typing.Final = {
-            "Host": urllib.parse.urlparse(self.configuration.get("issuer")).netloc
+            "Host": urllib.parse.urlparse(post_token_url).netloc
         }
 
+        token_response = dict()
         async with aiohttp.ClientSession(headers=post_session_headers) as http_session:
-            post_token_url = self.configuration['token_endpoint']
             post_body: typing.Final = {
                 "grant_type": "refresh_token",
                 "refresh_token": refresh_token,
                 "client_id": self.client_id
             }
-            token_response = await AppESI.post_url(http_session, post_token_url, post_body) or dict()
+            post_result: typing.Final = await AppESI.post_url(http_session, post_token_url, post_body)
+            if post_result.status == http.HTTPStatus.OK:
+                token_response = post_result.data
 
-        return await self.esi_decode_token(session_id, token_response)
-
-    @otel
-    async def esi_status(self) -> bool:
-
-        request_params: typing.Final = {
-            "datasource": "tranquility",
-            "language": "en"
-        }
-
-        async with aiohttp.ClientSession() as http_session:
-            status_result = await AppESI.get_url(http_session, f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/status/", request_params=self.request_params | request_params) or dict()
-            self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {str(status_result)}")
-            if all([int(status_result.get("players", 0)) > 128, bool(status_result.get("vip", False)) is False]):
-                return True
-
-        return False
+        return await self.esi_unpack_token_response(session_id, token_response)
 
     @otel
     async def esi_update_client_session(self, client_session: collections.abc.MutableMapping, character_id: int, edict: dict):
@@ -624,10 +623,13 @@ class AppSSO:
             AppSSO.ESI_CHARACTER_ID,
             AppSSO.ESI_CORPORATION_ID,
             AppSSO.ESI_ALLIANCE_ID,
-            AppSSO.ESI_CHARACTER_IS_STATION_MANAGER_ROLE,
             AppSSO.ESI_CHARACTER_IS_ACCOUNTANT_ROLE,
+            AppSSO.ESI_CHARACTER_IS_DIRECTOR_ROLE,
+            AppSSO.ESI_CHARACTER_IS_STATION_MANAGER_ROLE,
             AppSSO.ESI_SCOPES,
-            AppSSO.ESI_ACCESS_TOKEN]
+            AppSSO.ESI_ACCESS_TOKEN,
+            AppSSO.ESI_REFRESH_TOKEN
+        ]
 
         for k in client_session_keys:
             v = edict.get(k)

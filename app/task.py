@@ -2,6 +2,7 @@ import abc
 import asyncio
 import collections.abc
 import datetime
+import http
 import inspect
 import logging
 import os
@@ -32,7 +33,7 @@ class AppTask(metaclass=abc.ABCMeta):
     def __init__(self, client_session: collections.abc.MutableMapping, db: AppDatabase, outbound: asyncio.Queue, logger: logging.Logger | None = None):
         self.db: typing.Final = db
         self.outbound: typing.Final = outbound
-        self.logger: typing.Final = logger or logging.getLogger(self.__class__.__name__)
+        self.logger: typing.Final = logger or logging.getLogger()
         self.name: typing.Final = self.__class__.__name__
         self.configdir: typing.Final = os.path.abspath(client_session.get(self.CONFIGDIR, "."))
 
@@ -65,10 +66,10 @@ class AppDatabaseTask(AppTask):
     @otel
     async def _get_type(self, type_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.UniverseType:
         url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/universe/types/{type_id}/"
-        rdict: typing.Final = await AppESI.get_url(http_session, url, request_params=self.request_params)
-        if rdict is not None:
+        esi_result = await AppESI.get_url(http_session, url, request_params=self.request_params)
+        if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and esi_result.data is not None:
             edict: typing.Final = dict()
-            for k, v in rdict.items():
+            for k, v in esi_result.data.items():
                 if k in ["name"]:
                     edict[k] = v
                 elif k in ["mass", "volume"]:
@@ -84,12 +85,12 @@ class AppDatabaseTask(AppTask):
     @otel
     async def _get_character(self, character_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.Corporation:
         url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/characters/{character_id}/"
-        rdict: typing.Final = await AppESI.get_url(http_session, url, request_params=self.request_params)
-        if rdict is not None:
+        esi_result = await AppESI.get_url(http_session, url, request_params=self.request_params)
+        if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and esi_result.data is not None:
             edict: typing.Final = dict({
                 "character_id": character_id
             })
-            for k, v in rdict.items():
+            for k, v in esi_result.data.items():
                 if k in ["alliance_id", "corporation_id"]:
                     edict[k] = int(v)
                 elif k in ["birthday"]:
@@ -112,12 +113,12 @@ class AppDatabaseTask(AppTask):
     @otel
     async def _get_corporation(self, corporation_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.Corporation:
         url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/corporations/{corporation_id}/"
-        rdict: typing.Final = await AppESI.get_url(http_session, url, request_params=self.request_params)
-        if rdict is not None:
+        esi_result = await AppESI.get_url(http_session, url, request_params=self.request_params)
+        if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and esi_result.data is not None:
             edict: typing.Final = dict({
                 "corporation_id": corporation_id
             })
-            for k, v in rdict.items():
+            for k, v in esi_result.data.items():
                 if k in ["alliance_id"]:
                     edict[k] = int(v)
                 elif k not in ["name", "ticker"]:
@@ -130,10 +131,10 @@ class AppDatabaseTask(AppTask):
     @otel
     async def _get_moon(self, moon_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.UniverseMoon:
         url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/universe/moons/{moon_id}/"
-        rdict: typing.Final = await AppESI.get_url(http_session, url, request_params=self.request_params)
-        if rdict is not None:
+        esi_result = await AppESI.get_url(http_session, url, request_params=self.request_params)
+        if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and esi_result.data is not None:
             edict: typing.Final = dict()
-            for k, v in rdict.items():
+            for k, v in esi_result.data.items():
                 if k in ["name"]:
                     edict[k] = v
                 elif k in ["moon_id", "system_id"]:

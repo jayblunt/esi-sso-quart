@@ -1,4 +1,5 @@
 import collections
+import contextlib
 import dataclasses
 import datetime
 import functools
@@ -67,13 +68,11 @@ class AppFunctions:
                         magic_character=magic_character)
 
         if ar.character_id > 0:
-            try:
+            with contextlib.suppress(Exception):
                 async with await evedb.sessionmaker() as db_session, db_session.begin():
                     db_session: sqlalchemy.ext.asyncio.AsyncSession
                     db_session.add(AppTables.AccessHistory(character_id=ar.character_id, permitted=bool(ar.permitted), path=request.path))
                     await db_session.commit()
-            except Exception:
-                pass
 
         if any([character_id > 0, corpporation_id > 0, alliance_id > 0]):
             otel_add_event(str(inspect.currentframe().f_code.co_name), {k: v for k, v in ar.__dict__.items() if type(v).__name__ in ['bool', 'str', 'bytes', 'int', 'float']})
@@ -374,10 +373,9 @@ class AppFunctions:
         )
 
         query_result: sqlalchemy.engine.Result = await session.execute(query)
-        observer_id, corporation_id, chunk_arrival_time = query_result.one_or_none()
-
-        # XXX Don't report this corp's history
-        if corporation_id in [98540393]:
+        try:
+            observer_id, corporation_id, chunk_arrival_time = query_result.one_or_none()
+        except TypeError:
             return list()
 
         previous_chunk_arrival_date = None
@@ -439,7 +437,7 @@ class AppFunctions:
             min_timestamp = now - datetime.timedelta(days=14)
 
         query = (
-            sqlalchemy.select(AppTables.Character.character_id, sqlalchemy.func.count(AppTables.AccessHistory.timestamp).label("count"), sqlalchemy.func.max(AppTables.AccessHistory.timestamp).label("last"))
+            sqlalchemy.select(AppTables.Character.character_id, AppTables.Character.corporation_id.label("corporation_id"), sqlalchemy.func.count(AppTables.AccessHistory.timestamp).label("count"), sqlalchemy.func.max(AppTables.AccessHistory.timestamp).label("last"))
             .join(AppTables.Character, AppTables.AccessHistory.character_id == AppTables.Character.character_id)
             .where(
                 sqlalchemy.and_(
@@ -452,7 +450,7 @@ class AppFunctions:
             .limit(20)
         )
 
-        colnames: typing.Final = ["id", "count", "last"]
+        colnames: typing.Final = ["id", "corporation_id", "count", "last"]
         return [dict(zip(colnames, x)) async for x in await session.stream(query)]
 
     @staticmethod

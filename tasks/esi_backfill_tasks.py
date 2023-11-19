@@ -86,7 +86,10 @@ class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
 
         url: typing.Final = self.index_url()
         access_token: typing.Final = client_session.get(AppSSO.ESI_ACCESS_TOKEN, '')
-        obj_id_set: typing.Final = set(await AppESI.get_pages(url, access_token, request_params=self.request_params))
+        obj_id_set: typing.Final = set()
+        esi_result: typing.Final = await AppESI.get_pages(url, access_token, request_params=self.request_params)
+        if esi_result.status == http.HTTPStatus.OK:
+            obj_id_set.update(set(esi_result.data))
 
         existing_obj_id_set: typing.Final = set()
 
@@ -249,6 +252,35 @@ class ESIAllianceBackfillTask(ESIBackfillTask):
     def item_dict(self, id: int, input: dict) -> dict:
         edict: typing.Final = dict({
             "alliance_id": id
+        })
+        for k, v in input.items():
+            if k not in ["name", "ticker"]:
+                continue
+            edict[k] = v
+        return edict
+
+
+class ESINPCorporationBackfillTask(ESIBackfillTask):
+
+    @property
+    def object_class(self) -> typing.Any:
+        return AppTables.Corporation
+
+    def object_id(self, obj: typing.Any) -> int:
+        if isinstance(obj, self.object_class):
+            return obj.corporation_id
+        return 0
+
+    def index_url(self) -> str:
+        return f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/corporations/npccorps/"
+
+    def item_url(self, id: int) -> str:
+        url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/corporations/{id}/"
+        return url
+
+    def item_dict(self, id: int, input: dict) -> dict:
+        edict: typing.Final = dict({
+            "corporation_id": id
         })
         for k, v in input.items():
             if k not in ["name", "ticker"]:

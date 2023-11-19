@@ -2,6 +2,7 @@ import asyncio
 import collections
 import collections.abc
 import datetime
+import http
 import inspect
 import logging
 import typing
@@ -16,7 +17,7 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
-from app import (AppConstants, AppDatabase, AppDatabaseTask, AppESI, AppSSO,
+from app import (AppConstants, AppDatabase, AppDatabaseTask, AppESI, AppESIResult, AppSSO,
                  AppTables, MoonExtractionCompletedEvent,
                  MoonExtractionScheduledEvent, StructureStateChangedEvent)
 from support.telemetry import otel, otel_add_exception
@@ -26,7 +27,7 @@ class AppCommonState:
 
     def __init__(self, db: AppDatabase, logger: logging.Logger | None = None) -> None:
         self.db: typing.Final = db
-        self.logger: typing.Final = logger or logging.getLogger(self.__class__.__name__)
+        self.logger: typing.Final = logger or logging.getLogger()
         self.name: typing.Final = self.__class__.__name__
 
     async def query_scalar_set(self, query: sqlalchemy.sql.Select) -> set:
@@ -331,6 +332,7 @@ class AppStructureTask(AppDatabaseTask):
     @otel
     def __init__(self, client_session: collections.abc.MutableMapping, db: AppDatabase, outbound: asyncio.Queue, logger: logging.Logger | None = None) -> None:
         super().__init__(client_session, db, outbound, logger)
+        self.esi: typing.Final = AppESI.factory(logger)
         self.structure_state: typing.Final = AppStructureState(db, logger)
         self.extraction_state: typing.Final = AppExtractionState(db, logger)
         self.observer_state: typing.Final = AppObserverState(db, logger)
@@ -338,11 +340,10 @@ class AppStructureTask(AppDatabaseTask):
     @otel
     async def get_pages(self, url: str, access_token: str) -> list[dict]:
 
-        pages: typing.Final = await AppESI.get_pages(url, access_token, request_params=self.request_params)
-
-        if pages is None:
-            self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url=}: {pages=}")
-            return None
+        pages: typing.Final = list()
+        esi_result: typing.Final = await AppESI.get_pages(url, access_token, request_params=self.request_params)
+        if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and esi_result.data is not None:
+            pages.extend(esi_result.data)
 
         if len(pages) > 0 and len(pages) != len(list(filter(None, pages))):
             self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url=}: {pages=}")

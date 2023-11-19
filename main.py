@@ -17,6 +17,7 @@ from support.telemetry import otel, otel_initialize
 from tasks import (AppAccessControlTask, AppMoonYieldTask,
                    AppStructureNotificationTask, AppStructurePollingTask,
                    AppStructureTask, ESIAllianceBackfillTask,
+                   ESINPCorporationBackfillTask,
                    ESIUniverseConstellationsBackfillTask,
                    ESIUniverseRegionsBackfillTask,
                    ESIUniverseSystemsBackfillTask)
@@ -82,6 +83,7 @@ async def _before_serving() -> None:
         ESIUniverseConstellationsBackfillTask(evesession, evedb, eveevents, app.logger)
         ESIUniverseSystemsBackfillTask(evesession, evedb, eveevents, app.logger)
         ESIAllianceBackfillTask(evesession, evedb, eveevents, app.logger)
+        ESINPCorporationBackfillTask(evesession, evedb, eveevents, app.logger)
 
         AppAccessControlTask(evesession, evedb, eveevents, app.logger)
         AppMoonYieldTask(evesession, evedb, eveevents, app.logger)
@@ -92,6 +94,12 @@ async def _before_serving() -> None:
 @app.errorhandler(404)
 async def error_404(path: str) -> quart.ResponseReturnValue:
     return quart.redirect("/")
+
+
+@app.route('/robots.txt', methods=["GET"])
+@otel
+async def _robots() -> quart.ResponseReturnValue:
+    return quart.redirect('/static/robots.txt')
 
 
 @app.route("/usage/", methods=["GET"])
@@ -136,12 +144,6 @@ async def _about() -> quart.ResponseReturnValue:
         character_id=ar.character_id,
         is_about_page=True
     )
-
-
-@app.route('/robots.txt', methods=["GET"])
-@otel
-async def _robots() -> quart.ResponseReturnValue:
-    return quart.redirect('/static/robots.txt')
 
 
 @app.route('/moon', defaults={'moon_id': 0}, methods=["GET"])
