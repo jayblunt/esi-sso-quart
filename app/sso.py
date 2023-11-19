@@ -483,6 +483,15 @@ class AppSSO:
 
     @otel
     async def esi_sso_login(self, variant: str) -> quart.ResponseReturnValue:
+
+        """
+        Handle the login process - the redirect to ESI with our client information
+        and the scopes that we want to request.
+
+        :param: variant is the login type. ``contributor`` logins request more scopes
+        than regular ``user`` logins.
+        """
+
         client_session: typing.Final = quart.session
 
         client_session[AppSSO.APP_SESSION_ID] = uuid.uuid4().hex
@@ -514,6 +523,12 @@ class AppSSO:
 
     @otel
     async def esi_sso_logout(self) -> quart.ResponseReturnValue:
+
+        """
+        Handle the logout process - clear the sesssion cooke, remove any credentials
+        we have in the db (for ``contributor`` logins), and redirect back to the main site.
+        """
+
         client_session: typing.Final = quart.session
 
         character_id: typing.Final = client_session.get(AppSSO.ESI_CHARACTER_ID, 0)
@@ -535,6 +550,14 @@ class AppSSO:
     @otel
     async def esi_sso_callback(self) -> quart.ResponseReturnValue:
 
+        """
+        Handle the callback from ESI. The route for this has to be the one
+        configured on the ESI application page.
+
+        We get an ``Authorization code`` from ESI. We POST to an ESI enpoint with our
+        application credentials to get an ``access_token`` and ``refresh_token`` from ESI.
+        """
+
         client_session: typing.Final = quart.session
 
         session_id: typing.Final = client_session.get(AppSSO.APP_SESSION_ID, quart.request.args["state"])
@@ -546,7 +569,7 @@ class AppSSO:
         if quart.request.args["state"] != session_id:
             quart.abort(http.HTTPStatus.BAD_REQUEST, f"invalid session state in {self.callback_route}")
 
-        post_token_url = self.configuration.get('token_endpoint', str())
+        post_token_url = self.configuration.get('token_endpoint', '')
         if not AppESI.valid_url(post_token_url):
             quart.abort(http.HTTPStatus.SERVICE_UNAVAILABLE, f"invalid token_endpoint in {self.callback_route}")
 
@@ -589,6 +612,10 @@ class AppSSO:
 
     @otel
     async def esi_sso_refresh(self, session_id: str, refresh_token: str) -> dict:
+
+        """
+        Handle the ``access_token`` refresh - used for ``contributor`` logins.
+        """
 
         post_token_url: typing.Final = self.configuration['token_endpoint']
 
