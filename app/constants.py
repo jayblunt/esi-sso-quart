@@ -22,4 +22,4 @@ class AppConstants:
     MAGIC_CONTRIBUTORS: typing.Final = {}
     MAGIC_SUSPECTS: typing.Final = {}
 
-    CORPORATION_REFRESH_INTERVAL_SECONDS: typing.Final = 540
+    CORPORATION_REFRESH_INTERVAL_SECONDS: typing.Final = 480

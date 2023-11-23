@@ -13,7 +13,7 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
-from app import AppConstants, AppESI, AppESIResult, AppSSO, AppTables, AppTask
+from app import AppConstants, AppESIResult, AppSSO, AppTables, AppTask
 from support.telemetry import otel, otel_add_exception
 
 
@@ -33,7 +33,7 @@ class ESIAlliancMemberTask(AppTask):
         if alliance_id > 0:
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=AppConstants.ESI_LIMIT_PER_HOST)) as http_session:
                 url = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/alliances/{alliance_id}/corporations/"
-                esi_result = await AppESI.get_url(http_session, url, self.request_params)
+                esi_result = await self.esi.get(http_session, url, request_params=self.request_params)
                 if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and esi_result.data is not None:
                     for corporation_id in list(esi_result.data):
                         corporation_id_set.add(int(corporation_id))
@@ -81,11 +81,14 @@ class ESIAlliancMemberTask(AppTask):
                         task_list: typing.Final = list()
                         for corporation_id in corporation_id_set - existing_corporation_id_set:
                             url = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/corporations/{corporation_id}/"
-                            task_list.append(AppESI.get_url(http_session, url, self.request_params))
+                            task_list.append(self.esi.get(http_session, url, request_params=self.request_params))
 
                         if len(task_list) > 0:
                             for esi_result in await asyncio.gather(*task_list):
                                 esi_result: AppESIResult
+
+                                if not esi_result:
+                                    continue
 
                                 if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and esi_result.data is not None:
                                     edict: typing.Final = dict({

@@ -37,24 +37,24 @@ class AppESI:
     SELF: typing.ClassVar = None
 
     @classmethod
-    def factory(cls, logger: logging.Logger | None = None):
+    def factory(cls, logger: logging.Logger):
         if cls.SELF is None:
             redis_pool: typing.Final = redis.asyncio.ConnectionPool.from_url("redis://localhost/1", decode_responses=True)
             cls.SELF = cls(redis_pool, logger)
         return cls.SELF
 
-    def __init__(self, redis_pool: redis.asyncio.ConnectionPool, logger: logging.Logger | None) -> None:
-        self.redis_pool = redis_pool
-        self.logger: typing.Final = logger or logging.getLogger()
+    def __init__(self, redis_pool: redis.asyncio.ConnectionPool, logger: logging.Logger) -> None:
+        self.redis_pool: typing.Final = redis_pool
+        self.logger: typing.Final = logger
 
-    async def url(self, url: str, params: dict | None = None) -> yarl.URL:
+    async def url(self, url: str, params: dict = None) -> yarl.URL:
         u = yarl.URL(url)
         if params:
             return u.update_query(params)
         return u
 
     @otel
-    async def get(self, http_session: aiohttp.ClientSession, url: str, request_headers: dict | None, request_params: dict | None) -> AppESIResult:
+    async def get(self, http_session: aiohttp.ClientSession, url: str, request_headers: dict = None, request_params: dict = None) -> AppESIResult:
 
         request_headers = request_headers or dict()
 
@@ -128,11 +128,11 @@ class AppESI:
                 self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url=}, {ex=}")
                 break
 
-        self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {response.url} -> {result_status}")
+        self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {response.url} -> {result_status}")
         return AppESIResult(result_status, result_data)
 
     @otel
-    async def post(self, http_session: aiohttp.ClientSession, url: str, body: dict, request_headers: dict | None, request_params: dict | None) -> AppESIResult:
+    async def post(self, http_session: aiohttp.ClientSession, url: str, body: dict, request_headers: dict = None, request_params: dict = None) -> AppESIResult:
 
         result_status = http.HTTPStatus.NOT_FOUND
         result_data = None
@@ -169,65 +169,53 @@ class AppESI:
 
         return AppESIResult(result_status, result_data)
 
-    @staticmethod
-    def valid_url(url: str) -> bool:
-        return True
-        try:
-            u: urllib.parse.ParseResult = urllib.parse.urlunparse(url)
-            return all([u.scheme, u.netloc])
-        except Exception as ex:
-            self: typing.Final = AppESI.factory()
-            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url} -> {ex=}")
-            return False
+    async def status(self) -> bool:
+        async with aiohttp.ClientSession() as http_session:
+            request_params: typing.Final = {
+                "datasource": "tranquility",
+                "language": "en"
+            }
+            status_result = await self.get(http_session, f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/status/", request_params=request_params)
+            self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {status_result=}")
+            if status_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and status_result.data is not None:
+                if all([int(status_result.data.get("players", 0)) > 128, bool(status_result.data.get("vip", False)) is False]):
+                    return True
 
-    @staticmethod
-    async def get_url(http_session: aiohttp.ClientSession, url: str, request_headers: dict | None = None, request_params: dict | None = None) -> AppESIResult:
+        return False
 
-        self: typing.Final = AppESI.factory()
-        return await self.get(http_session, url, request_headers, request_params)
-
-    @staticmethod
-    async def post_url(http_session: aiohttp.ClientSession, url: str, request_body: dict, request_headers: dict | None = None, request_params: dict | None = None) -> AppESIResult:
-
-        self: typing.Final = AppESI.factory()
-        return await self.post(http_session, url, request_body, request_headers, request_params)
-
-    @staticmethod
-    async def get_pages(url: str, access_token: str, request_params: dict | None = None) -> AppESIResult:
+    async def pages(self, url: str, access_token: str, request_params: dict = None) -> AppESIResult:
 
         session_headers: typing.Final = dict()
         if len(access_token) > 0:
             session_headers["Authorization"] = f"Bearer {access_token}"
 
-        esi: typing.Final = AppESI.factory()
-
         request_headers = dict()
 
-        redis_url: typing.Final = await esi.url(url, request_params)
+        redis_url: typing.Final = await self.url(url, request_params)
         etag_key: typing.Final = f"etag:{redis_url!s}"
         pages_key: typing.Final = f"pages:{redis_url!s}"
         json_key: typing.Final = f"json:{redis_url!s}"
 
         previous_json: dict = None
         with contextlib.suppress(redis.RedisError):
-            async with redis.asyncio.Redis.from_pool(esi.redis_pool) as rc:
+            async with redis.asyncio.Redis.from_pool(self.redis_pool) as rc:
                 pv = await rc.get(json_key)
                 if pv is not None:
                     previous_json = json.loads(pv)
 
         previous_pages: int = 0
         with contextlib.suppress(redis.RedisError):
-            async with redis.asyncio.Redis.from_pool(esi.redis_pool) as rc:
+            async with redis.asyncio.Redis.from_pool(self.redis_pool) as rc:
                 pv = await rc.get(pages_key)
                 if pv is not None:
                     previous_pages = int(pv)
 
         previous_etag: str = None
         with contextlib.suppress(redis.RedisError):
-            async with redis.asyncio.Redis.from_pool(esi.redis_pool) as rc:
+            async with redis.asyncio.Redis.from_pool(self.redis_pool) as rc:
                 previous_etag = await rc.get(etag_key)
                 if previous_etag is not None and previous_json is not None and previous_pages > 0:
-                    request_headers[esi.IF_NON_MATCH] = previous_etag
+                    request_headers[AppESI.IF_NON_MATCH] = previous_etag
 
         result_status = http.HTTPStatus.NOT_FOUND
         result_data = None
@@ -254,7 +242,7 @@ class AppESI:
                                     lifetime = int(lifetime.total_seconds())
 
                                 with contextlib.suppress(redis.RedisError):
-                                    async with redis.asyncio.Redis.from_pool(esi.redis_pool) as rc:
+                                    async with redis.asyncio.Redis.from_pool(self.redis_pool) as rc:
                                         tasks: typing.Final = list()
                                         tasks.append(rc.setex(name=json_key, value=json.dumps(response_json), time=lifetime))
                                         tasks.append(rc.setex(name=pages_key, value=response_pages, time=lifetime))
@@ -275,7 +263,7 @@ class AppESI:
                         else:
                             attempts_remaining -= 1
                             otel_add_error(f"{response.url} -> {response.status}")
-                            esi.logger.warning("- {}.{}: {}".format(esi.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
+                            self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
                             if response.status in [http.HTTPStatus.BAD_REQUEST, http.HTTPStatus.FORBIDDEN]:
                                 attempts_remaining = 0
                             if attempts_remaining > 0:
@@ -284,18 +272,18 @@ class AppESI:
                 except aiohttp.ClientConnectionError as ex:
                     attempts_remaining -= 1
                     otel_add_error(f"{url} -> {ex=}")
-                    esi.logger.error(f"- {esi.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url=}, {ex=}")
+                    self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url=}, {ex=}")
                     if attempts_remaining > 0:
                         await asyncio.sleep(AppConstants.ESI_ERROR_SLEEP_TIME)
 
                 except Exception as ex:
                     otel_add_error(f"{url} -> {ex=}")
-                    esi.logger.error(f"- {esi.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url=}, {ex=}")
+                    self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url=}, {ex=}")
                     break
 
             if result_data is not None:
                 pages = list(range(2, 1 + int(maxpageno)))
-                task_list: typing.Final = [esi.get(http_session, url, None, request_params | {"page": x}) for x in pages]
+                task_list: typing.Final = [self.get(http_session, url, request_params=request_params | {"page": x}) for x in pages]
                 if len(task_list) > 0:
                     for result in await asyncio.gather(*task_list):
                         if isinstance(result, AppESIResult):
@@ -306,24 +294,5 @@ class AppESI:
                                 result_data = None
                                 break
 
-        esi.logger.warning(f"- {esi.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url} -> {result_status}")
+        self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url} -> {result_status}")
         return AppESIResult(result_status, result_data)
-
-    @staticmethod
-    async def get_status() -> bool:
-
-        request_params: typing.Final = {
-            "datasource": "tranquility",
-            "language": "en"
-        }
-
-        esi: typing.Final = AppESI.factory()
-
-        async with aiohttp.ClientSession() as http_session:
-            status_result = await esi.get(http_session, f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/status/", request_headers=None, request_params=request_params)
-            esi.logger.info(f"{esi.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {status_result=}")
-            if status_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and status_result.data is not None:
-                if all([int(status_result.data.get("players", 0)) > 128, bool(status_result.data.get("vip", False)) is False]):
-                    return True
-
-        return False

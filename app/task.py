@@ -30,10 +30,11 @@ class AppTask(metaclass=abc.ABCMeta):
     ENVIRONMENT: typing.Final = "ENVIRONMENT"
 
     @otel
-    def __init__(self, client_session: collections.abc.MutableMapping, db: AppDatabase, outbound: asyncio.Queue, logger: logging.Logger | None = None):
+    def __init__(self, client_session: collections.abc.MutableMapping, esi: AppESI, db: AppDatabase, outbound: asyncio.Queue, logger: logging.Logger | None = None):
+        self.esi: typing.Final = esi
         self.db: typing.Final = db
         self.outbound: typing.Final = outbound
-        self.logger: typing.Final = logger or logging.getLogger()
+        self.logger: typing.Final = logger
         self.name: typing.Final = self.__class__.__name__
         self.configdir: typing.Final = os.path.abspath(client_session.get(self.CONFIGDIR, "."))
 
@@ -66,7 +67,7 @@ class AppDatabaseTask(AppTask):
     @otel
     async def _get_type(self, type_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.UniverseType:
         url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/universe/types/{type_id}/"
-        esi_result = await AppESI.get_url(http_session, url, request_params=self.request_params)
+        esi_result = await self.esi.get(http_session, url, request_params=self.request_params)
         if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and esi_result.data is not None:
             edict: typing.Final = dict()
             for k, v in esi_result.data.items():
@@ -85,7 +86,7 @@ class AppDatabaseTask(AppTask):
     @otel
     async def _get_character(self, character_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.Corporation:
         url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/characters/{character_id}/"
-        esi_result = await AppESI.get_url(http_session, url, request_params=self.request_params)
+        esi_result = await self.esi.get(http_session, url, request_params=self.request_params)
         if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and esi_result.data is not None:
             edict: typing.Final = dict({
                 "character_id": character_id
@@ -113,7 +114,7 @@ class AppDatabaseTask(AppTask):
     @otel
     async def _get_corporation(self, corporation_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.Corporation:
         url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/corporations/{corporation_id}/"
-        esi_result = await AppESI.get_url(http_session, url, request_params=self.request_params)
+        esi_result = await self.esi.get(http_session, url, request_params=self.request_params)
         if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and esi_result.data is not None:
             edict: typing.Final = dict({
                 "corporation_id": corporation_id
@@ -131,7 +132,7 @@ class AppDatabaseTask(AppTask):
     @otel
     async def _get_moon(self, moon_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.UniverseMoon:
         url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/universe/moons/{moon_id}/"
-        esi_result = await AppESI.get_url(http_session, url, request_params=self.request_params)
+        esi_result = await self.esi.get(http_session, url, request_params=self.request_params)
         if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and esi_result.data is not None:
             edict: typing.Final = dict()
             for k, v in esi_result.data.items():
@@ -179,10 +180,9 @@ class AppDatabaseTask(AppTask):
                             type_task_list.append(self._get_type(id, http_session))
 
                         if len(type_task_list) > 0:
+                            task_result_list = await asyncio.gather(*type_task_list)
                             session.begin()
-                            result_list = await asyncio.gather(*type_task_list)
-                            for obj in [obj for obj in result_list if obj]:
-                                session.add(obj)
+                            session.add_all([obj for obj in task_result_list if obj])
                             await session.commit()
 
         except Exception as ex:
@@ -224,10 +224,9 @@ class AppDatabaseTask(AppTask):
                             task_list.append(self._get_moon(id, http_session))
 
                         if len(task_list) > 0:
+                            task_result_list = await asyncio.gather(*task_list)
                             session.begin()
-                            result_list = await asyncio.gather(*task_list)
-                            for obj in [obj for obj in result_list if obj]:
-                                session.add(obj)
+                            session.add_all([obj for obj in task_result_list if obj])
                             await session.commit()
 
         except Exception as ex:
@@ -269,10 +268,9 @@ class AppDatabaseTask(AppTask):
                             character_task_list.append(self._get_character(id, http_session))
 
                         if len(character_task_list) > 0:
+                            task_result_list = await asyncio.gather(*character_task_list)
                             session.begin()
-                            result_list = await asyncio.gather(*character_task_list)
-                            for obj in [obj for obj in result_list if obj]:
-                                session.add(obj)
+                            session.add_all([obj for obj in task_result_list if obj])
                             await session.commit()
 
         except Exception as ex:
@@ -315,10 +313,9 @@ class AppDatabaseTask(AppTask):
                             corporation_task_list.append(self._get_corporation(id, http_session))
 
                         if len(corporation_task_list) > 0:
+                            task_result_list = await asyncio.gather(*corporation_task_list)
                             session.begin()
-                            result_list = await asyncio.gather(*corporation_task_list)
-                            for obj in [obj for obj in result_list if obj]:
-                                session.add(obj)
+                            session.add_all([obj for obj in task_result_list if obj])
                             await session.commit()
 
         except Exception as ex:

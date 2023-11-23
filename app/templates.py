@@ -120,14 +120,14 @@ class AppTemplates:
     @otel
     def _datetime(dt: datetime.datetime | None) -> str:
         if dt is None:
-            return str()
+            return ''
         return dt.replace(tzinfo=None).isoformat(sep=" ", timespec="minutes")
 
     @staticmethod
     @otel
     def _date(dt: datetime.datetime | None) -> str:
         if dt is None:
-            return str()
+            return ''
         return dt.replace(tzinfo=None).date().isoformat()
 
     @staticmethod

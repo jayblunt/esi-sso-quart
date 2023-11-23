@@ -14,7 +14,7 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
-from app import AppConstants, AppESI, AppSSO, AppTables, AppTask
+from app import AppConstants, AppSSO, AppTables, AppTask
 from support.telemetry import otel, otel_add_error, otel_add_exception
 
 
@@ -86,8 +86,13 @@ class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
 
         url: typing.Final = self.index_url()
         access_token: typing.Final = client_session.get(AppSSO.ESI_ACCESS_TOKEN, '')
+
+        esi_result: typing.Final = await self.esi.pages(url, access_token, request_params=self.request_params)
+        if esi_result.status == http.HTTPStatus.NOT_MODIFIED:
+            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {esi_result.status=}")
+            return
+
         obj_id_set: typing.Final = set()
-        esi_result: typing.Final = await AppESI.get_pages(url, access_token, request_params=self.request_params)
         if esi_result.status == http.HTTPStatus.OK:
             obj_id_set.update(set(esi_result.data))
 
@@ -117,20 +122,24 @@ class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
                     task_list.append(self._get_item_dict(obj_id, http_session))
 
                 if len(task_list) > 0:
-                    add_edict_list.extend([x for x in await asyncio.gather(*task_list) if x])
+                    task_result_list = await asyncio.gather(*task_list)
+                    add_edict_list.extend([x for x in task_result_list if x])
 
             if len(add_edict_list) > 0:
-                try:
-                    async with await self.db.sessionmaker() as session:
-                        session.begin()
-                        for edict in add_edict_list:
-                            if any([edict is None, len(edict) == 0]):
-                                continue
-                            session.add(self.object_class(**edict))
-                        await session.commit()
-                except Exception as ex:
-                    otel_add_exception(ex)
-                    self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
+                add_obj_list = list()
+                for edict in add_edict_list:
+                    if any([edict is None, len(edict) == 0]):
+                        continue
+                    add_obj_list.append(self.object_class(**edict))
+                if len(add_obj_list) > 0:
+                    try:
+                        async with await self.db.sessionmaker() as session:
+                            session.begin()
+                            session.add_all(add_obj_list)
+                            await session.commit()
+                    except Exception as ex:
+                        otel_add_exception(ex)
+                        self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
 
         self.logger.info(f"< {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
 
@@ -150,8 +159,7 @@ class ESIUniverseRegionsBackfillTask(ESIBackfillTask):
         return f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/universe/regions/"
 
     def item_url(self, id: int) -> str:
-        url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/universe/regions/{id}/"
-        return url
+        return f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/universe/regions/{id}/"
 
     def item_dict(self, id: int, input: dict) -> dict:
         edict: typing.Final = dict({
@@ -182,8 +190,7 @@ class ESIUniverseConstellationsBackfillTask(ESIBackfillTask):
         return f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/universe/constellations/"
 
     def item_url(self, id: int) -> str:
-        url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/universe/constellations/{id}/"
-        return url
+        return f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/universe/constellations/{id}/"
 
     def item_dict(self, id: int, input: dict) -> dict:
         edict: typing.Final = dict({
@@ -214,8 +221,7 @@ class ESIUniverseSystemsBackfillTask(ESIBackfillTask):
         return f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/universe/systems/"
 
     def item_url(self, id: int) -> str:
-        url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/universe/systems/{id}/"
-        return url
+        return f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/universe/systems/{id}/"
 
     def item_dict(self, id: int, input: dict) -> dict:
         edict: typing.Final = dict({
@@ -246,8 +252,7 @@ class ESIAllianceBackfillTask(ESIBackfillTask):
         return f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/alliances/"
 
     def item_url(self, id: int) -> str:
-        url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/alliances/{id}/"
-        return url
+        return f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/alliances/{id}/"
 
     def item_dict(self, id: int, input: dict) -> dict:
         edict: typing.Final = dict({
@@ -275,8 +280,7 @@ class ESINPCorporationBackfillTask(ESIBackfillTask):
         return f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/corporations/npccorps/"
 
     def item_url(self, id: int) -> str:
-        url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/corporations/{id}/"
-        return url
+        return f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/corporations/{id}/"
 
     def item_dict(self, id: int, input: dict) -> dict:
         edict: typing.Final = dict({

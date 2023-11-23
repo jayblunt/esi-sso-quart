@@ -171,6 +171,7 @@ class AppSSO:
     @otel
     def __init__(self,
                  app: quart.Quart,
+                 esi: AppESI,
                  db: AppDatabase,
                  outbound: asyncio.Queue,
                  client_id: str,
@@ -182,6 +183,7 @@ class AppSSO:
                  callback_route: str = '/sso/callback') -> None:
 
         self.app: typing.Final = app
+        self.esi: typing.Final = esi
         self.db: typing.Final = db
         self.outbound: typing.Final = outbound
         self.logger: typing.Final = app.logger
@@ -265,7 +267,7 @@ class AppSSO:
             session_headers["Authorization"] = f"Bearer {esi_access_token}"
 
         async with aiohttp.ClientSession(headers=session_headers) as http_session:
-            esi_result = await AppESI.get_url(http_session, url, request_params=self.request_params)
+            esi_result = await self.esi.get(http_session, url, request_params=self.request_params)
             if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and esi_result.data is not None:
                 return esi_result.data
 
@@ -278,7 +280,7 @@ class AppSSO:
 
     async def _refresh_jwks_task(self) -> None:
         while True:
-            await asyncio.sleep(300)
+            await asyncio.sleep(600)
             try:
                 new_jwks: typing.Final = await self._get_jwks(self.jwks_uri)
                 if len(new_jwks) > 0:
@@ -293,7 +295,7 @@ class AppSSO:
         while True:
             now: typing.Final = datetime.datetime.now(tz=datetime.timezone.utc)
 
-            refresh_obj: AppTables.PeriodicCredentials | None = None
+            obj: AppTables.PeriodicCredentials | None = None
             try:
                 async with await self.db.sessionmaker() as session:
                     session: sqlalchemy.ext.asyncio.AsyncSession
@@ -305,7 +307,7 @@ class AppSSO:
                         .limit(1)
                     )
                     query_results: sqlalchemy.engine.Result = await session.execute(query)
-                    refresh_obj = query_results.scalar_one_or_none()
+                    obj = query_results.scalar_one_or_none()
 
             except Exception as ex:
                 otel_add_exception(ex)
@@ -313,51 +315,51 @@ class AppSSO:
                 await asyncio.sleep(refresh_interval.total_seconds())
                 continue
 
-            if refresh_obj is None:
+            if obj is None:
                 self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: no permitted credentials")
                 await asyncio.sleep(refresh_interval.total_seconds())
                 continue
 
-            if not isinstance(refresh_obj, AppTables.PeriodicCredentials):
+            if not isinstance(obj, AppTables.PeriodicCredentials):
                 self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: no permitted credentials")
                 await asyncio.sleep(refresh_interval.total_seconds())
                 continue
 
-            if refresh_obj.access_token_expiry > now + refresh_buffer:
-                remaining_interval: datetime.timedelta = (refresh_obj.access_token_expiry) - (now + refresh_buffer)
+            if obj.access_token_expiry > now + refresh_buffer:
+                remaining_interval: datetime.timedelta = (obj.access_token_expiry) - (now + refresh_buffer)
                 remaining_sleep_interval = min(refresh_interval.total_seconds(), remaining_interval.total_seconds())
                 # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {refresh_obj.character_id} refresh in {int(remaining_interval.total_seconds())}, sleeping {int(remaining_sleep_interval)}")
                 await asyncio.sleep(remaining_sleep_interval)
                 continue
 
-            esi_status = await AppESI.get_status()
+            esi_status = await self.esi.status()
             if esi_status is False:
                 self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: esi is not really available")
                 await asyncio.sleep(refresh_interval.total_seconds())
                 continue
 
             fallback_edict: typing.Final = {
-                AppSSO.APP_SESSION_ID: refresh_obj.session_id,
-                AppSSO.ESI_CHARACTER_ID: refresh_obj.character_id,
-                AppSSO.ESI_CORPORATION_ID: refresh_obj.corporation_id,
-                AppSSO.ESI_CHARACTER_IS_DIRECTOR_ROLE: refresh_obj.is_director_role,
-                AppSSO.ESI_CHARACTER_IS_ACCOUNTANT_ROLE: refresh_obj.is_accountant_role,
-                AppSSO.ESI_CHARACTER_IS_STATION_MANAGER_ROLE: refresh_obj.is_station_manager_role,
-                AppSSO.ESI_ACCESS_TOKEN_ISSUED: refresh_obj.access_token_issued,
-                AppSSO.ESI_ACCESS_TOKEN_EXPIRY: refresh_obj.access_token_expiry,
-                AppSSO.ESI_ACCESS_TOKEN: refresh_obj.access_token,
-                AppSSO.ESI_REFRESH_TOKEN: refresh_obj.refresh_token,
+                AppSSO.APP_SESSION_ID: obj.session_id,
+                AppSSO.ESI_CHARACTER_ID: obj.character_id,
+                AppSSO.ESI_CORPORATION_ID: obj.corporation_id,
+                AppSSO.ESI_CHARACTER_IS_DIRECTOR_ROLE: obj.is_director_role,
+                AppSSO.ESI_CHARACTER_IS_ACCOUNTANT_ROLE: obj.is_accountant_role,
+                AppSSO.ESI_CHARACTER_IS_STATION_MANAGER_ROLE: obj.is_station_manager_role,
+                AppSSO.ESI_ACCESS_TOKEN_ISSUED: obj.access_token_issued,
+                AppSSO.ESI_ACCESS_TOKEN_EXPIRY: obj.access_token_expiry,
+                AppSSO.ESI_ACCESS_TOKEN: obj.access_token,
+                AppSSO.ESI_REFRESH_TOKEN: obj.refresh_token,
             }
 
-            character_id: typing.Final = int(refresh_obj.character_id)
-            session_id: typing.Final = refresh_obj.session_id
-            refresh_token: typing.Final = refresh_obj.refresh_token
+            character_id: typing.Final = int(obj.character_id)
+            session_id: typing.Final = obj.session_id
+            refresh_token: typing.Final = obj.refresh_token
             keep_enabled = True
 
-            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh {refresh_obj.character_id} / {refresh_obj.corporation_id}")
+            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh {obj.character_id=} / {obj.corporation_id=}")
             edict = await self.esi_sso_refresh(session_id, refresh_token)
             if len(edict) == 0:
-                self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh failed for {refresh_obj.character_id}")
+                self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh failed for {obj.character_id=}")
                 edict = fallback_edict
                 keep_enabled = False
 
@@ -440,13 +442,13 @@ class AppSSO:
             }
 
             task_list: typing.Final = list()
-            task_list.append(AppESI.get_url(http_session, f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/characters/{character_id}/", request_params=self.request_params | request_params))
+            task_list.append(self.esi.get(http_session, f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/characters/{character_id}/", request_params=self.request_params | request_params))
             if "esi-characters.read_corporation_roles.v1" in scopes:
-                task_list.append(AppESI.get_url(http_session, f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/characters/{character_id}/roles/", request_params=self.request_params | request_params))
+                task_list.append(self.esi.get(http_session, f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/characters/{character_id}/roles/", request_params=self.request_params | request_params))
 
             for esi_result in await asyncio.gather(*task_list):
                 esi_result: AppESIResult
-                if esi_result is None:
+                if not esi_result:
                     continue
                 if esi_result.status not in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] or esi_result.data is None:
                     continue
@@ -570,8 +572,6 @@ class AppSSO:
             quart.abort(http.HTTPStatus.BAD_REQUEST, f"invalid session state in {self.callback_route}")
 
         post_token_url = self.configuration.get('token_endpoint', '')
-        if not AppESI.valid_url(post_token_url):
-            quart.abort(http.HTTPStatus.SERVICE_UNAVAILABLE, f"invalid token_endpoint in {self.callback_route}")
 
         basic_auth: typing.Final = f"{self.client_id}:{self.client_secret}"
         post_session_headers: typing.Final = {
@@ -585,7 +585,7 @@ class AppSSO:
                 "grant_type": "authorization_code",
                 "code": quart.request.args['code'],
             }
-            post_result: typing.Final = await AppESI.post_url(http_session, post_token_url, post_body)
+            post_result: typing.Final = await self.esi.post(http_session, post_token_url, post_body)
             if post_result.status == http.HTTPStatus.OK:
                 token_response = post_result.data
 
@@ -630,7 +630,7 @@ class AppSSO:
                 "refresh_token": refresh_token,
                 "client_id": self.client_id
             }
-            post_result: typing.Final = await AppESI.post_url(http_session, post_token_url, post_body)
+            post_result: typing.Final = await self.esi.post(http_session, post_token_url, post_body)
             if post_result.status == http.HTTPStatus.OK:
                 token_response = post_result.data
 

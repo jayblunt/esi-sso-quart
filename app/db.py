@@ -38,6 +38,17 @@ class AppTables:
             dict | list | None: sqlalchemy.JSON,
         }
 
+    # class Status(Base):
+    #     __tablename__: typing.Final = "esi_status"
+    #     timestamp: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
+    #     players: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(nullable=False)
+    #     start_time: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(nullable=False)
+    #     server_version: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(nullable=True)
+    #     vip: sqlalchemy.orm.Mapped[bool] = sqlalchemy.orm.mapped_column(nullable=False)
+
+    #     def __repr__(self) -> str:
+    #         return f"{self.__class__.__name__}({self.start_time=}, {self.players=})"
+
     class Character(Base):
         __tablename__: typing.Final = "esi_characters"
         character_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
@@ -378,6 +389,11 @@ class AppTables:
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}({self.id=}, {self.type=}, {self.permit=})"
 
+    # class AltCharacter(Base):
+    #     __tablename__: typing.Final = "app_alt_character"
+    #     character_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(nullable=False, primary_key=True)
+    #     alt_character_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(nullable=False, primary_key=True, unique=True)
+
     class AccessHistory(Base):
         __tablename__: typing.Final = "app_access_history"
         id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.Sequence("app_access_history_id_seq", start=1), primary_key=True, unique=True)
@@ -395,7 +411,6 @@ class AppTables:
         character_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
         session_id: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(nullable=False)
         auth_type: sqlalchemy.orm.Mapped[AppAuthType] = sqlalchemy.orm.mapped_column(nullable=False)
-
 
 class AppDatabase:
 

@@ -353,7 +353,7 @@ class AppFunctions:
 
     @staticmethod
     @otel
-    async def get_moon_mining_history(session: sqlalchemy.ext.asyncio.AsyncSession, moon_id: int, now: datetime.datetime) -> list[AppTables.ExtractionHistory]:
+    async def get_moon_mining_history(session: sqlalchemy.ext.asyncio.AsyncSession, moon_id: int, now: datetime.datetime) -> tuple[datetime.datetime, list[AppTables.ExtractionHistory]]:
 
         query = (
             sqlalchemy.select(
@@ -395,13 +395,25 @@ class AppFunctions:
             )
         )
 
-        max_id_sq_result: sqlalchemy.engine.Result = await session.execute(observer_history_id_query)
-        observer_history_id = max_id_sq_result.scalar_one_or_none()
+        query_result: sqlalchemy.engine.Result = await session.execute(observer_history_id_query)
+        observer_history_id = query_result.scalar_one_or_none()
 
         if observer_id is None or previous_chunk_arrival_date is None or observer_history_id is None:
             return list()
 
         # print(f"{observer_id=}, {previous_chunk_arrival_date=}, {observer_history_id=}")
+        q = (
+            sqlalchemy.select(AppTables.ObserverHistory.timestamp)
+            .where(
+                sqlalchemy.and_(
+                    AppTables.ObserverHistory.observer_id == observer_id,
+                    AppTables.ObserverHistory.id == observer_history_id
+                )
+            )
+        )
+        query_result: sqlalchemy.engine.Result = await session.execute(q)
+        observer_history_timestamp = query_result.scalar_one_or_none()
+        # print(f"{observer_id=}, {observer_history_id=}, {observer_history_timestamp=}")
 
         q = (
             sqlalchemy.select(
@@ -426,7 +438,7 @@ class AppFunctions:
             character_results[character_id][type_id] = quantity
             character_totals[character_id] += quantity
 
-        return [(x, dict(character_results[x])) for x in sorted(character_totals, key=character_totals.get, reverse=True)]
+        return observer_history_timestamp, [(x, dict(character_results[x])) for x in sorted(character_totals, key=character_totals.get, reverse=True)]
 
     @staticmethod
     @otel

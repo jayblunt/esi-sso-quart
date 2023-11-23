@@ -2,7 +2,6 @@ import asyncio
 import inspect
 import logging
 import os
-import http
 import typing
 import uuid
 
@@ -11,7 +10,7 @@ import quart
 import quart.sessions
 import quart_session
 
-from app import (AppDatabase, AppFunctions, AppRequest, AppSSO, AppTables,
+from app import (AppDatabase, AppESI, AppFunctions, AppRequest, AppSSO, AppTables,
                  AppTask, AppTemplates)
 from support.telemetry import otel, otel_initialize
 from tasks import (AppAccessControlTask, AppMoonYieldTask,
@@ -22,9 +21,9 @@ from tasks import (AppAccessControlTask, AppMoonYieldTask,
                    ESIUniverseRegionsBackfillTask,
                    ESIUniverseSystemsBackfillTask)
 
-app: typing.Final = quart.Quart(__name__)
+BASEDIR: typing.Final = os.path.dirname(os.path.realpath(__file__))
 
-app.logger.setLevel(logging.INFO)
+app: typing.Final = quart.Quart(__name__)
 
 app.config.from_mapping({
     "DEBUG": False,
@@ -39,10 +38,6 @@ app.config.from_mapping({
     "SESSION_COOKIE_SAMESITE": "Lax",
     # "SESSION_COOKIE_SECURE": True,
 
-    "BASEDIR": os.path.dirname(os.path.realpath(__file__)),
-    "EVEONLINE_CLIENT_ID": os.getenv("EVEONLINE_CLIENT_ID", ""),
-    "EVEONLINE_CLIENT_SECRET": os.getenv("EVEONLINE_CLIENT_SECRET", ""),
-    "SQLALCHEMY_DB_URL": os.getenv("SQLALCHEMY_DB_URL", ""),
     "TEMPLATES_AUTO_RELOAD": True,
     "SEND_FILE_MAX_AGE_DEFAULT": 300,
     "MAX_CONTENT_LENGTH": 512 * 1024,
@@ -51,24 +46,28 @@ app.config.from_mapping({
 })
 
 evesso_config: typing.Final = {
-    "client_id": app.config.get("EVEONLINE_CLIENT_ID"),
-    "client_secret": app.config.get("EVEONLINE_CLIENT_SECRET"),
+    "client_id": os.getenv("EVEONLINE_CLIENT_ID", ""),
+    "client_secret": os.getenv("EVEONLINE_CLIENT_SECRET", ""),
     "scopes": [
         "publicData",
-        "esi-characters.read_corporation_roles.v1",
         "esi-corporations.read_structures.v1",
-        "esi-industry.read_corporation_mining.v1"
+        "esi-characters.read_corporation_roles.v1",
+        "esi-industry.read_corporation_mining.v1",
     ]
 }
 
-evedb: typing.Final = AppDatabase(
-    app.config.get("SQLALCHEMY_DB_URL", "sqlite+pysqlite://"),
-)
+app.logger.setLevel(logging.INFO)
+
 quart_session.Session(app)
+
+esi: typing.Final = AppESI.factory(app.logger)
+db: typing.Final = AppDatabase(
+    os.getenv("SQLALCHEMY_DB_URL", ""),
+)
 eveevents: typing.Final = asyncio.Queue()
-evesso: typing.Final = AppSSO(app, evedb, eveevents, **evesso_config)
+sso: typing.Final = AppSSO(app, esi, db, eveevents, **evesso_config)
 evesession: typing.Final = app.session_interface.session_class(sid="global", permanent=False)
-evesession[AppTask.CONFIGDIR] = os.path.abspath(os.path.join(app.config.get("BASEDIR", "."), "data"))
+evesession[AppTask.CONFIGDIR] = os.path.abspath(os.path.join(BASEDIR, "data"))
 
 
 @app.before_serving
@@ -77,18 +76,18 @@ async def _before_serving() -> None:
     if not bool(evesession.get("setup_tasks_started", False)):
         evesession["setup_tasks_started"] = True
 
-        AppStructureNotificationTask(evesession, evedb, eveevents, app.logger)
+        AppStructureNotificationTask(evesession, esi, db, eveevents, app.logger)
 
-        ESIUniverseRegionsBackfillTask(evesession, evedb, eveevents, app.logger)
-        ESIUniverseConstellationsBackfillTask(evesession, evedb, eveevents, app.logger)
-        ESIUniverseSystemsBackfillTask(evesession, evedb, eveevents, app.logger)
-        ESIAllianceBackfillTask(evesession, evedb, eveevents, app.logger)
-        ESINPCorporationBackfillTask(evesession, evedb, eveevents, app.logger)
+        ESIUniverseRegionsBackfillTask(evesession, esi, db, eveevents, app.logger)
+        ESIUniverseConstellationsBackfillTask(evesession, esi, db, eveevents, app.logger)
+        ESIUniverseSystemsBackfillTask(evesession, esi, db, eveevents, app.logger)
+        ESIAllianceBackfillTask(evesession, esi, db, eveevents, app.logger)
+        ESINPCorporationBackfillTask(evesession, esi, db, eveevents, app.logger)
 
-        AppAccessControlTask(evesession, evedb, eveevents, app.logger)
-        AppMoonYieldTask(evesession, evedb, eveevents, app.logger)
+        AppAccessControlTask(evesession, esi, db, eveevents, app.logger)
+        AppMoonYieldTask(evesession, esi, db, eveevents, app.logger)
 
-        AppStructurePollingTask(evesession, evedb, eveevents, app.logger)
+        AppStructurePollingTask(evesession, esi, db, eveevents, app.logger)
 
 
 @app.errorhandler(404)
@@ -106,7 +105,7 @@ async def _robots() -> quart.ResponseReturnValue:
 @otel
 async def _usage() -> quart.ResponseReturnValue:
 
-    ar: typing.Final[AppRequest] = await AppFunctions.get_app_request(evedb, quart.session, quart.request)
+    ar: typing.Final[AppRequest] = await AppFunctions.get_app_request(db, quart.session, quart.request)
     if ar.character_id > 0 and ar.suspect:
         quart.session.clear()
 
@@ -116,7 +115,7 @@ async def _usage() -> quart.ResponseReturnValue:
         denied_data: typing.Final = list()
 
         try:
-            async with await evedb.sessionmaker() as session:
+            async with await db.sessionmaker() as session:
                 permitted_data.extend(await AppFunctions.get_usage(session, True, ar.ts))
                 denied_data.extend(await AppFunctions.get_usage(session, False, ar.ts))
 
@@ -137,7 +136,7 @@ async def _usage() -> quart.ResponseReturnValue:
 @otel
 async def _about() -> quart.ResponseReturnValue:
 
-    ar: typing.Final = await AppFunctions.get_app_request(evedb, quart.session, quart.request)
+    ar: typing.Final = await AppFunctions.get_app_request(db, quart.session, quart.request)
 
     return await quart.render_template(
         "about.html",
@@ -151,7 +150,7 @@ async def _about() -> quart.ResponseReturnValue:
 @otel
 async def _moon(moon_id: int) -> quart.ResponseReturnValue:
 
-    ar: typing.Final[AppRequest] = await AppFunctions.get_app_request(evedb, quart.session, quart.request)
+    ar: typing.Final[AppRequest] = await AppFunctions.get_app_request(db, quart.session, quart.request)
     if ar.character_id > 0 and ar.suspect:
         quart.session.clear()
 
@@ -159,15 +158,18 @@ async def _moon(moon_id: int) -> quart.ResponseReturnValue:
 
         moon_extraction_history: typing.Final = list()
         moon_mining_history: typing.Final = list()
+        moon_mining_history_timestamp = None
         moon_yield: typing.Final = list()
         moon_structure = None
 
         try:
-            async with await evedb.sessionmaker() as session:
+            async with await db.sessionmaker() as session:
                 moon_structure = await AppFunctions.get_moon_structure(session, moon_id, ar.ts)
                 moon_yield.extend(await AppFunctions.get_moon_yield(session, moon_id, ar.ts))
                 moon_extraction_history.extend(await AppFunctions.get_moon_history(session, moon_id, ar.ts))
-                moon_mining_history.extend(await AppFunctions.get_moon_mining_history(session, moon_id, ar.ts))
+                moon_mining_history_timestamp, mm_history = await AppFunctions.get_moon_mining_history(session, moon_id, ar.ts)
+                app.logger.info(f"{inspect.currentframe().f_code.co_name}: {moon_id=} {moon_mining_history_timestamp=}")
+                moon_mining_history.extend(mm_history)
 
         except Exception as ex:
             app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex=}")
@@ -192,26 +194,24 @@ async def _moon(moon_id: int) -> quart.ResponseReturnValue:
             moon_extraction_history=moon_extraction_history,
             miners=miner_list,
             mined_quantity=mined_quantity_dict,
+            mined_quantity_timestamp=moon_mining_history_timestamp,
             mined_types=sorted(list(mined_types_set)),
             weekday_names=['M', 'T', 'W', 'T', 'F', 'S', 'S'],
             timeofday_names=[f"{(x-time_chunking):02d}-{(x):02d}" for x in range(time_chunking, 24 + time_chunking) if x % time_chunking == 0],
         )
 
-    return quart.redirect(evesso.login_route)
+    return quart.redirect(sso.login_route)
 
 
 @app.route("/", methods=["GET"])
 @otel
 async def _root() -> quart.ResponseReturnValue:
 
-    ar: typing.Final[AppRequest] = await AppFunctions.get_app_request(evedb, quart.session, quart.request)
+    ar: typing.Final[AppRequest] = await AppFunctions.get_app_request(db, quart.session, quart.request)
     if ar.character_id > 0 and ar.suspect:
         quart.session.clear()
 
     elif ar.character_id > 0 and ar.permitted:
-
-        if bool(ar.session.get(AppSSO.ESI_CHARACTER_IS_STATION_MANAGER_ROLE, False)):
-            AppStructureTask(ar.session, evedb, eveevents, app.logger)
 
         active_timer_results: typing.Final[list[AppTables.Structure]] = list()
         completed_extraction_results: typing.Final = list()
@@ -223,7 +223,7 @@ async def _root() -> quart.ResponseReturnValue:
         structure_counts: typing.Final = list()
 
         try:
-            async with await evedb.sessionmaker() as session:
+            async with await db.sessionmaker() as session:
                 active_timer_results.extend(await AppFunctions.get_active_timers(session, ar.ts))
                 completed_extraction_results.extend(await AppFunctions.get_completed_extractions(session, ar.ts))
                 scheduled_extraction_results.extend(await AppFunctions.get_scheduled_extractions(session, ar.ts))
@@ -269,16 +269,15 @@ async def _root() -> quart.ResponseReturnValue:
 
 if __name__ == "__main__":
 
-    # logging.basicConfig(level=logging.DEBUG)
     otel_initialize()
 
-    AppTemplates.add_templates(app, evedb)
+    AppTemplates.add_templates(app, db)
 
     app_debug: typing.Final = app.config.get("DEBUG", False)
     app_port: typing.Final = app.config.get("PORT", 5050)
     app_host: typing.Final = app.config.get("HOST", "127.0.0.1")
 
-    # app_log_file: typing.Final = os.path.join(app.config.get('BASEDIR', os.path.basename(os.path.abspath(os.path.splitext(__file__)[0]))), "logs", "app.log")
+    # app_log_file: typing.Final = os.path.join(BASEDIR, "logs", "app.log")
     # app_log_dir: typing.Final = os.path.dirname(app_log_file)
     # if not os.path.isdir(app_log_dir):
     #     os.makedirs(app_log_dir, 0o755)
@@ -296,11 +295,11 @@ if __name__ == "__main__":
         app_bind_hosts: typing.Final = [x for x in app_trusted_hosts]
 
         script_name: typing.Final = os.path.splitext(os.path.basename(__file__))[0]
-        with open(os.path.join(app.config.get("BASEDIR", "."), f"{script_name}.pid"), 'w') as ofp:
+        with open(os.path.join(BASEDIR, f"{script_name}.pid"), 'w') as ofp:
             ofp.write(f"{os.getpid()}{os.linesep}")
 
         # XXX: hack for development server.
-        development_flag_file = os.path.join(app.config.get("BASEDIR", "."), "development.txt")
+        development_flag_file = os.path.join(BASEDIR, "development.txt")
         if os.path.exists(development_flag_file):
             with open(development_flag_file) as ifp:
                 app_bind_hosts.clear()
@@ -313,7 +312,7 @@ if __name__ == "__main__":
         config.accesslog = "-"
 
         async def async_main():
-            await evedb._initialize()
+            await db._initialize()
 
             app.asgi_app = opentelemetry.instrumentation.asgi.OpenTelemetryMiddleware(
                 app.asgi_app
