@@ -1,0 +1,10 @@
+<tr class="{{structure.timestamp|timestamp_age}}">
+    <td class="align_left">{{ structure.name }}</td>
+    <td class="align_left"><a href="{{ structure.system_id|zkillboard_system }}" target="_blank">{{
+            structure.system_id|esi_system_name }}</a></td>
+    <td class="align_left"><a href="{{ structure.corporation_id|zkillboard_corporation }}" target="_blank">{{
+            structure.corporation.name }}</a></td>
+    <td class="align_center">{% if structure.has_reprocessing %}X{% endif %}</td>
+    <td>{{ (structure.fuel_cycle * 24 * 7)|commafy }}</td>
+        <td>{{ structure.fuel_expires|datetime }}</td>
+</tr>

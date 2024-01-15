@@ -112,23 +112,27 @@ class AppTemplates:
     @otel
     def _timestamp_age(dt: datetime.datetime) -> str:
         return "fresh"
-        age_days: typing.Final = (datetime.datetime.now(datetime.timezone.utc) - dt.replace(tzinfo=datetime.timezone.utc)).days
+        age_days: typing.Final = (datetime.datetime.now(datetime.UTC) - dt.replace(tzinfo=datetime.UTC)).days
         if age_days >= 7:
             return "stale"
 
     @staticmethod
     @otel
-    def _datetime(dt: datetime.datetime | None) -> str:
+    def _datetime(dt: datetime.datetime) -> str:
         if dt is None:
             return ''
-        return dt.replace(tzinfo=None).isoformat(sep=" ", timespec="minutes")
+        if isinstance(dt, datetime.datetime):
+            return dt.replace(tzinfo=None).isoformat(sep=" ", timespec="minutes")
+        return dt.isoformat()
 
     @staticmethod
     @otel
-    def _date(dt: datetime.datetime | None) -> str:
+    def _date(dt: datetime.datetime) -> str:
         if dt is None:
             return ''
-        return dt.replace(tzinfo=None).date().isoformat()
+        if isinstance(dt, datetime.datetime):
+            return dt.replace(tzinfo=None).date().isoformat()
+        return dt.isoformat()
 
     @staticmethod
     @otel

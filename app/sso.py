@@ -5,6 +5,7 @@ import dataclasses
 import datetime
 import http
 import inspect
+import secrets
 import typing
 import urllib.parse
 import uuid
@@ -12,6 +13,7 @@ import uuid
 import aiohttp
 import aiohttp.client_exceptions
 import dateutil.parser
+import hashlib
 import jose.exceptions
 import jose.jwt
 import quart
@@ -82,7 +84,7 @@ class AppSSOFunctions:
         if not character_id > 0:
             return False
 
-        epoch: typing.Final = datetime.datetime(1970, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
+        epoch: typing.Final = datetime.datetime(1970, 1, 1, 0, 0, 0, tzinfo=datetime.UTC)
 
         try:
             async with await db.sessionmaker() as session:
@@ -166,6 +168,7 @@ class AppSSO:
     ESI_REFRESH_TOKEN: typing.Final = "refresh_token"
 
     APP_SESSION_ID: typing.Final = "session_id"
+    APP_PCKE_VERIFIER: typing.Final = "pcke_verifier"
     REQUEST_PATH: typing.Final = "request.path"
 
     @otel
@@ -175,7 +178,6 @@ class AppSSO:
                  db: AppDatabase,
                  outbound: asyncio.Queue,
                  client_id: str,
-                 client_secret: str,
                  configuration_url: str | None = None,
                  scopes: list[str] = ['publicData'],
                  login_route: str = '/sso/login',
@@ -189,7 +191,6 @@ class AppSSO:
         self.logger: typing.Final = app.logger
 
         self.client_id: typing.Final = client_id
-        self.client_secret: typing.Final = client_secret
 
         self.configuration_url: typing.Final = configuration_url or self.CONNFIGURATION_URL
         self.scopes: typing.Final = scopes
@@ -293,7 +294,7 @@ class AppSSO:
         refresh_buffer: typing.Final = datetime.timedelta(seconds=60)
         refresh_interval: typing.Final = datetime.timedelta(seconds=300)
         while True:
-            now: typing.Final = datetime.datetime.now(tz=datetime.timezone.utc)
+            now: typing.Final = datetime.datetime.now(tz=datetime.UTC)
 
             obj: AppTables.PeriodicCredentials | None = None
             try:
@@ -411,7 +412,7 @@ class AppSSO:
 
     @otel
     async def esi_unpack_token_response(self, session_id: str, token_response: dict) -> dict:
-        now: typing.Final = datetime.datetime.now(tz=datetime.timezone.utc)
+        now: typing.Final = datetime.datetime.now(tz=datetime.UTC)
 
         decoded_acess_token = await self.esi_decode_token(session_id, token_response)
         if decoded_acess_token is None:
@@ -448,8 +449,10 @@ class AppSSO:
 
             for esi_result in await asyncio.gather(*task_list):
                 esi_result: AppESIResult
+
                 if not esi_result:
                     continue
+
                 if esi_result.status not in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] or esi_result.data is None:
                     continue
                 if len(esi_result.data) == 0:
@@ -460,7 +463,7 @@ class AppSSO:
                     character_result |= esi_result.data
 
         conversions: typing.Final = {
-            'birthday': lambda x: dateutil.parser.parse(str(x)).replace(tzinfo=datetime.timezone.utc)
+            'birthday': lambda x: dateutil.parser.parse(str(x)).replace(tzinfo=datetime.UTC)
         }
         for k, v in conversions.items():
             if k in character_result.keys():
@@ -474,8 +477,8 @@ class AppSSO:
             AppSSO.ESI_CHARACTER_IS_DIRECTOR_ROLE: bool('Director' in character_roles_result.get('roles', [])),
             AppSSO.ESI_CHARACTER_IS_ACCOUNTANT_ROLE: bool('Accountant' in character_roles_result.get('roles', [])),
             AppSSO.ESI_CHARACTER_IS_STATION_MANAGER_ROLE: bool('Station_Manager' in character_roles_result.get('roles', [])),
-            AppSSO.ESI_ACCESS_TOKEN_ISSUED: datetime.datetime.fromtimestamp(decoded_acess_token.get('iat', int(now.timestamp())), tz=datetime.timezone.utc),
-            AppSSO.ESI_ACCESS_TOKEN_EXPIRY: datetime.datetime.fromtimestamp(decoded_acess_token.get('exp', int(now.timestamp())), tz=datetime.timezone.utc),
+            AppSSO.ESI_ACCESS_TOKEN_ISSUED: datetime.datetime.fromtimestamp(decoded_acess_token.get('iat', int(now.timestamp())), tz=datetime.UTC),
+            AppSSO.ESI_ACCESS_TOKEN_EXPIRY: datetime.datetime.fromtimestamp(decoded_acess_token.get('exp', int(now.timestamp())), tz=datetime.UTC),
             AppSSO.ESI_REFRESH_TOKEN: refresh_token,
             AppSSO.ESI_ACCESS_TOKEN: access_token,
             AppSSO.ESI_SCOPES: scopes,
@@ -511,15 +514,25 @@ class AppSSO:
 
         client_session[AppSSO.ESI_SCOPES] = login_scopes
 
-        redirect_params: typing.Final = [
-            'response_type=code',
-            f'redirect_uri={self.callback_url}',
-            f'client_id={self.client_id}',
-            f'scope={urllib.parse.quote(" ".join(login_scopes))}',
-            f'state={client_session[AppSSO.APP_SESSION_ID]}'
-        ]
+        pcke_verifier: typing.Final = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().replace("=", "")
+        client_session[AppSSO.APP_PCKE_VERIFIER] = pcke_verifier
+        
+        sha256: typing.Final = hashlib.sha256()
+        sha256.update(pcke_verifier.encode())
+        hash_digest: typing.Final = sha256.digest()
+        pcke_challenge: typing.Final = base64.urlsafe_b64encode(hash_digest).decode().replace("=", "")
 
-        redirect_url: typing.Final = f"{self.configuration['authorization_endpoint']}?{'&'.join(redirect_params)}"
+        redirect_params: typing.Final = {
+            'response_type': 'code',
+            'client_id': self.client_id,
+            'redirect_uri': self.callback_url,
+            'scope': " ".join(login_scopes),
+            'state': client_session[AppSSO.APP_SESSION_ID],
+            'code_challenge': pcke_challenge,
+            'code_challenge_method': 'S256',
+        }
+
+        redirect_url: typing.Final = f"{self.configuration['authorization_endpoint']}?{urllib.parse.urlencode(redirect_params)}"
 
         return quart.redirect(redirect_url)
 
@@ -573,9 +586,7 @@ class AppSSO:
 
         post_token_url = self.configuration.get('token_endpoint', '')
 
-        basic_auth: typing.Final = f"{self.client_id}:{self.client_secret}"
         post_session_headers: typing.Final = {
-            "Authorization": f"Basic {base64.urlsafe_b64encode(basic_auth.encode()).decode()!s}",
             "Host": urllib.parse.urlparse(post_token_url).netloc,
         }
 
@@ -583,8 +594,12 @@ class AppSSO:
         async with aiohttp.ClientSession(headers=post_session_headers) as http_session:
             post_body: typing.Final = {
                 "grant_type": "authorization_code",
+                'client_id': self.client_id,
+                'redirect_uri': self.callback_url,
                 "code": quart.request.args['code'],
+                'code_verifier': client_session[AppSSO.APP_PCKE_VERIFIER]
             }
+
             post_result: typing.Final = await self.esi.post(http_session, post_token_url, post_body)
             if post_result.status == http.HTTPStatus.OK:
                 token_response = post_result.data

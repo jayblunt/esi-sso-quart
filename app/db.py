@@ -169,6 +169,9 @@ class AppTables:
         fuel_expires: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(nullable=True)
         unanchors_at: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(nullable=True)
         has_moon_drill: sqlalchemy.orm.Mapped[bool] = sqlalchemy.orm.mapped_column(nullable=False)
+        has_reprocessing: sqlalchemy.orm.Mapped[bool] = sqlalchemy.orm.mapped_column(default=False, nullable=False)
+        fuel_online: sqlalchemy.orm.Mapped[float] = sqlalchemy.orm.mapped_column(nullable=False)
+        fuel_cycle: sqlalchemy.orm.Mapped[float] = sqlalchemy.orm.mapped_column(nullable=False)
 
         corporation = sqlalchemy.orm.relationship("Corporation", viewonly=True)
         system = sqlalchemy.orm.relationship("UniverseSystem", viewonly=True)
@@ -193,6 +196,9 @@ class AppTables:
         fuel_expires: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(nullable=True)
         unanchors_at: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(nullable=True)
         has_moon_drill: sqlalchemy.orm.Mapped[bool] = sqlalchemy.orm.mapped_column(nullable=False)
+        has_reprocessing: sqlalchemy.orm.Mapped[bool] = sqlalchemy.orm.mapped_column(default=False, nullable=False)
+        fuel_online: sqlalchemy.orm.Mapped[float] = sqlalchemy.orm.mapped_column(nullable=False)
+        fuel_cycle: sqlalchemy.orm.Mapped[float] = sqlalchemy.orm.mapped_column(nullable=False)
 
         corporation = sqlalchemy.orm.relationship("Corporation", viewonly=True)
         system = sqlalchemy.orm.relationship("UniverseSystem", viewonly=True)
@@ -345,6 +351,19 @@ class AppTables:
 
     #     def __repr__(self) -> str:
     #         return f"{self.__class__.__name__}(timestamp={self.timestamp})"
+
+    class MarketHistory(Base):
+        __tablename__: typing.Final = "app_market_history"
+        id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
+        timestamp: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
+        region_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
+        type_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
+        average: sqlalchemy.orm.Mapped[float] = sqlalchemy.orm.mapped_column(nullable=False)
+        date: sqlalchemy.orm.Mapped[datetime.date] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
+        highest: sqlalchemy.orm.Mapped[float] = sqlalchemy.orm.mapped_column(nullable=False)
+        lowest: sqlalchemy.orm.Mapped[float] = sqlalchemy.orm.mapped_column(nullable=False)
+        order_count: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(nullable=False)
+        volume: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(nullable=False)
 
     class PeriodicCredentials(Base):
         __tablename__: typing.Final = "app_periodic_credentials"

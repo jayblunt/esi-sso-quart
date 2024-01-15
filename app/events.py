@@ -10,7 +10,7 @@ counter: typing.Final = itertools.count()
 @dataclasses.dataclass(frozen=True)
 class AppEvent:
     id: int = dataclasses.field(default_factory=lambda: next(counter))
-    ts: datetime.datetime = dataclasses.field(default_factory=functools.partial(datetime.datetime.now, tz=datetime.timezone.utc))
+    ts: datetime.datetime = dataclasses.field(default_factory=functools.partial(datetime.datetime.now, tz=datetime.UTC))
 
 
 @dataclasses.dataclass(frozen=True)

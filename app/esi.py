@@ -93,7 +93,7 @@ class AppESI:
                         if response_etag is not None and response_json is not None:
                             lifetime = self.KV_LIFETIME
                             if response_expires:
-                                lifetime = dateutil.parser.parse(response_expires) - datetime.datetime.now(tz=datetime.timezone.utc)
+                                lifetime = dateutil.parser.parse(response_expires) - datetime.datetime.now(tz=datetime.UTC)
                                 lifetime = int(lifetime.total_seconds())
 
                             with contextlib.suppress(redis.RedisError):
@@ -150,7 +150,7 @@ class AppESI:
                     attempts_remaining -= 1
                     otel_add_error(f"{response.url} -> {response.status}")
                     self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {response.url} -> {response.status} / {await response.text()}")
-                    if response.status in [http.HTTPStatus.BAD_REQUEST, http.HTTPStatus.FORBIDDEN]:
+                    if response.status in [http.HTTPStatus.BAD_REQUEST, http.HTTPStatus.FORBIDDEN, http.HTTPStatus.UNAUTHORIZED]:
                         attempts_remaining = 0
                     if attempts_remaining > 0:
                         await asyncio.sleep(AppConstants.ESI_ERROR_SLEEP_TIME * AppConstants.ESI_ERROR_SLEEP_MODIFIERS.get(response.status, 1))
@@ -238,7 +238,7 @@ class AppESI:
                             if response_etag is not None and response_json is not None:
                                 lifetime = AppESI.KV_LIFETIME
                                 if response_expires:
-                                    lifetime = dateutil.parser.parse(response_expires) - datetime.datetime.now(tz=datetime.timezone.utc)
+                                    lifetime = dateutil.parser.parse(response_expires) - datetime.datetime.now(tz=datetime.UTC)
                                     lifetime = int(lifetime.total_seconds())
 
                                 with contextlib.suppress(redis.RedisError):
@@ -294,5 +294,5 @@ class AppESI:
                                 result_data = None
                                 break
 
-        self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url} -> {result_status}")
+        self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {redis_url} -> {result_status}")
         return AppESIResult(result_status, result_data)

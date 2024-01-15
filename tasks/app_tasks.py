@@ -20,6 +20,7 @@ import sqlalchemy.sql
 from app import (AppConstants, AppDatabase, AppDatabaseTask, AppESI, AppSSO,
                  AppTables, MoonExtractionCompletedEvent,
                  MoonExtractionScheduledEvent, StructureStateChangedEvent)
+from app.esi import AppESIResult
 from support.telemetry import otel, otel_add_exception
 
 
@@ -27,7 +28,7 @@ class AppCommonState:
 
     @property
     def changes_skipkeys(self) -> list:
-        return ['character_id', 'corporation_id']
+        return ['character_id']
 
     def __init__(self, db: AppDatabase, logger: logging.Logger | None) -> None:
         self.db: typing.Final = db
@@ -330,10 +331,60 @@ class AppStructureTask(AppDatabaseTask):
         self.observer_state: typing.Final = AppObserverState(db, logger)
 
     @otel
+    async def estimate_fuel(self, now: datetime.datetime, access_token: str, data: dict) -> dict:
+        pass
+        self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {data=}")
+        structure_fuel_cycle: typing.Final = {
+            "Clone Bay": 10,
+            "Market": 40,
+
+            "Manufacturing (Capitals)": 24,
+            "Manufacturing (Standard)": 12,
+            "Blueprint Copying": 12,
+            "Invention": 12,
+            "Material Efficiency Research": 12,
+            "Time Efficiency Research": 12,
+
+            "Biochemical Reactions": 15,
+            "Composite Reactions": 15,
+            "Hybrid Reactions": 15,
+            "Moon Drilling": 5,
+            "Reprocessing": 10,
+        }
+        structure_modifiers: typing.Final = {
+            35825: {"Manufacturing (Standard)": .25}, # Raitaru
+            35826: {"Manufacturing (Standard)": .25}, # Azbel
+            35832: .25, # Astrahus
+            35833: .25, # Fortizar
+            35835: {"Reprocessing": .2}, # Athanor
+            35836: {"Reprocessing": .25, "Hybrid Reactions": .25, "Biochemical Reactions": .25, "Composite Reactions": .25}, # Tatara
+        }
+        rval: typing.Final = {
+            "fuel_online": 0.,
+            "fuel_cycle": 0.,
+        }
+        type_id = data.get("type_id", 0)
+        modifiers = structure_modifiers.get(type_id, 0.)
+        online_services = list(filter(lambda x: x.get('state', '') == "online", data.get("services", {})))
+        online_services = set(map(lambda x: x.get('name'), online_services))
+        for svc in sorted(online_services):
+            v = structure_fuel_cycle.get(svc, 0)
+            m = modifiers
+            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {type_id} {svc}, {v=}, {m=}")
+            if isinstance(m, dict):
+                m = m.get(svc, 0.)
+            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {type_id} {svc}, {v=}, {m=}")
+            if v > 0:
+                rval["fuel_cycle"] += v * ( 1.0 - float(m) )
+                continue
+            self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {type_id} {svc}")
+        self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {rval=}")
+        return rval
+
+    @otel
     async def run_structures(self, now: datetime.datetime, character_id: int, corporation_id: int, access_token: str) -> None:
 
         url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/corporations/{corporation_id}/structures/"
-        self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url=}")
 
         esi_result = await self.esi.pages(url, access_token, self.request_params)
         if esi_result.status == http.HTTPStatus.NOT_MODIFIED:
@@ -371,18 +422,31 @@ class AppStructureTask(AppDatabaseTask):
                 "character_id": character_id,
                 "corporation_id": corporation_id
             })
+            services_dict: typing.Final = dict()
             for k, v in x.items():
                 if k in ["fuel_expires", "state_timer_end", "state_timer_start", "unanchors_at"]:
-                    v = dateutil.parser.parse(v).replace(tzinfo=datetime.timezone.utc)
+                    v = dateutil.parser.parse(v).replace(tzinfo=datetime.UTC)
                 elif k in ["structure_id", "system_id", "type_id"]:
                     v = int(v)
+                    services_dict[k] = int(v)
                 elif k in ["services"]:
-                    v = list(filter(lambda x: x.get('name', '') == "Moon Drilling", v))
-                    edict["has_moon_drill"] = bool(len(v) > 0)
+                    services_dict[k] = v
+                    services_kv: typing.Final = {
+                        "Moon Drilling": "has_moon_drill",
+                        "Reprocessing": "has_reprocessing",
+                    }
+                    online_services = list(filter(lambda x: x.get('state', '') == "online", v))
+                    online_services = set(map(lambda x: x.get('name'), online_services))
+                    for kk, vv in services_kv.items():
+                        edict[vv] = bool(kk in online_services)
                     continue
                 elif k not in ["name", "state"]:
                     continue
                 edict[k] = v
+
+            for k, v in (await self.estimate_fuel(now, access_token, services_dict)).items():
+                if k in ["fuel_online", "fuel_cycle"]:
+                    edict[k] = v
 
             obj = AppTables.Structure(**edict)
             self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {obj}")
@@ -540,6 +604,7 @@ class AppStructureTask(AppDatabaseTask):
                 # migrated_structure_id_set = set()
                 for scheduled_structure_id, scheduled_obj in scheduled_extraction_dict.items():
 
+                    # XXX change removal logic for auto-fracture here?
                     await session.delete(scheduled_obj)
                     self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {scheduled_obj} remmoved")
 
@@ -600,7 +665,6 @@ class AppStructureTask(AppDatabaseTask):
     async def run_extractions(self, now: datetime.datetime, character_id: int, corporation_id: int, access_token: str) -> None:
 
         url = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/corporation/{corporation_id}/mining/extractions/"
-        self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url=}")
 
         esi_result = await self.esi.pages(url, access_token, self.request_params)
         if esi_result.status == http.HTTPStatus.NOT_MODIFIED:
@@ -639,7 +703,7 @@ class AppStructureTask(AppDatabaseTask):
             })
             for k, v in x.items():
                 if k in ["chunk_arrival_time", "extraction_start_time", "natural_decay_time"]:
-                    v = dateutil.parser.parse(v).replace(tzinfo=datetime.timezone.utc)
+                    v = dateutil.parser.parse(v).replace(tzinfo=datetime.UTC)
                 elif k in ["structure_id", "moon_id"]:
                     v = int(v)
                 else:
@@ -669,6 +733,11 @@ class AppStructureTask(AppDatabaseTask):
 
         for structure_id in changed_structure_id_set:
             obj = await self.extraction_state.get(structure_id)
+
+            # Skip decayed extractions
+            if obj.natural_decay_time < now:
+                continue
+
             if self.outbound and isinstance(obj, AppTables.ScheduledExtraction):
                 await self.outbound.put(MoonExtractionScheduledEvent(
                     structure_id=obj.structure_id,
@@ -741,7 +810,6 @@ class AppStructureTask(AppDatabaseTask):
     async def run_observers(self, now: datetime.datetime, character_id: int, corporation_id: int, access_token: str) -> None:
 
         url = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/corporation/{corporation_id}/mining/observers/"
-        self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {url=}")
 
         esi_result = await self.esi.pages(url, access_token, self.request_params)
         if esi_result.status == http.HTTPStatus.NOT_MODIFIED:
@@ -779,7 +847,7 @@ class AppStructureTask(AppDatabaseTask):
             })
             for k, v in x.items():
                 if k in ["last_updated"]:
-                    v = dateutil.parser.parse(v).replace(tzinfo=datetime.timezone.utc).date()
+                    v = dateutil.parser.parse(v).replace(tzinfo=datetime.UTC).date()
                 elif k in ["observer_id"]:
                     v = int(v)
                 elif k not in ["observer_type"]:
@@ -842,7 +910,7 @@ class AppStructureTask(AppDatabaseTask):
                     })
                     for k, v in x.items():
                         if k in ["last_updated"]:
-                            v = dateutil.parser.parse(v).replace(tzinfo=datetime.timezone.utc).date()
+                            v = dateutil.parser.parse(v).replace(tzinfo=datetime.UTC).date()
                         elif k in ["character_id", "quantity", "recorded_corporation_id", "type_id"]:
                             v = int(v)
                         else:
@@ -886,7 +954,7 @@ class AppStructureTask(AppDatabaseTask):
         corporation_id: typing.Final = int(client_session.get(AppSSO.ESI_CORPORATION_ID, 0))
         access_token: typing.Final = client_session.get(AppSSO.ESI_ACCESS_TOKEN, '')
 
-        now: typing.Final = datetime.datetime.now(tz=datetime.timezone.utc)
+        now: typing.Final = datetime.datetime.now(tz=datetime.UTC)
 
         if any([is_director_role, is_station_manager_role]) and "esi-corporations.read_structures.v1" in client_session.get(AppSSO.ESI_SCOPES, []):
             await self.run_structures(now, character_id, corporation_id, access_token)
@@ -940,7 +1008,7 @@ class AppStructurePollingTask(AppStructureTask):
     @otel
     async def get_refresh_times(self, corporation_id_list: list) -> dict[int, datetime.datetime]:
 
-        corporation_refresh_history_dict: typing.Final = {x: datetime.datetime(2000, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc) for x in corporation_id_list}
+        corporation_refresh_history_dict: typing.Final = {x: datetime.datetime(2000, 1, 1, 0, 0, 0, tzinfo=datetime.UTC) for x in corporation_id_list}
         try:
             async with await self.db.sessionmaker() as session:
                 session: sqlalchemy.ext.asyncio.AsyncSession
@@ -992,7 +1060,7 @@ class AppStructurePollingTask(AppStructureTask):
     async def run_once(self, client_session: collections.abc.MutableSet):
 
         refresh_interval: typing.Final = datetime.timedelta(seconds=AppConstants.CORPORATION_REFRESH_INTERVAL_SECONDS)
-        now: typing.Final = datetime.datetime.now(tz=datetime.timezone.utc)
+        now: typing.Final = datetime.datetime.now(tz=datetime.UTC)
 
         available_corporation_id_dict: typing.Final = await self.get_available_periodic_credentials(now)
         if len(available_corporation_id_dict.keys()) == 0:
@@ -1007,7 +1075,7 @@ class AppStructurePollingTask(AppStructureTask):
         if oldest_corporation_timestamp + refresh_interval > now:
             remaining_interval: datetime.timedelta = (oldest_corporation_timestamp + refresh_interval) - (now)
             # remaining_sleep_interval = min(refresh_interval.total_seconds(), remaining_interval.total_seconds())
-            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {oldest_corporation_id=}, {oldest_corporation_timestamp=}, {remaining_interval=}")
+            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {oldest_corporation_id=}, {remaining_interval=}")
             await asyncio.sleep(remaining_interval.total_seconds())
             return
 
@@ -1044,3 +1112,123 @@ class AppStructurePollingTask(AppStructureTask):
             except Exception as ex:
                 otel_add_exception(ex)
                 self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
+
+
+class AppMarketHistoryTask(AppDatabaseTask):
+
+    @otel
+    async def get_market_type_ids(self) -> list[int]:
+        try:
+            async with await self.db.sessionmaker() as session, session.begin():
+                session: sqlalchemy.ext.asyncio.AsyncSession
+
+                queries = [
+                    sqlalchemy.select(sqlalchemy.sql.distinct(AppTables.ObserverRecordHistory.type_id)),
+                    sqlalchemy.select(sqlalchemy.sql.distinct(AppTables.MoonYield.type_id))
+                ]
+
+                results = set()
+
+                for q in queries:
+                    results |= {x async for x in await session.stream_scalars(q)}
+
+                for k, v in AppConstants.COMPRESSED_TYPE_DICT.items():
+                    results |= {k, v}
+
+                return sorted(list(results))
+
+        except Exception as ex:
+            otel_add_exception(ex)
+            self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
+
+        return []
+    
+    @otel
+    async def get_max_market_id(self) -> int:
+
+        max_id = 0
+
+        try:
+            async with await self.db.sessionmaker() as session, session.begin():
+                session: sqlalchemy.ext.asyncio.AsyncSession
+
+                query = (sqlalchemy.select(sqlalchemy.func.max(AppTables.MarketHistory.id)))
+
+                query_result: typing.Final = await session.execute(query)
+                last_max_id = query_result.scalar_one_or_none()
+                if last_max_id is not None:
+                    max_id = int(last_max_id)
+
+        except Exception as ex:
+            otel_add_exception(ex)
+            self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
+
+        return max_id
+
+    @otel
+    async def run_once(self, client_session: collections.abc.MutableSet, type_id_list: list):
+
+        previous_max_id = await self.get_max_market_id()
+
+        for type_id in type_id_list:
+            request_params = { 'type_id': type_id }
+            url = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/markets/{AppConstants.MARKET_REGION}/history/"
+            esi_result = await self.esi.pages(url, '', self.request_params | request_params)
+        
+            if esi_result.status == http.HTTPStatus.NOT_MODIFIED:
+                self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {esi_result.status=}")
+                continue
+
+            if esi_result.status not in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] or esi_result.data is None:
+                self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {esi_result.status=}")
+                continue
+
+            history_records: typing.Final = esi_result.data
+
+            history_obj_set = set()
+            for x in history_records:
+                x: dict
+
+                edict: dict[str, int | bool | datetime.datetime] = dict({
+                    "id": (1 + previous_max_id),
+                    "region_id": AppConstants.MARKET_REGION,
+                    "type_id": type_id
+                })
+                for k, v in x.items():
+                    if k in ["date"]:
+                        v = dateutil.parser.parse(v).replace(tzinfo=datetime.UTC).date()
+                    elif k in ["order_count", "volume"]:
+                        v = int(v)
+                    elif k in ["average", "highest", "lowest"]:
+                        v = float(v)
+                    else:
+                        continue
+                    edict[k] = v
+                history_obj_set.add(AppTables.MarketHistory(**edict))
+            
+            if len(history_obj_set) > 0:
+                try:
+                    async with await self.db.sessionmaker() as session:
+                        session: sqlalchemy.ext.asyncio.AsyncSession
+                        session.begin()
+                        session.add_all(history_obj_set)
+                        await session.commit()
+
+                except Exception as ex:
+                    otel_add_exception(ex)
+                    self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
+
+
+    async def run(self, client_session: collections.abc.MutableSet):
+        tracer: typing.Final = opentelemetry.trace.get_tracer_provider().get_tracer(inspect.currentframe().f_code.co_name)
+        while True:
+            try:
+                with tracer.start_as_current_span(inspect.currentframe().f_code.co_name):
+                    type_id_list = await self.get_market_type_ids()
+                    await self.run_once(client_session, type_id_list)
+            except Exception as ex:
+                otel_add_exception(ex)
+                self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
+
+            await asyncio.sleep(AppConstants.MARKET_REFRESH_INTERVAL_SECONDS)
+

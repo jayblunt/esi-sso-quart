@@ -3,4 +3,4 @@ from .esi_backfill_tasks import ESIAllianceBackfillTask, ESINPCorporationBackfil
 from .app_access_control_task import AppAccessControlTask
 from .app_moon_yield_task import AppMoonYieldTask
 from .app_notification_task import AppStructureNotificationTask
-from .app_tasks import AppStructureTask, AppStructurePollingTask
+from .app_tasks import AppStructureTask, AppStructurePollingTask, AppMarketHistoryTask

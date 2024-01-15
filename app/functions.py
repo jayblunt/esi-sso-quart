@@ -8,6 +8,7 @@ import inspect
 import typing
 import urllib.parse
 
+import opentelemetry.trace
 import quart
 import quart.sessions
 import sqlalchemy
@@ -26,7 +27,7 @@ from .sso import AppSSO
 
 @dataclasses.dataclass(frozen=True)
 class AppRequest:
-    ts: datetime.datetime = dataclasses.field(default_factory=functools.partial(datetime.datetime.now, tz=datetime.timezone.utc))
+    ts: datetime.datetime = dataclasses.field(default_factory=functools.partial(datetime.datetime.now, tz=datetime.UTC))
     session: quart.sessions.SessionMixin = quart.session
     character_id: int = 0
     corpporation_id: int = 0
@@ -36,6 +37,16 @@ class AppRequest:
     contributor: bool = False
     suspect: bool = False
     magic_character: bool = False
+
+
+@dataclasses.dataclass(frozen=True)
+class AppMoonMiningHistory:
+    start_date: datetime.date
+    end_date: datetime.date
+    characters: list[tuple[int, dict[int, int]]]
+    observers: list[tuple[int, dict[int, int]]]
+    observer_timestamps: dict[int, datetime.datetime]
+    observer_names: dict[int, str]
 
 
 class AppFunctions:
@@ -152,8 +163,13 @@ class AppFunctions:
                             AppTables.Structure.has_moon_drill == sqlalchemy.sql.expression.true(),
                             AppTables.Structure.structure_id.notin_(
                                 sqlalchemy.select(AppTables.ScheduledExtraction.structure_id)
-                                .where(now <= AppTables.ScheduledExtraction.natural_decay_time)
-                            ),
+                                .where(
+                                    sqlalchemy.and_(
+                                        AppTables.ScheduledExtraction.natural_decay_time > now,
+                                        AppTables.ScheduledExtraction.extraction_start_time <= now,
+                                    )
+                                )
+                            )
                         )
                     )
                 )
@@ -263,7 +279,7 @@ class AppFunctions:
 
     @staticmethod
     @otel
-    async def get_moon_history(session: sqlalchemy.ext.asyncio.AsyncSession, moon_id: int, now: datetime.datetime) -> list[AppTables.ExtractionHistory]:
+    async def get_moon_extraction_history(session: sqlalchemy.ext.asyncio.AsyncSession, moon_id: int, now: datetime.datetime) -> list[AppTables.ExtractionHistory]:
 
         query: typing.Final = (
             sqlalchemy.select(AppTables.ExtractionHistory)
@@ -353,7 +369,42 @@ class AppFunctions:
 
     @staticmethod
     @otel
-    async def get_moon_mining_history(session: sqlalchemy.ext.asyncio.AsyncSession, moon_id: int, now: datetime.datetime) -> tuple[datetime.datetime, list[AppTables.ExtractionHistory]]:
+    async def get_market_prices(session: sqlalchemy.ext.asyncio.AsyncSession, start_date: datetime.date, end_date: datetime.date) -> dict[int, float]:
+
+        inner_alias = sqlalchemy.orm.aliased(AppTables.MarketHistory, name="inner")
+        inner_query = (
+            sqlalchemy.select(
+                inner_alias.type_id,
+                sqlalchemy.sql.functions.max(inner_alias.id).label('max_id'),
+                sqlalchemy.sql.functions.max(inner_alias.date).label('max_date'),
+            )
+            .where(
+                inner_alias.date <= end_date
+            )
+            .group_by(inner_alias.type_id)
+        ).alias()
+
+        outer_alias = sqlalchemy.orm.aliased(AppTables.MarketHistory, name="outer")
+        outer_query = (
+            sqlalchemy.select(
+                outer_alias.type_id,
+                outer_alias.average
+            )
+            .join(inner_query, (outer_alias.type_id == inner_query.c.type_id) & (outer_alias.id == inner_query.c.max_id) & (outer_alias.date == inner_query.c.max_date))
+        )
+
+        type_id_prices: typing.Final = dict()
+
+        results = [x async for x in await session.stream(outer_query)]
+        for row in results:
+            type_id, average = row
+            type_id_prices[type_id] = float(average)
+
+        return type_id_prices
+
+    @staticmethod
+    @otel
+    async def get_moon_mining_history(session: sqlalchemy.ext.asyncio.AsyncSession, moon_id: int, now: datetime.datetime) -> tuple[datetime.datetime, list[AppTables.ExtractionHistory], dict[int, float]]:
 
         query = (
             sqlalchemy.select(
@@ -376,14 +427,14 @@ class AppFunctions:
         try:
             observer_id, corporation_id, chunk_arrival_time = query_result.one_or_none()
         except TypeError:
-            return list()
+            return None, list(), dict()
 
         previous_chunk_arrival_date = None
         if isinstance(chunk_arrival_time, datetime.datetime):
             previous_chunk_arrival_date = chunk_arrival_time.date()
 
         if observer_id is None or previous_chunk_arrival_date is None:
-            return list()
+            return None, list(), dict()
 
         observer_history_id_query = (
             sqlalchemy.select(sqlalchemy.sql.functions.max(AppTables.ObserverHistory.id))
@@ -399,7 +450,7 @@ class AppFunctions:
         observer_history_id = query_result.scalar_one_or_none()
 
         if observer_id is None or previous_chunk_arrival_date is None or observer_history_id is None:
-            return list()
+            return None, list(), dict()
 
         # print(f"{observer_id=}, {previous_chunk_arrival_date=}, {observer_history_id=}")
         q = (
@@ -414,6 +465,8 @@ class AppFunctions:
         query_result: sqlalchemy.engine.Result = await session.execute(q)
         observer_history_timestamp = query_result.scalar_one_or_none()
         # print(f"{observer_id=}, {observer_history_id=}, {observer_history_timestamp=}")
+
+        type_id_prices: typing.Final = await AppFunctions.get_market_prices(session, previous_chunk_arrival_date, now.date())
 
         q = (
             sqlalchemy.select(
@@ -433,12 +486,147 @@ class AppFunctions:
         )
 
         character_results = collections.defaultdict(functools.partial(collections.defaultdict, int))
-        character_totals = collections.defaultdict(int)
+        character_total_isk = collections.defaultdict(int)
         async for observer_id, character_id, type_id, quantity in await session.stream(q):
             character_results[character_id][type_id] = quantity
-            character_totals[character_id] += quantity
+            compressed_type_id = AppConstants.COMPRESSED_TYPE_DICT.get(type_id)
+            lookup_type_id = compressed_type_id or type_id
+            isk = float(quantity) * float(type_id_prices[lookup_type_id])
+            character_total_isk[character_id] += isk
 
-        return observer_history_timestamp, [(x, dict(character_results[x])) for x in sorted(character_totals, key=character_totals.get, reverse=True)]
+        return observer_history_timestamp, [(x, dict(character_results[x])) for x in sorted(character_total_isk, key=character_total_isk.get, reverse=True)], dict(character_total_isk)
+
+    @staticmethod
+    @otel
+    async def get_moon_mining_top(session: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> AppMoonMiningHistory:
+
+        # https://developers.eveonline.com/blog/article/esi-mining-ledger
+
+        # period_start_date = datetime.date(now.year, now.month, 1) - datetime.timedelta(days=1)
+        period_end_date = now.date()
+        period_start_date = period_end_date - datetime.timedelta(days=28)
+
+        type_id_prices = await AppFunctions.get_market_prices(session, period_start_date, period_start_date)
+
+        observer_skip_set: typing.Final = {
+            1035982181280,  # Eggheron - Coffee House
+        }
+
+        tracer: opentelemetry.trace.Tracer = opentelemetry.trace.get_tracer_provider().get_tracer("moon_top")
+
+        character_isk_totals = collections.defaultdict(int)
+        character_structure_isk_totals = collections.defaultdict(functools.partial(collections.defaultdict, int))
+        structure_isk_totals = collections.defaultdict(int)
+
+        observer_timestamp_dict: typing.Final = dict()
+        observer_name_dict: typing.Final = dict()
+
+        with tracer.start_as_current_span("isk_totals"):
+
+            inner_alias = sqlalchemy.orm.aliased(AppTables.ObserverHistory, name="inner")
+            inner_query = (
+                sqlalchemy.select(
+                    inner_alias.observer_id,
+                    sqlalchemy.sql.functions.max(inner_alias.id).label("max_id"),
+                    sqlalchemy.sql.functions.max(inner_alias.last_updated).label("max_date"),
+                    sqlalchemy.sql.functions.max(inner_alias.timestamp).label("timestamp")
+                )
+                .where(
+                    sqlalchemy.and_(
+                        inner_alias.exists == sqlalchemy.sql.expression.true(),
+                        inner_alias.observer_id.notin_(observer_skip_set),
+                        inner_alias.last_updated.between(period_start_date, period_end_date, symmetric=True),
+                    )
+                )
+                .group_by(inner_alias.observer_id)
+            )
+
+            results = [x async for x in await session.stream(inner_query)]
+            for row in results:
+                observer_id, _, _, timestamp = row
+                observer_timestamp_dict[observer_id] = timestamp
+
+            inner_query = inner_query.alias()
+
+            max_alias = sqlalchemy.orm.aliased(AppTables.ObserverRecordHistory, name="outer_max")
+            max_query = (
+                sqlalchemy.select(
+                    max_alias.observer_id,
+                    max_alias.character_id,
+                    max_alias.type_id,
+                    sqlalchemy.sql.functions.sum(max_alias.quantity).label("quantity"),
+                    sqlalchemy.sql.functions.max(max_alias.timestamp).label("timestamp")
+                )
+                .where(
+                        sqlalchemy.and_(
+                        max_alias.observer_id.notin_(observer_skip_set),
+                        max_alias.last_updated.between(period_start_date, period_end_date, symmetric=True),
+                        )
+                )
+                .join(inner_query, (max_alias.observer_id == inner_query.c.observer_id) & (max_alias.observer_history_id == inner_query.c.max_id))
+                .group_by(max_alias.observer_id, max_alias.character_id, max_alias.type_id)
+                .order_by(max_alias.character_id, max_alias.observer_id, max_alias.type_id)
+            )
+
+            results = [x async for x in await session.stream(max_query)]
+            for row in results:
+                structure_id, character_id, type_id, quantity, timestamp = row
+                if not type_id in type_id_prices.keys():
+                    print(f"MISSING: {type_id=}")
+                    continue
+                compressed_type_id = AppConstants.COMPRESSED_TYPE_DICT.get(type_id)
+                lookup_type_id = compressed_type_id or type_id
+                isk = float(quantity) * float(type_id_prices[lookup_type_id])
+
+                character_isk_totals[character_id] += isk
+                character_structure_isk_totals[character_id][structure_id] += isk
+                structure_isk_totals[structure_id] += isk
+
+        with tracer.start_as_current_span("observer_names"):
+
+            inner_alias = sqlalchemy.orm.aliased(AppTables.StructureHistory, name="inner")
+            inner_query = (
+                sqlalchemy.select(
+                    inner_alias.structure_id,
+                    sqlalchemy.sql.functions.max(inner_alias.id).label("max_id"),
+                )
+                .where(
+                    sqlalchemy.and_(
+                        inner_alias.exists == sqlalchemy.sql.expression.true(),
+                        inner_alias.structure_id.notin_(observer_skip_set),
+                        inner_alias.timestamp <= now
+                    )
+                )
+                .group_by(inner_alias.structure_id)
+            ).alias()
+
+            structure_alias = sqlalchemy.orm.aliased(AppTables.StructureHistory, name="outer_max")
+            strcture_query = (
+                sqlalchemy.select(
+                    structure_alias.structure_id,
+                    structure_alias.name,
+                )
+                .where(
+                    structure_alias.structure_id.notin_(observer_skip_set),
+                )
+                .join(inner_query, (structure_alias.structure_id == inner_query.c.structure_id) & (structure_alias.id == inner_query.c.max_id))
+            )
+
+            results = [x async for x in await session.stream(strcture_query)]
+            for row in results:
+                    observer_id, name = row
+                    observer_name_dict[observer_id] = name
+
+        return AppMoonMiningHistory(
+            start_date=period_start_date,
+            end_date=period_end_date,
+            characters=[(x, character_isk_totals[x]) for x in sorted(character_isk_totals, key=character_isk_totals.get, reverse=True)],
+            observers=[(x, structure_isk_totals[x]) for x in sorted(structure_isk_totals, key=structure_isk_totals.get, reverse=True)],
+            observer_timestamps=observer_timestamp_dict,
+            observer_names=observer_name_dict
+            )
+
+        # return period_start_date, period_end_date, [(x, character_isk_totals[x]) for x in sorted(character_isk_totals, key=character_isk_totals.get, reverse=True)]
 
     @staticmethod
     @otel

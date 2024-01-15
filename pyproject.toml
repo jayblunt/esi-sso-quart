@@ -4,3 +4,4 @@ reportOptionalIterable = false
 
 [tool.flake8]
 max-line-length = 240
+extend-ignore = "E501"

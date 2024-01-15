@@ -82,7 +82,6 @@ def otel(func: typing.Callable[FuncParams, FuncReturns]) -> typing.Callable[Func
             @functools.wraps(func)
             def wrapper(*args: FuncParams.args, **kwargs: FuncParams.kwargs) -> FuncReturns:
                 tracer = opentelemetry.trace.get_tracer_provider().get_tracer(func.__module__)
-                func.__class__
                 with tracer.start_as_current_span(f"{func.__class__.__name__}.{func.__name__}"):
                     return func(*args, **kwargs)
             return wrapper

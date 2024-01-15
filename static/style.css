@@ -2,6 +2,7 @@
 {
     --background-color: #121212;
     --foreground-color: white;
+    --mid-backgroup-color: #404040;
     --input-background-color: #c0c0c0;
     --a-foreground-color: white;
 }
@@ -11,6 +12,7 @@
     :root
     {
         --background-color: #121212;
+        --mid-backgroup-color: #404040;
         --foreground-color: white;
         --input-background-color: #c0c0c0;
         --a-foreground-color: white;
@@ -22,6 +24,7 @@
     :root
     {
         --background-color: #ededed;
+        --mid-backgroup-color: #c0c0c0;
         --foreground-color: black;
         --input-background-color: #c0c0c0;
         --a-foreground-color: black;
@@ -44,7 +47,7 @@ nav
 {
     width: 100%;
     font-size: 120%;
-    margin-block-end: 4vw;
+    margin-block-end: 3vw;
 }
 
 nav a:not(:last-of-type)
@@ -95,20 +98,22 @@ nav a img
     max-width: 75%;
 }
 
-nav a img.user
+nav a img.user,
+section a img.user
 {
     border: 2px solid var(--foreground-color);
 }
 
-nav a img.contributor
+nav a img.contributor,
+section a img.contributor
 {
     border: 6px solid #FFD700;
 }
 
 footer
 {
-    padding-top: 1vw;
-    padding-bottom: 2vw;
+    padding-top: 0.5vw;
+    padding-bottom: 1vw;
     padding-left: 1vw;
     padding-right: 1vw;
     margin-left: 2vw;
@@ -133,6 +138,11 @@ footer table.about
 .align_left
 {
     text-align: left;
+}
+
+.align_center
+{
+    text-align: center;
 }
 
 footer img
@@ -177,8 +187,8 @@ footer table.copyright
 
 section
 {
-    padding-top: 1vw;
-    padding-bottom: 2vw;
+    padding-top: 0.5vw;
+    padding-bottom: 1vw;
     padding-left: 1vw;
     padding-right: 2vw;
     margin-left: 2vw;
@@ -220,6 +230,29 @@ section table
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    border-collapse: collapse;
+}
+
+section table.narrow
+{
+    width: 50%;
+}
+
+/* section table > tbody > tr
+{
+    border-bottom: 10px dotted white;
+} */
+
+section table tbody tr
+{
+    transition: background-color 0.1s ease-in;
+    background-color: var(--backgroup-color);
+}
+
+section table tbody tr:hover
+{
+    transition: background-color 0.1s ease-out;
+    background-color: var(--mid-backgroup-color);
 }
 
 section table td
@@ -227,17 +260,18 @@ section table td
     min-width: min-content;
 }
 
-section table thead,
-section table tfoot
-{
-    font-weight: bold;
-    width: min-content;
-}
-
 section table tbody
 {
     width: min-content;
 }
+
+section table thead,
+section table tfoot
+{
+    width: min-content;
+    font-weight: bold;
+}
+
 
 section table tr.stale
 {

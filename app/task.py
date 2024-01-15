@@ -95,13 +95,13 @@ class AppDatabaseTask(AppTask):
                 if k in ["alliance_id", "corporation_id"]:
                     edict[k] = int(v)
                 elif k in ["birthday"]:
-                    edict[k] = dateutil.parser.parse(v).replace(tzinfo=datetime.timezone.utc)
+                    edict[k] = dateutil.parser.parse(v).replace(tzinfo=datetime.UTC)
                 elif k not in ["name"]:
                     continue
                 edict[k] = v
 
             conversions: typing.Final = {
-                'birthday': lambda x: dateutil.parser.parse(str(x)).replace(tzinfo=datetime.timezone.utc)
+                'birthday': lambda x: dateutil.parser.parse(str(x)).replace(tzinfo=datetime.UTC)
             }
             for k, v in conversions.items():
                 if k in edict.keys():

@@ -5,7 +5,8 @@
     <table>
         <thead>
             <tr>
-                <th class="align_left">User</th>
+                <th class="align_left">Permitted User</th>
+                <!-- <th class="align_left">Corporation</th> -->
                 <th>Count</th>
                 <th>Last</th>
             </tr>
@@ -14,15 +15,50 @@
             {% for x in permitted_usage %}
             <tr>
                 <td class="align_left"><a href="{{ x.id|zkillboard_character }}" target="_blank">{{
+                    x.id|esi_character_name }}</a></td>
+                <!-- <td class="align_left"><a href="{{ x.corporation_id|zkillboard_corporation }}" target="_blank">{{
+                    x.corporation_id|esi_corporation_name }}</a></td> -->
+            <td>{{ x.count }}</td>
+            <td>{{ x.last|datetime }}</td>
+            </tr>
+            {% endfor %}
+            {% if denied_usage %}
+            <tr>
+                <td>&nbsp;</td>
+                <!-- <td>&nbsp;</td> -->
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
+            </tr>
+            <tr>
+                <td>&nbsp;</td>
+                <!-- <td>&nbsp;</td> -->
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
+            </tr>
+            <tr>
+                <th class="align_left">Denied User</th>
+                <th class="align_left">Corporation</th>
+                <th>Count</th>
+                <th>Last</th>
+            </tr>
+            {% endif %}
+            {% if denied_usage %}
+            {% for x in denied_usage %}
+            <tr>
+                <td class="align_left"><a href="{{ x.id|zkillboard_character }}" target="_blank">{{
                         x.id|esi_character_name }}</a></td>
+                <!-- <td class="align_left"><a href="{{ x.corporation_id|zkillboard_corporation }}" target="_blank">{{
+                    x.corporation_id|esi_corporation_name }}</a></td> -->
                 <td>{{ x.count }}</td>
                 <td>{{ x.last|datetime }}</td>
             </tr>
             {% endfor %}
-        </tbody>
+            {% endif %}
+            </tbody>
         <tfoot>
             <tr>
                 <td></td>
+                <!-- <td></td> -->
                 <td></td>
                 <td></td>
             </tr>
@@ -30,35 +66,4 @@
     </table>
 </section>
 {% endif %}
-{% if denied_usage %}
-<section>
-    <h3>Recent Denied Users</h3>
-    <p></p>
-    <table>
-        <thead>
-            <tr>
-                <th class="align_left">User</th>
-                <th>Count</th>
-                <th>Last</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for x in denied_usage %}
-            <tr>
-                <td class="align_left"><a href="{{ x.id|zkillboard_character }}" target="_blank">{{
-                        x.id|esi_character_name }}</a></td>
-                <td>{{ x.count }}</td>
-                <td>{{ x.last|datetime }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-        <tfoot>
-            <tr>
-                <td></td>
-                <td></td>
-                <td></td>
-            </tr>
-        </tfoot>
-    </table>
-</section>
-{% endif %} {% endblock %}
+{% endblock %}

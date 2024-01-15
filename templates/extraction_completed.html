@@ -1,0 +1,9 @@
+<tr class="{{extraction.timestamp|timestamp_age}}">
+    <td class="align_left"><a href="/moon/{{ extraction.moon.moon_id }}">{{ extraction.structure.name }}</a></td>
+    <td class="align_left"><a href="/moon/{{ extraction.moon.moon_id }}">{{ extraction.moon.name }}</a></td>
+    <td class="align_left"><a href="{{ extraction.corporation_id|zkillboard_corporation }}" target="_blank"> {{
+            extraction.corporation_id|esi_corporation_name }} </a></td>
+    <td>{{ extraction.structure.fuel_expires|datetime }}</td>
+    <td>{{ extraction.chunk_arrival_time|datetime }}</td>
+    <td>{{ extraction.belt_decay_time|datetime }}</td>
+</tr>
