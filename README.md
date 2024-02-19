@@ -22,8 +22,8 @@ Requires a valid [application](https://developers.eveonline.com/applications) se
 This example uses [Quart-Session](https://pypi.org/project/Quart-Session/) which requires a working backend. I used [Redis](https://redis.io) with a default configuration (listening on localhost).
 
 ```shell
-python3.10 -m venv --upgrade-deps python3.10-env
-. python3.10-env/bin/activate
+python3.11 -m venv --upgrade-deps python3.11-env
+. python3.11-env/bin/activate
 pip install -r requirements.txt
 ```
 

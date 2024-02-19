@@ -331,7 +331,7 @@ class AppStructureTask(AppDatabaseTask):
         self.observer_state: typing.Final = AppObserverState(db, logger)
 
     @otel
-    async def estimate_fuel(self, now: datetime.datetime, access_token: str, data: dict) -> dict:
+    async def estimate_fuel(self, now: datetime.datetime, access_token: str, structure_id: int, data: dict) -> dict:
         pass
         self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {data=}")
         structure_fuel_cycle: typing.Final = {
@@ -341,9 +341,9 @@ class AppStructureTask(AppDatabaseTask):
             "Manufacturing (Capitals)": 24,
             "Manufacturing (Standard)": 12,
             "Blueprint Copying": 12,
-            "Invention": 12,
+            # "Invention": 12,
             "Material Efficiency Research": 12,
-            "Time Efficiency Research": 12,
+            # "Time Efficiency Research": 12,
 
             "Biochemical Reactions": 15,
             "Composite Reactions": 15,
@@ -353,7 +353,7 @@ class AppStructureTask(AppDatabaseTask):
         }
         structure_modifiers: typing.Final = {
             35825: {"Manufacturing (Standard)": .25}, # Raitaru
-            35826: {"Manufacturing (Standard)": .25}, # Azbel
+            35826: {"Manufacturing (Standard)": .25, "Manufacturing (Capitals)": .25, "Material Efficiency Research": .25, "Blueprint Copying": .25}, # Azbel
             35832: .25, # Astrahus
             35833: .25, # Fortizar
             35835: {"Reprocessing": .2}, # Athanor
@@ -370,15 +370,15 @@ class AppStructureTask(AppDatabaseTask):
         for svc in sorted(online_services):
             v = structure_fuel_cycle.get(svc, 0)
             m = modifiers
-            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {type_id} {svc}, {v=}, {m=}")
+            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {structure_id} {type_id} {svc}, {v=}, {m=}")
             if isinstance(m, dict):
                 m = m.get(svc, 0.)
-            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {type_id} {svc}, {v=}, {m=}")
+            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {structure_id} {type_id} {svc}, {v=}, {m=}")
             if v > 0:
                 rval["fuel_cycle"] += v * ( 1.0 - float(m) )
                 continue
-            self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {type_id} {svc}")
-        self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {rval=}")
+            self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {structure_id} {type_id} {svc}")
+        self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {structure_id} {type_id} {rval=}")
         return rval
 
     @otel
@@ -444,7 +444,8 @@ class AppStructureTask(AppDatabaseTask):
                     continue
                 edict[k] = v
 
-            for k, v in (await self.estimate_fuel(now, access_token, services_dict)).items():
+            edict_structure_id: typing.Final = edict.get('structure_id', 0)
+            for k, v in (await self.estimate_fuel(now, access_token, edict_structure_id, services_dict)).items():
                 if k in ["fuel_online", "fuel_cycle"]:
                     edict[k] = v
 

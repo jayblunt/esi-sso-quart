@@ -91,8 +91,6 @@ async def _before_serving() -> None:
         AppStructurePollingTask(evesession, esi, db, eveevents, app.logger)
 
 
-
-
 @app.route('/robots.txt', methods=["GET"])
 @otel
 async def _robots() -> quart.ResponseReturnValue:

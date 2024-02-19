@@ -314,12 +314,12 @@ class AppTables:
         __tablename__: typing.Final = "app_observer_record_history"
         id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.Sequence("app_observer_record_history_id_seq", start=1), primary_key=True, unique=True)
         timestamp: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(primary_key=True, server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
-        observer_history_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.ForeignKey("app_observer_history.id"), nullable=False)
-        corporation_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
-        observer_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
-        character_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
+        observer_history_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.ForeignKey("app_observer_history.id"), nullable=False, index=True)
+        corporation_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False, index=True)
+        observer_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False, index=True)
+        character_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False, index=True)
         recorded_corporation_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(nullable=False)
-        last_updated: sqlalchemy.orm.Mapped[datetime.date] = sqlalchemy.orm.mapped_column(nullable=False)
+        last_updated: sqlalchemy.orm.Mapped[datetime.date] = sqlalchemy.orm.mapped_column(nullable=False, index=True)
         quantity: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(nullable=False)
         type_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(nullable=False)
 
@@ -431,10 +431,11 @@ class AppTables:
         session_id: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(nullable=False)
         auth_type: sqlalchemy.orm.Mapped[AppAuthType] = sqlalchemy.orm.mapped_column(nullable=False)
 
+
 class AppDatabase:
 
     def __init__(self, db: str, echo: bool = False) -> None:
-        self._engine: typing.Final = sqlalchemy.ext.asyncio.create_async_engine(db, echo=echo, pool_size=8, max_overflow=4)
+        self._engine: typing.Final = sqlalchemy.ext.asyncio.create_async_engine(db, echo=echo, pool_size=4, max_overflow=4)
         self._sessionmaker = None
         self._initialized = False
 
