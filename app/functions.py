@@ -3,10 +3,8 @@ import contextlib
 import dataclasses
 import datetime
 import functools
-import hashlib
 import inspect
 import typing
-import urllib.parse
 
 import opentelemetry.trace
 import quart
@@ -61,10 +59,10 @@ class AppFunctions:
 
         permitted: typing.Final = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id)
         trusted: typing.Final = await AppFunctions.is_trusted(evedb, character_id, corpporation_id, alliance_id)
-        contributor: typing.Final = await AppFunctions.is_contributor(evedb, character_id, corpporation_id, alliance_id)
+        # contributor: typing.Final = await AppFunctions.is_contributor(evedb, character_id, corpporation_id, alliance_id)
+        contributor: typing.Final = any([session.get(AppSSO.APP_SESSION_TYPE, "USER") == "CONTRIBUTOR", character_id in AppConstants.MAGIC_ADMINS | AppConstants.MAGIC_CONTRIBUTORS])
         suspect: typing.Final = character_id in AppConstants.MAGIC_SUSPECTS
         magic_character: typing.Final = character_id in AppConstants.MAGIC_ADMINS | AppConstants.MAGIC_CONTRIBUTORS
-
 
         session[AppSSO.REQUEST_PATH] = quart.request.path
 
@@ -379,7 +377,7 @@ class AppFunctions:
                 sqlalchemy.sql.functions.max(inner_alias.date).label('max_date'),
             )
             .where(
-                inner_alias.date <= end_date
+                inner_alias.date.between(start_date, end_date, symmetric=True)
             )
             .group_by(inner_alias.type_id)
         ).alias()
@@ -395,10 +393,11 @@ class AppFunctions:
 
         type_id_prices: typing.Final = dict()
 
-        results = [x async for x in await session.stream(outer_query)]
-        for row in results:
-            type_id, average = row
-            type_id_prices[type_id] = float(average)
+        tracer_name: typing.Final = inspect.currentframe().f_code.co_name
+        tracer: opentelemetry.trace.Tracer = opentelemetry.trace.get_tracer_provider().get_tracer(tracer_name)
+        with tracer.start_as_current_span(f"{tracer_name}.results"):
+            async for type_id, average in await session.stream(outer_query):
+                type_id_prices[type_id] = float(average)
 
         return type_id_prices
 
@@ -466,7 +465,9 @@ class AppFunctions:
         observer_history_timestamp = query_result.scalar_one_or_none()
         # print(f"{observer_id=}, {observer_history_id=}, {observer_history_timestamp=}")
 
-        type_id_prices: typing.Final = await AppFunctions.get_market_prices(session, previous_chunk_arrival_date, now.date())
+        moon_pricing_end_date: typing.Final = now.date()
+        moon_pricing_start_date: typing.Final = moon_pricing_end_date - datetime.timedelta(weeks=12)
+        type_id_prices: typing.Final = await AppFunctions.get_market_prices(session, moon_pricing_start_date, moon_pricing_end_date)
 
         q = (
             sqlalchemy.select(
@@ -490,8 +491,10 @@ class AppFunctions:
         async for observer_id, character_id, type_id, quantity in await session.stream(q):
             character_results[character_id][type_id] = quantity
             compressed_type_id = AppConstants.COMPRESSED_TYPE_DICT.get(type_id)
-            lookup_type_id = compressed_type_id or type_id
-            isk = float(quantity) * float(type_id_prices[lookup_type_id])
+            lookup_type_id = type_id
+            if compressed_type_id in type_id_prices.keys():
+                lookup_type_id = compressed_type_id
+            isk = float(quantity) * float(type_id_prices.get(lookup_type_id, 0.0))
             character_total_isk[character_id] += isk
 
         return observer_history_timestamp, [(x, dict(character_results[x])) for x in sorted(character_total_isk, key=character_total_isk.get, reverse=True)], dict(character_total_isk)
@@ -500,19 +503,21 @@ class AppFunctions:
     @otel
     async def get_moon_mining_top(session: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> AppMoonMiningHistory:
 
+        tracer_name: typing.Final = inspect.currentframe().f_code.co_name
+        tracer: opentelemetry.trace.Tracer = opentelemetry.trace.get_tracer_provider().get_tracer(tracer_name)
+
         # https://developers.eveonline.com/blog/article/esi-mining-ledger
 
         # period_start_date = datetime.date(now.year, now.month, 1) - datetime.timedelta(days=1)
         period_end_date = now.date()
         period_start_date = period_end_date - datetime.timedelta(days=28)
 
-        type_id_prices = await AppFunctions.get_market_prices(session, period_start_date, period_start_date)
+        with tracer.start_as_current_span(f"{tracer_name}.market_prices"):
+            type_id_prices = await AppFunctions.get_market_prices(session, period_start_date, period_end_date)
 
         observer_skip_set: typing.Final = {
             1035982181280,  # Eggheron - Coffee House
         }
-
-        tracer: opentelemetry.trace.Tracer = opentelemetry.trace.get_tracer_provider().get_tracer("moon_top")
 
         character_isk_totals = collections.defaultdict(int)
         character_structure_isk_totals = collections.defaultdict(functools.partial(collections.defaultdict, int))
@@ -521,7 +526,7 @@ class AppFunctions:
         observer_timestamp_dict: typing.Final = dict()
         observer_name_dict: typing.Final = dict()
 
-        with tracer.start_as_current_span("isk_totals"):
+        with tracer.start_as_current_span(f"{tracer_name}.isk_totals"):
 
             inner_alias = sqlalchemy.orm.aliased(AppTables.ObserverHistory, name="inner")
             inner_query = (
@@ -541,9 +546,7 @@ class AppFunctions:
                 .group_by(inner_alias.observer_id)
             )
 
-            results = [x async for x in await session.stream(inner_query)]
-            for row in results:
-                observer_id, _, _, timestamp = row
+            async for observer_id, _, _, timestamp in await session.stream(inner_query):
                 observer_timestamp_dict[observer_id] = timestamp
 
             inner_query = inner_query.alias()
@@ -558,10 +561,10 @@ class AppFunctions:
                     sqlalchemy.sql.functions.max(max_alias.timestamp).label("timestamp")
                 )
                 .where(
-                        sqlalchemy.and_(
+                    sqlalchemy.and_(
                         max_alias.observer_id.notin_(observer_skip_set),
                         max_alias.last_updated.between(period_start_date, period_end_date, symmetric=True),
-                        )
+                    )
                 )
                 .join(inner_query, (max_alias.observer_id == inner_query.c.observer_id) & (max_alias.observer_history_id == inner_query.c.max_id))
                 .group_by(max_alias.observer_id, max_alias.character_id, max_alias.type_id)
@@ -571,7 +574,7 @@ class AppFunctions:
             results = [x async for x in await session.stream(max_query)]
             for row in results:
                 structure_id, character_id, type_id, quantity, timestamp = row
-                if not type_id in type_id_prices.keys():
+                if type_id not in type_id_prices.keys():
                     print(f"MISSING: {type_id=}")
                     continue
                 compressed_type_id = AppConstants.COMPRESSED_TYPE_DICT.get(type_id)
@@ -582,7 +585,7 @@ class AppFunctions:
                 character_structure_isk_totals[character_id][structure_id] += isk
                 structure_isk_totals[structure_id] += isk
 
-        with tracer.start_as_current_span("observer_names"):
+        with tracer.start_as_current_span(f"{tracer_name}.observer_names"):
 
             inner_alias = sqlalchemy.orm.aliased(AppTables.StructureHistory, name="inner")
             inner_query = (
@@ -614,8 +617,8 @@ class AppFunctions:
 
             results = [x async for x in await session.stream(strcture_query)]
             for row in results:
-                    observer_id, name = row
-                    observer_name_dict[observer_id] = name
+                observer_id, name = row
+                observer_name_dict[observer_id] = name
 
         return AppMoonMiningHistory(
             start_date=period_start_date,
@@ -624,7 +627,7 @@ class AppFunctions:
             observers=[(x, structure_isk_totals[x]) for x in sorted(structure_isk_totals, key=structure_isk_totals.get, reverse=True)],
             observer_timestamps=observer_timestamp_dict,
             observer_names=observer_name_dict
-            )
+        )
 
         # return period_start_date, period_end_date, [(x, character_isk_totals[x]) for x in sorted(character_isk_totals, key=character_isk_totals.get, reverse=True)]
 

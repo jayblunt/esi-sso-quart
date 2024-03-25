@@ -31,6 +31,24 @@ from .esi import AppESI, AppESIResult
 from .events import SSOLoginEvent, SSOLogoutEvent, SSOTokenRefreshEvent
 
 
+@dataclasses.dataclass(frozen=True)
+class AppSSORecord:
+    session_id: str
+    character_id: int
+    corporation_id: int
+    alliance_id: int
+    character_name: str
+    character_birthday: datetime.datetime
+    is_director_role: bool
+    is_accountant_role: bool
+    is_station_manager_role: bool
+    scopes: list[str]
+    access_token: str
+    access_token_iat: datetime.datetime
+    access_token_exp: datetime.datetime
+    refresh_token: str
+
+
 class AppSSOFunctions:
 
     @staticmethod
@@ -58,7 +76,7 @@ class AppSSOFunctions:
     #     return False
 
     @staticmethod
-    async def remove_credentials(db: AppDatabase, character_id: int) -> bool:
+    async def update_credentials(db: AppDatabase, character_id: int, sso_record: AppSSORecord | None) -> bool:
         if not character_id > 0:
             return False
 
@@ -67,32 +85,9 @@ class AppSSOFunctions:
                 session: sqlalchemy.ext.asyncio.AsyncSession
 
                 session.begin()
-                query = (
-                    sqlalchemy.delete(AppTables.PeriodicCredentials)
-                    .where(AppTables.PeriodicCredentials.character_id == character_id)
-                )
-                await session.execute(query)
-                await session.commit()
-            return True
-        except Exception as ex:
-            otel_add_exception(ex)
 
-        return False
+                if sso_record is not None:
 
-    @staticmethod
-    async def update_credentials(db: AppDatabase, character_id: int, edict: dict, keep_enabled: bool) -> bool:
-        if not character_id > 0:
-            return False
-
-        epoch: typing.Final = datetime.datetime(1970, 1, 1, 0, 0, 0, tzinfo=datetime.UTC)
-
-        try:
-            async with await db.sessionmaker() as session:
-                session: sqlalchemy.ext.asyncio.AsyncSession
-
-                session.begin()
-
-                if edict.get(AppSSO.ESI_CHARACTER_NAME) is not None:
                     query = (
                         sqlalchemy.delete(AppTables.Character)
                         .where(AppTables.Character.character_id == character_id)
@@ -100,11 +95,11 @@ class AppSSOFunctions:
                     await session.execute(query)
 
                     session.add(AppTables.Character(
-                        character_id=edict.get(AppSSO.ESI_CHARACTER_ID, 0),
-                        corporation_id=edict.get(AppSSO.ESI_CORPORATION_ID, 0),
-                        alliance_id=edict.get(AppSSO.ESI_ALLIANCE_ID, 0),
-                        birthday=edict.get(AppSSO.ESI_CHARACTER_BIRTHDAY, epoch),
-                        name=edict.get(AppSSO.ESI_CHARACTER_NAME, '')
+                        character_id=sso_record.character_id,
+                        corporation_id=sso_record.corporation_id,
+                        alliance_id=sso_record.alliance_id,
+                        birthday=sso_record.character_birthday,
+                        name=sso_record.character_name
                     ))
 
                 query = (
@@ -113,26 +108,27 @@ class AppSSOFunctions:
                 )
                 await session.execute(query)
 
-                obj = AppTables.PeriodicCredentials(
-                    character_id=edict.get(AppSSO.ESI_CHARACTER_ID, 0),
-                    corporation_id=edict.get(AppSSO.ESI_CORPORATION_ID, 0),
-                    is_permitted=bool(edict.get(AppSSO.ESI_CHARACTER_IS_STATION_MANAGER_ROLE, False)),
-                    is_enabled=bool(edict.get(AppSSO.ESI_CHARACTER_IS_STATION_MANAGER_ROLE, False)),
-                    is_director_role=bool(edict.get(AppSSO.ESI_CHARACTER_IS_DIRECTOR_ROLE, False)),
-                    is_accountant_role=bool(edict.get(AppSSO.ESI_CHARACTER_IS_ACCOUNTANT_ROLE, False)),
-                    is_station_manager_role=bool(edict.get(AppSSO.ESI_CHARACTER_IS_STATION_MANAGER_ROLE, False)),
-                    session_id=edict.get(AppSSO.APP_SESSION_ID, ''),
-                    access_token_issued=edict.get(AppSSO.ESI_ACCESS_TOKEN_ISSUED, epoch),
-                    access_token_expiry=edict.get(AppSSO.ESI_ACCESS_TOKEN_EXPIRY, epoch),
-                    refresh_token=edict.get(AppSSO.ESI_REFRESH_TOKEN, ''),
-                    access_token=edict.get(AppSSO.ESI_ACCESS_TOKEN, '')
-                )
+                if sso_record is not None:
 
-                if not keep_enabled:
-                    obj.is_enabled = False
-                    obj.is_permitted = False
+                    previous_is_permitted = sso_record.is_station_manager_role
+                    previous_is_enabled = previous_is_permitted
 
-                session.add(obj)
+                    obj = AppTables.PeriodicCredentials(
+                        character_id=sso_record.character_id,
+                        corporation_id=sso_record.corporation_id,
+                        is_permitted=previous_is_permitted,
+                        is_enabled=previous_is_enabled,
+                        is_director_role=sso_record.is_director_role,
+                        is_accountant_role=sso_record.is_accountant_role,
+                        is_station_manager_role=sso_record.is_station_manager_role,
+                        session_id=sso_record.session_id,
+                        access_token_issued=sso_record.access_token_iat,
+                        access_token_expiry=sso_record.access_token_exp,
+                        refresh_token=sso_record.refresh_token,
+                        access_token=sso_record.access_token
+                    )
+
+                    session.add(obj)
 
                 await session.commit()
             return True
@@ -149,9 +145,6 @@ class AppSSO:
 
     APP_SESSION_TYPE: typing.Final = "session_type"
 
-    ESI_CHARACTER_NAME: typing.Final = "character_name"
-    ESI_CHARACTER_BIRTHDAY: typing.Final = "character_birthday"
-
     ESI_CHARACTER_ID: typing.Final = "character_id"
     ESI_CORPORATION_ID: typing.Final = "corporation_id"
     ESI_ALLIANCE_ID: typing.Final = "alliance_id"
@@ -159,9 +152,6 @@ class AppSSO:
     ESI_CHARACTER_IS_DIRECTOR_ROLE: typing.Final = "is_director_role"
     ESI_CHARACTER_IS_ACCOUNTANT_ROLE: typing.Final = "is_accountant_role"
     ESI_CHARACTER_IS_STATION_MANAGER_ROLE: typing.Final = "is_station_manager_role"
-
-    ESI_ACCESS_TOKEN_ISSUED: typing.Final = "access_token_issued"
-    ESI_ACCESS_TOKEN_EXPIRY: typing.Final = "access_token_expiry"
 
     ESI_SCOPES: typing.Final = "scopes"
     ESI_ACCESS_TOKEN: typing.Final = "access_token"
@@ -176,7 +166,7 @@ class AppSSO:
                  app: quart.Quart,
                  esi: AppESI,
                  db: AppDatabase,
-                 outbound: asyncio.Queue,
+                 eventqueue: asyncio.Queue,
                  client_id: str,
                  configuration_url: str | None = None,
                  scopes: list[str] = ['publicData'],
@@ -187,7 +177,7 @@ class AppSSO:
         self.app: typing.Final = app
         self.esi: typing.Final = esi
         self.db: typing.Final = db
-        self.outbound: typing.Final = outbound
+        self.eventqueue: typing.Final = eventqueue
         self.logger: typing.Final = app.logger
 
         self.client_id: typing.Final = client_id
@@ -289,9 +279,13 @@ class AppSSO:
             except Exception as ex:
                 otel_add_exception(ex)
                 self.app.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
+            except asyncio.CancelledError as ex:
+                otel_add_exception(ex)
+                self.app.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
+                break
 
     async def _refresh_token_task(self) -> None:
-        refresh_buffer: typing.Final = datetime.timedelta(seconds=60)
+        refresh_buffer: typing.Final = datetime.timedelta(seconds=30)
         refresh_interval: typing.Final = datetime.timedelta(seconds=300)
         while True:
             now: typing.Final = datetime.datetime.now(tz=datetime.UTC)
@@ -329,7 +323,6 @@ class AppSSO:
             if obj.access_token_expiry > now + refresh_buffer:
                 remaining_interval: datetime.timedelta = (obj.access_token_expiry) - (now + refresh_buffer)
                 remaining_sleep_interval = min(refresh_interval.total_seconds(), remaining_interval.total_seconds())
-                # self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {refresh_obj.character_id} refresh in {int(remaining_interval.total_seconds())}, sleeping {int(remaining_sleep_interval)}")
                 await asyncio.sleep(remaining_sleep_interval)
                 continue
 
@@ -339,37 +332,21 @@ class AppSSO:
                 await asyncio.sleep(refresh_interval.total_seconds())
                 continue
 
-            fallback_edict: typing.Final = {
-                AppSSO.APP_SESSION_ID: obj.session_id,
-                AppSSO.ESI_CHARACTER_ID: obj.character_id,
-                AppSSO.ESI_CORPORATION_ID: obj.corporation_id,
-                AppSSO.ESI_CHARACTER_IS_DIRECTOR_ROLE: obj.is_director_role,
-                AppSSO.ESI_CHARACTER_IS_ACCOUNTANT_ROLE: obj.is_accountant_role,
-                AppSSO.ESI_CHARACTER_IS_STATION_MANAGER_ROLE: obj.is_station_manager_role,
-                AppSSO.ESI_ACCESS_TOKEN_ISSUED: obj.access_token_issued,
-                AppSSO.ESI_ACCESS_TOKEN_EXPIRY: obj.access_token_expiry,
-                AppSSO.ESI_ACCESS_TOKEN: obj.access_token,
-                AppSSO.ESI_REFRESH_TOKEN: obj.refresh_token,
-            }
-
             character_id: typing.Final = int(obj.character_id)
             session_id: typing.Final = obj.session_id
             refresh_token: typing.Final = obj.refresh_token
-            keep_enabled = True
 
             self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh {obj.character_id=} / {obj.corporation_id=}")
-            edict = await self.esi_sso_refresh(session_id, refresh_token)
-            if len(edict) == 0:
-                self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh failed for {obj.character_id=}")
-                edict = fallback_edict
-                keep_enabled = False
+            sso_record = await self.esi_sso_refresh(session_id, refresh_token)
+            await AppSSOFunctions.update_credentials(self.db, character_id, sso_record)
+            if sso_record:
+                await AppSSOFunctions.authlog(self.db, character_id, session_id, AppAuthType.REFRESH)
 
-            await AppSSOFunctions.update_credentials(self.db, character_id, edict, keep_enabled)
+                # if self.eventqueue:
+                #     await self.eventqueue.put(SSOTokenRefreshEvent(character_id=character_id, session_id=session_id))
 
-            # if self.outbound:
-            #     await self.outbound.put(SSOTokenRefreshEvent(character_id=character_id, session_id=session_id))
-
-            await AppSSOFunctions.authlog(self.db, character_id, session_id, AppAuthType.REFRESH)
+            else:
+                await AppSSOFunctions.authlog(self.db, character_id, session_id, AppAuthType.REFRESH_FAILURE)
 
     @otel
     async def esi_decode_token(self, session_id: str, token_response: dict) -> dict:
@@ -383,7 +360,7 @@ class AppSSO:
         jwt_unverified_header: typing.Final = jose.jwt.get_unverified_header(token_response["access_token"])
         jwt_key = None
         for jwk_candidate in self.jwks:
-            if not type(jwk_candidate) == dict:
+            if not type(jwk_candidate) is dict:
                 continue
 
             jwt_key_match = True
@@ -411,24 +388,24 @@ class AppSSO:
         return decoded_acess_token
 
     @otel
-    async def esi_unpack_token_response(self, session_id: str, token_response: dict) -> dict:
+    async def esi_unpack_token_response(self, session_id: str, token_response: dict) -> AppSSORecord:
         now: typing.Final = datetime.datetime.now(tz=datetime.UTC)
 
         decoded_acess_token = await self.esi_decode_token(session_id, token_response)
         if decoded_acess_token is None:
-            return dict()
+            return None
 
         character_id: typing.Final = int(decoded_acess_token.get('sub', '0').split(':')[-1])
         if not character_id > 0:
-            return dict()
+            return None
 
         access_token: typing.Final = token_response.get('access_token')
         refresh_token: typing.Final = token_response.get('refresh_token')
         if access_token is None or refresh_token is None:
-            return dict()
+            return None
 
         scopes = decoded_acess_token.get('scp', [])
-        if type(scopes) == str:
+        if type(scopes) is str:
             scopes = [scopes]
 
         character_result = dict()
@@ -469,22 +446,23 @@ class AppSSO:
             if k in character_result.keys():
                 character_result[k] = v(character_result[k])
 
-        return {
-            AppSSO.APP_SESSION_ID: session_id,
-            AppSSO.ESI_CHARACTER_ID: character_id,
-            AppSSO.ESI_CORPORATION_ID: character_result.get('corporation_id', 0),
-            AppSSO.ESI_ALLIANCE_ID: character_result.get('alliance_id', 0),
-            AppSSO.ESI_CHARACTER_IS_DIRECTOR_ROLE: bool('Director' in character_roles_result.get('roles', [])),
-            AppSSO.ESI_CHARACTER_IS_ACCOUNTANT_ROLE: bool('Accountant' in character_roles_result.get('roles', [])),
-            AppSSO.ESI_CHARACTER_IS_STATION_MANAGER_ROLE: bool('Station_Manager' in character_roles_result.get('roles', [])),
-            AppSSO.ESI_ACCESS_TOKEN_ISSUED: datetime.datetime.fromtimestamp(decoded_acess_token.get('iat', int(now.timestamp())), tz=datetime.UTC),
-            AppSSO.ESI_ACCESS_TOKEN_EXPIRY: datetime.datetime.fromtimestamp(decoded_acess_token.get('exp', int(now.timestamp())), tz=datetime.UTC),
-            AppSSO.ESI_REFRESH_TOKEN: refresh_token,
-            AppSSO.ESI_ACCESS_TOKEN: access_token,
-            AppSSO.ESI_SCOPES: scopes,
-            AppSSO.ESI_CHARACTER_NAME: character_result.get('name', None),
-            AppSSO.ESI_CHARACTER_BIRTHDAY: character_result.get('birthday', None),
-        }
+        epoch: typing.Final = datetime.datetime(1970, 1, 1, 0, 0, 0, tzinfo=datetime.UTC)
+        return AppSSORecord(
+            session_id=session_id,
+            character_id=character_id,
+            corporation_id=character_result.get('corporation_id', 0),
+            alliance_id=character_result.get('alliance_id', 0),
+            character_name=character_result.get('name', None),
+            character_birthday=character_result.get('birthday', epoch),
+            is_director_role=bool('Director' in character_roles_result.get('roles', [])),
+            is_accountant_role=bool('Accountant' in character_roles_result.get('roles', [])),
+            is_station_manager_role=bool('Station_Manager' in character_roles_result.get('roles', [])),
+            scopes=character_roles_result.get('roles', []),
+            access_token=access_token,
+            access_token_iat=datetime.datetime.fromtimestamp(decoded_acess_token.get('iat', int(now.timestamp())), tz=datetime.UTC),
+            access_token_exp=datetime.datetime.fromtimestamp(decoded_acess_token.get('exp', int(now.timestamp())), tz=datetime.UTC),
+            refresh_token=refresh_token
+        )
 
     @otel
     async def esi_sso_login(self, variant: str) -> quart.ResponseReturnValue:
@@ -516,7 +494,7 @@ class AppSSO:
 
         pcke_verifier: typing.Final = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().replace("=", "")
         client_session[AppSSO.APP_PCKE_VERIFIER] = pcke_verifier
-        
+
         sha256: typing.Final = hashlib.sha256()
         sha256.update(pcke_verifier.encode())
         hash_digest: typing.Final = sha256.digest()
@@ -551,12 +529,12 @@ class AppSSO:
 
         if character_id > 0:
 
-            await AppSSOFunctions.remove_credentials(self.db, character_id)
-
-            if self.outbound:
-                await self.outbound.put(SSOLogoutEvent(character_id=character_id, session_id=session_id))
+            await AppSSOFunctions.update_credentials(self.db, character_id, None)
 
             await AppSSOFunctions.authlog(self.db, character_id, session_id, AppAuthType.LOGOUT)
+
+            if self.eventqueue:
+                await self.eventqueue.put(SSOLogoutEvent(character_id=character_id, session_id=session_id))
 
         client_session.clear()
 
@@ -585,7 +563,6 @@ class AppSSO:
             quart.abort(http.HTTPStatus.BAD_REQUEST, f"invalid session state in {self.callback_route}")
 
         post_token_url = self.configuration.get('token_endpoint', '')
-
         post_session_headers: typing.Final = {
             "Host": urllib.parse.urlparse(post_token_url).netloc,
         }
@@ -604,29 +581,28 @@ class AppSSO:
             if post_result.status == http.HTTPStatus.OK:
                 token_response = post_result.data
 
-        edict: typing.Final = await self.esi_unpack_token_response(session_id, token_response)
-        if len(edict) == 0:
+        sso_record: typing.Final = await self.esi_unpack_token_response(session_id, token_response)
+        if sso_record is None:
             quart.abort(http.HTTPStatus.BAD_GATEWAY, "invalid token_response")
 
-        edict: dict
-        character_id: typing.Final = edict.get(AppSSO.ESI_CHARACTER_ID, 0)
+        character_id: typing.Final = sso_record.character_id
 
-        await AppSSOFunctions.update_credentials(self.db, character_id, edict, True)
-        await self.esi_update_client_session(client_session, character_id, edict)
+        await AppSSOFunctions.update_credentials(self.db, character_id, sso_record)
+        await self.esi_update_client_session(client_session, character_id, sso_record)
 
         login_type = AppAuthType.LOGIN_USER
-        if len(client_session.get(AppSSO.ESI_SCOPES, [])) > 1:
+        if client_session[AppSSO.APP_SESSION_TYPE] == "CONTRIBUTOR":
             login_type = AppAuthType.LOGIN_CONTRIBUTOR
 
-        if self.outbound:
-            await self.outbound.put(SSOLoginEvent(character_id=character_id, session_id=session_id, login_type=login_type.name))
-
         await AppSSOFunctions.authlog(self.db, character_id, session_id, login_type)
+
+        if self.eventqueue:
+            await self.eventqueue.put(SSOLoginEvent(character_id=character_id, session_id=session_id, login_type=login_type.name))
 
         return quart.redirect(quart.session.get(AppSSO.REQUEST_PATH, "/"))
 
     @otel
-    async def esi_sso_refresh(self, session_id: str, refresh_token: str) -> dict:
+    async def esi_sso_refresh(self, session_id: str, refresh_token: str) -> AppSSORecord:
 
         """
         Handle the ``access_token`` refresh - used for ``contributor`` logins.
@@ -652,30 +628,23 @@ class AppSSO:
         return await self.esi_unpack_token_response(session_id, token_response)
 
     @otel
-    async def esi_update_client_session(self, client_session: collections.abc.MutableMapping, character_id: int, edict: dict):
+    async def esi_update_client_session(self, client_session: collections.abc.MutableMapping, character_id: int, sso_record: AppSSORecord | None):
 
-        if len(edict) == 0 or not character_id > 0:
+        if sso_record is None or not character_id > 0:
             client_session.clear()
             return
 
         # This presumes the client session keys are the same as the column names in the
         # in the PeriodicCredentials and the same as the dictionary keys.
 
-        client_session_keys = [
-            AppSSO.ESI_CHARACTER_ID,
-            AppSSO.ESI_CORPORATION_ID,
-            AppSSO.ESI_ALLIANCE_ID,
-            AppSSO.ESI_CHARACTER_IS_ACCOUNTANT_ROLE,
-            AppSSO.ESI_CHARACTER_IS_DIRECTOR_ROLE,
-            AppSSO.ESI_CHARACTER_IS_STATION_MANAGER_ROLE,
-            AppSSO.ESI_SCOPES,
-            AppSSO.ESI_ACCESS_TOKEN,
-            AppSSO.ESI_REFRESH_TOKEN
-        ]
-
-        for k in client_session_keys:
-            v = edict.get(k)
-            if v is not None:
-                client_session[k] = v
-            else:
-                raise Exception(f"{k}")
+        client_session.update({
+            AppSSO.ESI_CHARACTER_ID: sso_record.character_id,
+            AppSSO.ESI_CORPORATION_ID: sso_record.corporation_id,
+            AppSSO.ESI_ALLIANCE_ID: sso_record.alliance_id,
+            AppSSO.ESI_CHARACTER_IS_ACCOUNTANT_ROLE: sso_record.is_accountant_role,
+            AppSSO.ESI_CHARACTER_IS_DIRECTOR_ROLE: sso_record.is_director_role,
+            AppSSO.ESI_CHARACTER_IS_STATION_MANAGER_ROLE: sso_record.is_station_manager_role,
+            AppSSO.ESI_SCOPES: sso_record.scopes,
+            AppSSO.ESI_ACCESS_TOKEN: sso_record.access_token,
+            AppSSO.ESI_REFRESH_TOKEN: sso_record.refresh_token
+        })

@@ -23,6 +23,7 @@ class AppAuthType(enum.Enum):
     REFRESH = 2
     LOGIN_USER = 3
     LOGIN_CONTRIBUTOR = 4
+    REFRESH_FAILURE = 5
 
 
 class AppTables:
@@ -354,12 +355,12 @@ class AppTables:
 
     class MarketHistory(Base):
         __tablename__: typing.Final = "app_market_history"
-        id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
+        id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(primary_key=True, index=True, nullable=False)
         timestamp: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
         region_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
-        type_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
+        type_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(primary_key=True, index=True, nullable=False)
         average: sqlalchemy.orm.Mapped[float] = sqlalchemy.orm.mapped_column(nullable=False)
-        date: sqlalchemy.orm.Mapped[datetime.date] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
+        date: sqlalchemy.orm.Mapped[datetime.date] = sqlalchemy.orm.mapped_column(primary_key=True, index=True, nullable=False)
         highest: sqlalchemy.orm.Mapped[float] = sqlalchemy.orm.mapped_column(nullable=False)
         lowest: sqlalchemy.orm.Mapped[float] = sqlalchemy.orm.mapped_column(nullable=False)
         order_count: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(nullable=False)
@@ -402,16 +403,11 @@ class AppTables:
         __tablename__: typing.Final = "app_access_control"
         id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
         type: sqlalchemy.orm.Mapped[AppAccessType] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
-        permit: sqlalchemy.orm.Mapped[bool] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
+        permit: sqlalchemy.orm.Mapped[bool] = sqlalchemy.orm.mapped_column(nullable=False)
         trust: sqlalchemy.orm.Mapped[bool] = sqlalchemy.orm.mapped_column(nullable=False)
 
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}({self.id=}, {self.type=}, {self.permit=})"
-
-    # class AltCharacter(Base):
-    #     __tablename__: typing.Final = "app_alt_character"
-    #     character_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(nullable=False, primary_key=True)
-    #     alt_character_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(nullable=False, primary_key=True, unique=True)
 
     class AccessHistory(Base):
         __tablename__: typing.Final = "app_access_history"

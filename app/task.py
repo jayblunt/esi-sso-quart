@@ -21,7 +21,7 @@ import sqlalchemy.orm
 import sqlalchemy.sql
 
 from app import AppConstants, AppDatabase, AppESI, AppTables
-from support.telemetry import otel, otel_add_error, otel_add_exception
+from support.telemetry import otel, otel_add_exception
 
 
 class AppTask(metaclass=abc.ABCMeta):
@@ -30,10 +30,10 @@ class AppTask(metaclass=abc.ABCMeta):
     ENVIRONMENT: typing.Final = "ENVIRONMENT"
 
     @otel
-    def __init__(self, client_session: collections.abc.MutableMapping, esi: AppESI, db: AppDatabase, outbound: asyncio.Queue, logger: logging.Logger | None = None):
+    def __init__(self, client_session: collections.abc.MutableMapping, esi: AppESI, db: AppDatabase, eventqueue: asyncio.Queue, logger: logging.Logger | None = None):
         self.esi: typing.Final = esi
         self.db: typing.Final = db
-        self.outbound: typing.Final = outbound
+        self.eventqueue: typing.Final = eventqueue
         self.logger: typing.Final = logger
         self.name: typing.Final = self.__class__.__name__
         self.configdir: typing.Final = os.path.abspath(client_session.get(self.CONFIGDIR, "."))
@@ -46,7 +46,11 @@ class AppTask(metaclass=abc.ABCMeta):
             self.task = asyncio.create_task(self.manage_task(client_session), name=self.__class__.__name__)
 
     async def manage_task(self, client_session: collections.abc.MutableMapping):
-        await self.run(client_session)
+        try:
+            await self.run(client_session)
+        except asyncio.CancelledError as ex:
+            otel_add_exception(ex)
+            self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
         client_session[self.name] = False
 
     @abc.abstractmethod
@@ -62,7 +66,6 @@ class AppTask(metaclass=abc.ABCMeta):
 
 
 class AppDatabaseTask(AppTask):
-
 
     @otel
     async def _get_type(self, type_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.UniverseType:
@@ -81,7 +84,6 @@ class AppDatabaseTask(AppTask):
                     continue
             return AppTables.UniverseType(**edict)
         return None
-
 
     @otel
     async def _get_character(self, character_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.Corporation:
@@ -110,7 +112,6 @@ class AppDatabaseTask(AppTask):
             return AppTables.Character(**edict)
         return None
 
-
     @otel
     async def _get_corporation(self, corporation_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.Corporation:
         url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/corporations/{corporation_id}/"
@@ -128,7 +129,6 @@ class AppDatabaseTask(AppTask):
             return AppTables.Corporation(**edict)
         return None
 
-
     @otel
     async def _get_moon(self, moon_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.UniverseMoon:
         url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/universe/moons/{moon_id}/"
@@ -144,7 +144,6 @@ class AppDatabaseTask(AppTask):
                     continue
             return AppTables.UniverseMoon(**edict)
         return None
-
 
     @otel
     async def backfill_types(self, type_id_set: set) -> None:
@@ -189,7 +188,6 @@ class AppDatabaseTask(AppTask):
             otel_add_exception(ex)
             self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
 
-
     @otel
     async def backfill_moons(self, moon_id_set: set) -> None:
         if not len(moon_id_set) > 0:
@@ -232,7 +230,6 @@ class AppDatabaseTask(AppTask):
         except Exception as ex:
             otel_add_exception(ex)
             self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
-
 
     @otel
     async def backfill_characters(self, character_id_set: set) -> None:
@@ -277,7 +274,6 @@ class AppDatabaseTask(AppTask):
             otel_add_exception(ex)
             self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
             self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {traceback.format_exc()=}")
-
 
     @otel
     async def backfill_corporations(self, corporation_id_set: set) -> None:

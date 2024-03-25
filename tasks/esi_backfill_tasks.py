@@ -58,7 +58,7 @@ class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
                     else:
                         attempts_remaining -= 1
                         otel_add_error(f"{response.url} -> {response.status}")
-                        self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
+                        self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name, f"{response.url} -> {response.status}"))
                         if response.status in [http.HTTPStatus.BAD_REQUEST, http.HTTPStatus.FORBIDDEN]:
                             attempts_remaining = 0
                         if attempts_remaining > 0:
@@ -118,7 +118,7 @@ class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=AppConstants.ESI_LIMIT_PER_HOST)) as http_session:
                 task_list: typing.Final = list()
                 for obj_id in missing_obj_id_set:
-                    self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{str(self.object_class.__name__)}({obj_id})"))
+                    self.logger.info("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name, f"{str(self.object_class.__name__)}({obj_id})"))
                     task_list.append(self._get_item_dict(obj_id, http_session))
 
                 if len(task_list) > 0:

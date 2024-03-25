@@ -40,6 +40,13 @@ class SSOLogoutEvent(SSOEvent):
 
 
 @dataclasses.dataclass(frozen=True)
+class AppAccessEvent(AppEvent):
+    character_id: int = 0
+    url: str | None = None
+    permitted: bool | None = None
+
+
+@dataclasses.dataclass(frozen=True)
 class AppStructureEvent(AppEvent):
     structure_id: int = 0
     corporation_id: int = 0

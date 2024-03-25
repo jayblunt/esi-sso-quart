@@ -2,20 +2,20 @@ import asyncio
 import functools
 import typing
 
-import opentelemetry.exporter.otlp.proto.http.trace_exporter
 import opentelemetry.exporter.otlp.proto.grpc.metric_exporter
+import opentelemetry.exporter.otlp.proto.http.trace_exporter
 import opentelemetry.instrumentation.aiohttp_client
 import opentelemetry.instrumentation.asyncpg
+import opentelemetry.instrumentation.jinja2
+import opentelemetry.instrumentation.system_metrics
+import opentelemetry.metrics
+import opentelemetry.sdk.metrics
+import opentelemetry.sdk.metrics.export
 import opentelemetry.sdk.resources
 import opentelemetry.sdk.trace
 import opentelemetry.sdk.trace.export
-import opentelemetry.instrumentation.system_metrics
-import opentelemetry.sdk.metrics
-import opentelemetry.sdk.metrics.export
 import opentelemetry.semconv.resource
-import opentelemetry.metrics
 import opentelemetry.trace
-
 
 _OTEL_INITIALIZED: bool = False
 
@@ -35,19 +35,27 @@ def otel_initialize() -> opentelemetry.trace.Tracer:
 
         opentelemetry.trace.set_tracer_provider(trace_provider)
 
+        instrumentor = opentelemetry.instrumentation.jinja2.Jinja2Instrumentor()
+        if not instrumentor.is_instrumented_by_opentelemetry:
+            instrumentor.instrument
+
         instrumentor = opentelemetry.instrumentation.aiohttp_client.AioHttpClientInstrumentor()
         if not instrumentor.is_instrumented_by_opentelemetry:
             instrumentor.instrument
 
-        # instrumentor = opentelemetry.instrumentation.asyncpg.AsyncPGInstrumentor()
+        # instrumentor = opentelemetry.instrumentation.psycopg2.Psycopg2Instrumentor()
         # if not instrumentor.is_instrumented_by_opentelemetry:
         #     instrumentor.instrument()
+
+        instrumentor = opentelemetry.instrumentation.asyncpg.AsyncPGInstrumentor()
+        if not instrumentor.is_instrumented_by_opentelemetry:
+            instrumentor.instrument()
 
         meter_exporter: typing.Final = opentelemetry.exporter.otlp.proto.grpc.metric_exporter.OTLPMetricExporter()
 
         meter_provider: typing.Final = opentelemetry.sdk.metrics.MeterProvider(
             metric_readers=[opentelemetry.sdk.metrics.export.PeriodicExportingMetricReader(
-                export_interval_millis=600_000,
+                export_interval_millis=1800_000,
                 exporter=meter_exporter)],
         )
 

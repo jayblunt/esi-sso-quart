@@ -1,4 +1,5 @@
 import asyncio
+import http
 import inspect
 import logging
 import os
@@ -10,16 +11,16 @@ import quart
 import quart.sessions
 import quart_session
 
-from app import (AppConstants, AppDatabase, AppESI, AppFunctions, AppRequest, AppSSO, AppTables,
-                 AppTask, AppTemplates, AppMoonMiningHistory)
+from app import (AppDatabase, AppESI, AppFunctions, AppRequest, AppSSO, AppTables, AppAccessEvent,
+                 AppTask, AppTemplates)
 from support.telemetry import otel, otel_initialize
 from tasks import (AppAccessControlTask, AppMoonYieldTask,
-                   AppStructureNotificationTask, AppStructurePollingTask,
+                   AppEventConsumerTask, AppStructurePollingTask,
                    ESIAllianceBackfillTask,
                    ESINPCorporationBackfillTask,
                    ESIUniverseConstellationsBackfillTask,
                    ESIUniverseRegionsBackfillTask,
-                   ESIUniverseSystemsBackfillTask, 
+                   ESIUniverseSystemsBackfillTask,
                    AppMarketHistoryTask)
 
 BASEDIR: typing.Final = os.path.dirname(os.path.realpath(__file__))
@@ -64,10 +65,11 @@ esi: typing.Final = AppESI.factory(app.logger)
 db: typing.Final = AppDatabase(
     os.getenv("SQLALCHEMY_DB_URL", ""),
 )
-eveevents: typing.Final = asyncio.Queue()
-sso: typing.Final = AppSSO(app, esi, db, eveevents, **evesso_config)
+eventqueue: typing.Final = asyncio.Queue()
+sso: typing.Final = AppSSO(app, esi, db, eventqueue, **evesso_config)
 evesession: typing.Final = app.session_interface.session_class(sid="global", permanent=False)
 evesession[AppTask.CONFIGDIR] = os.path.abspath(os.path.join(BASEDIR, "data"))
+shutdown_event: typing.Final = asyncio.Event()
 
 
 @app.before_serving
@@ -76,19 +78,24 @@ async def _before_serving() -> None:
     if not bool(evesession.get("setup_tasks_started", False)):
         evesession["setup_tasks_started"] = True
 
-        AppStructureNotificationTask(evesession, esi, db, eveevents, app.logger)
+        AppEventConsumerTask(evesession, esi, db, eventqueue, app.logger)
 
-        ESIUniverseRegionsBackfillTask(evesession, esi, db, eveevents, app.logger)
-        ESIUniverseConstellationsBackfillTask(evesession, esi, db, eveevents, app.logger)
-        ESIUniverseSystemsBackfillTask(evesession, esi, db, eveevents, app.logger)
-        ESIAllianceBackfillTask(evesession, esi, db, eveevents, app.logger)
-        ESINPCorporationBackfillTask(evesession, esi, db, eveevents, app.logger)
+        ESIUniverseRegionsBackfillTask(evesession, esi, db, eventqueue, app.logger)
+        ESIUniverseConstellationsBackfillTask(evesession, esi, db, eventqueue, app.logger)
+        ESIUniverseSystemsBackfillTask(evesession, esi, db, eventqueue, app.logger)
+        ESIAllianceBackfillTask(evesession, esi, db, eventqueue, app.logger)
+        ESINPCorporationBackfillTask(evesession, esi, db, eventqueue, app.logger)
 
-        AppMarketHistoryTask(evesession, esi, db, eveevents, app.logger)
-        AppAccessControlTask(evesession, esi, db, eveevents, app.logger)
-        AppMoonYieldTask(evesession, esi, db, eveevents, app.logger)
+        AppMarketHistoryTask(evesession, esi, db, eventqueue, app.logger)
+        AppAccessControlTask(evesession, esi, db, eventqueue, app.logger)
+        AppMoonYieldTask(evesession, esi, db, eventqueue, app.logger)
 
-        AppStructurePollingTask(evesession, esi, db, eveevents, app.logger)
+        AppStructurePollingTask(evesession, esi, db, eventqueue, app.logger)
+
+
+@app.errorhandler(http.HTTPStatus.NOT_FOUND)
+async def _404(_: Exception) -> quart.ResponseReturnValue:
+    return await quart.render_template("404.html"), http.HTTPStatus.NOT_FOUND
 
 
 @app.route('/robots.txt', methods=["GET"])
@@ -127,6 +134,9 @@ async def _usage() -> quart.ResponseReturnValue:
             denied_usage=denied_data
         )
 
+    elif ar.character_id > 0:
+        await eventqueue.put(AppAccessEvent(character_id=ar.character_id, url=quart.request.url, permitted=False))
+
     return quart.redirect("/about/")
 
 
@@ -155,9 +165,9 @@ async def _top(top_type: str) -> quart.ResponseReturnValue:
         quart.session.clear()
 
     elif ar.character_id > 0 and ar.permitted:
-    
+
         if any([ar.contributor, ar.magic_character]):
- 
+
             history = None
 
             try:
@@ -193,7 +203,13 @@ async def _top(top_type: str) -> quart.ResponseReturnValue:
                 observer_timestamps=history.observer_timestamps,
                 observer_names=history.observer_names)
 
+        else:
+            await eventqueue.put(AppAccessEvent(character_id=ar.character_id, url=quart.request.url, permitted=False))
+
         return quart.redirect("/")
+
+    elif ar.character_id > 0:
+        await eventqueue.put(AppAccessEvent(character_id=ar.character_id, url=quart.request.url, permitted=False))
 
     return quart.redirect(sso.login_route)
 
@@ -213,6 +229,10 @@ async def _moon(moon_id: int) -> quart.ResponseReturnValue:
         moon_mining_history: typing.Final = list()
         moon_mining_history_timestamp = None
         moon_yield: typing.Final = list()
+        mined_types_set = set()
+        miner_list = list()
+        mined_quantity_dict = dict()
+        mined_isk_dict: typing.Final = dict()
         structure = None
 
         try:
@@ -222,13 +242,11 @@ async def _moon(moon_id: int) -> quart.ResponseReturnValue:
                 moon_extraction_history.extend(await AppFunctions.get_moon_extraction_history(session, moon_id, ar.ts))
                 moon_mining_history_timestamp, mm_history, mm_isk = await AppFunctions.get_moon_mining_history(session, moon_id, ar.ts)
                 moon_mining_history.extend(mm_history)
+                mined_isk_dict.update(mm_isk)
 
         except Exception as ex:
             app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex=}")
 
-        mined_types_set = set()
-        miner_list = list()
-        mined_quantity_dict = dict()
         if any([ar.contributor, ar.magic_character]):
             for character_id, mining_history_dict in moon_mining_history:
                 for type_id in mining_history_dict.keys():
@@ -248,12 +266,15 @@ async def _moon(moon_id: int) -> quart.ResponseReturnValue:
             moon_extraction_history=moon_extraction_history,
             miners=miner_list,
             mined_quantity=mined_quantity_dict,
-            mined_isk=mm_isk,
+            mined_isk=mined_isk_dict,
             mined_quantity_timestamp=moon_mining_history_timestamp,
             mined_types=sorted(list(mined_types_set)),
             weekday_names=['M', 'T', 'W', 'T', 'F', 'S', 'S'],
             timeofday_names=[f"{(x-time_chunking):02d}-{(x):02d}" for x in range(time_chunking, 24 + time_chunking) if x % time_chunking == 0],
         )
+
+    elif ar.character_id > 0:
+        await eventqueue.put(AppAccessEvent(character_id=ar.character_id, url=quart.request.url, permitted=False))
 
     return quart.redirect(sso.login_route)
 
@@ -285,11 +306,13 @@ async def _root() -> quart.ResponseReturnValue:
                 unscheduled_extraction_results.extend(await AppFunctions.get_unscheduled_structures(session, ar.ts))
                 structure_fuel_results.extend(await AppFunctions.get_structure_fuel_expiries(session, ar.ts))
                 structures_without_fuel_results.extend(await AppFunctions.get_structures_without_fuel(session, ar.ts))
-                last_update_results.extend(await AppFunctions.get_refresh_times(session, ar.ts))
                 structure_count_dict: typing.Final = await AppFunctions.get_structure_counts(session, ar.ts)
-                for last_update in last_update_results:
-                    last_update: AppTables.PeriodicTaskTimestamp
-                    structure_counts.append(structure_count_dict.get(last_update.corporation_id, 0))
+
+                last_refresh_times: typing.Final = await AppFunctions.get_refresh_times(session, ar.ts)
+                for obj in last_refresh_times:
+                    if obj.corporation_id in structure_count_dict.keys():
+                        last_update_results.append(obj)
+                        structure_counts.append(structure_count_dict[obj.corporation_id])
 
         except Exception as ex:
             app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex=}")
@@ -311,7 +334,8 @@ async def _root() -> quart.ResponseReturnValue:
             is_homne_page=True
         )
 
-    elif ar.character_id > 0 and not ar.permitted:
+    elif ar.character_id > 0:
+        await eventqueue.put(AppAccessEvent(character_id=ar.character_id, url=quart.request.url, permitted=False))
         app.logger.warning(f"{ar.character_id} not permitted")
         return await quart.render_template(
             "permission.html",
@@ -379,6 +403,6 @@ if __name__ == "__main__":
                 app.asgi_app, trusted_hosts=app_trusted_hosts
             )
 
-            await hypercorn.asyncio.serve(app, config)
+            await hypercorn.asyncio.serve(app, config, shutdown_trigger=shutdown_event.wait)
 
         asyncio.run(async_main())

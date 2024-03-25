@@ -3,27 +3,16 @@ import collections
 import collections.abc
 import inspect
 import logging
-import pprint
-import typing
 
-import discord
-import discord.app_commands
-import discord.ext.commands
-import discord.ui
-import quart
-
-from app import (AppDatabase, AppDatabaseTask, AppESI, AppFunctions,
-                 AppStructureEvent, MoonExtractionCompletedEvent,
-                 MoonExtractionScheduledEvent, SSOEvent, SSOLoginEvent,
-                 SSOLogoutEvent, StructureStateChangedEvent)
+from app import AppDatabase, AppDatabaseTask, AppESI, AppStructureEvent
 from support.telemetry import otel
 
 
-class AppStructureNotificationTask(AppDatabaseTask):
+class AppEventConsumerTask(AppDatabaseTask):
 
     @otel
-    def __init__(self, client_session: collections.abc.MutableMapping, esi: AppESI, db: AppDatabase, outbound: asyncio.Queue, logger: logging.Logger | None = None) -> None:
-        super().__init__(client_session, esi, db, outbound, logger)
+    def __init__(self, client_session: collections.abc.MutableMapping, esi: AppESI, db: AppDatabase, eventqueue: asyncio.Queue, logger: logging.Logger | None = None) -> None:
+        super().__init__(client_session, esi, db, eventqueue, logger)
 
     async def run(self, client_session: collections.abc.MutableMapping):
         while True:

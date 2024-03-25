@@ -7,7 +7,6 @@ import contextlib
 import logging
 import json
 import typing
-import urllib.parse
 
 import aiohttp
 import aiohttp.client_exceptions
@@ -263,7 +262,7 @@ class AppESI:
                         else:
                             attempts_remaining -= 1
                             otel_add_error(f"{response.url} -> {response.status}")
-                            self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name,  f"{response.url} -> {response.status}"))
+                            self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name, f"{response.url} -> {response.status}"))
                             if response.status in [http.HTTPStatus.BAD_REQUEST, http.HTTPStatus.FORBIDDEN]:
                                 attempts_remaining = 0
                             if attempts_remaining > 0:

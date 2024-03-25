@@ -20,7 +20,6 @@ import sqlalchemy.sql
 from app import (AppConstants, AppDatabase, AppDatabaseTask, AppESI, AppSSO,
                  AppTables, MoonExtractionCompletedEvent,
                  MoonExtractionScheduledEvent, StructureStateChangedEvent)
-from app.esi import AppESIResult
 from support.telemetry import otel, otel_add_exception
 
 
@@ -252,8 +251,9 @@ class AppObserverState(AppCommonState):
             .where(
                 sqlalchemy.and_(
                     AppTables.ObserverHistory.corporation_id == corporation_id,
-                    AppTables.ObserverHistory.exists == sqlalchemy.sql.expression.true())
+                    AppTables.ObserverHistory.exists == sqlalchemy.sql.expression.true()
                 )
+            )
             .group_by(AppTables.ObserverHistory.observer_id)
         ).subquery()
 
@@ -324,8 +324,8 @@ class AppObserverState(AppCommonState):
 class AppStructureTask(AppDatabaseTask):
 
     @otel
-    def __init__(self, client_session: collections.abc.MutableMapping, esi: AppESI, db: AppDatabase, outbound: asyncio.Queue, logger: logging.Logger | None = None) -> None:
-        super().__init__(client_session, esi, db, outbound, logger)
+    def __init__(self, client_session: collections.abc.MutableMapping, esi: AppESI, db: AppDatabase, eventqueue: asyncio.Queue, logger: logging.Logger | None = None) -> None:
+        super().__init__(client_session, esi, db, eventqueue, logger)
         self.structure_state: typing.Final = AppStructureState(db, logger)
         self.extraction_state: typing.Final = AppExtractionState(db, logger)
         self.observer_state: typing.Final = AppObserverState(db, logger)
@@ -352,12 +352,12 @@ class AppStructureTask(AppDatabaseTask):
             "Reprocessing": 10,
         }
         structure_modifiers: typing.Final = {
-            35825: {"Manufacturing (Standard)": .25}, # Raitaru
-            35826: {"Manufacturing (Standard)": .25, "Manufacturing (Capitals)": .25, "Material Efficiency Research": .25, "Blueprint Copying": .25}, # Azbel
-            35832: .25, # Astrahus
-            35833: .25, # Fortizar
-            35835: {"Reprocessing": .2}, # Athanor
-            35836: {"Reprocessing": .25, "Hybrid Reactions": .25, "Biochemical Reactions": .25, "Composite Reactions": .25}, # Tatara
+            35825: {"Manufacturing (Standard)": .25},  # Raitaru
+            35826: {"Manufacturing (Standard)": .25, "Manufacturing (Capitals)": .25, "Material Efficiency Research": .25, "Blueprint Copying": .25},  # Azbel
+            35832: .25,  # Astrahus
+            35833: .25,  # Fortizar
+            35835: {"Reprocessing": .2},  # Athanor
+            35836: {"Reprocessing": .25, "Hybrid Reactions": .25, "Biochemical Reactions": .25, "Composite Reactions": .25},  # Tatara
         }
         rval: typing.Final = {
             "fuel_online": 0.,
@@ -375,7 +375,7 @@ class AppStructureTask(AppDatabaseTask):
                 m = m.get(svc, 0.)
             self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {structure_id} {type_id} {svc}, {v=}, {m=}")
             if v > 0:
-                rval["fuel_cycle"] += v * ( 1.0 - float(m) )
+                rval["fuel_cycle"] += v * (1.0 - float(m))
                 continue
             self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {structure_id} {type_id} {svc}")
         self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {structure_id} {type_id} {rval=}")
@@ -458,8 +458,8 @@ class AppStructureTask(AppDatabaseTask):
             await self.backfill_corporations({obj.corporation_id})
 
             structure_changed = await self.structure_state.set(obj.structure_id, edict, True)
-            if structure_changed and self.outbound and isinstance(obj, AppTables.Structure):
-                await self.outbound.put(StructureStateChangedEvent(
+            if structure_changed and self.eventqueue and isinstance(obj, AppTables.Structure):
+                await self.eventqueue.put(StructureStateChangedEvent(
                     structure_id=obj.structure_id,
                     corporation_id=corporation_id,
                     system_id=obj.system_id,
@@ -478,8 +478,8 @@ class AppStructureTask(AppDatabaseTask):
                 await self.extraction_state.set(structure_id, dict(), False)
 
             structure_changed = await self.structure_state.set(structure_id, dict(), False)
-            if structure_changed and self.outbound and isinstance(obj, AppTables.StructureHistory):
-                await self.outbound.put(StructureStateChangedEvent(
+            if structure_changed and self.eventqueue and isinstance(obj, AppTables.StructureHistory):
+                await self.eventqueue.put(StructureStateChangedEvent(
                     structure_id=structure_id,
                     corporation_id=corporation_id,
                     system_id=obj.system_id,
@@ -646,8 +646,8 @@ class AppStructureTask(AppDatabaseTask):
                     session.add(new_completed_obj)
                     self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {new_completed_obj} added")
 
-                    if self.outbound and isinstance(new_completed_obj, AppTables.CompletedExtraction):
-                        await self.outbound.put(MoonExtractionCompletedEvent(
+                    if self.eventqueue and isinstance(new_completed_obj, AppTables.CompletedExtraction):
+                        await self.eventqueue.put(MoonExtractionCompletedEvent(
                             structure_id=new_completed_obj.structure_id,
                             corporation_id=new_completed_obj.corporation_id,
                             moon_id=new_completed_obj.moon_id,
@@ -739,8 +739,8 @@ class AppStructureTask(AppDatabaseTask):
             if obj.natural_decay_time < now:
                 continue
 
-            if self.outbound and isinstance(obj, AppTables.ScheduledExtraction):
-                await self.outbound.put(MoonExtractionScheduledEvent(
+            if self.eventqueue and isinstance(obj, AppTables.ScheduledExtraction):
+                await self.eventqueue.put(MoonExtractionScheduledEvent(
                     structure_id=obj.structure_id,
                     corporation_id=obj.corporation_id,
                     moon_id=obj.moon_id,
@@ -777,8 +777,8 @@ class AppStructureTask(AppDatabaseTask):
                         session.add(obj)
                         self.logger.info(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {obj} added")
 
-                        if self.outbound and isinstance(obj, AppTables.ScheduledExtraction):
-                            await self.outbound.put(MoonExtractionScheduledEvent(
+                        if self.eventqueue and isinstance(obj, AppTables.ScheduledExtraction):
+                            await self.eventqueue.put(MoonExtractionScheduledEvent(
                                 structure_id=obj.structure_id,
                                 corporation_id=obj.corporation_id,
                                 moon_id=obj.moon_id,
@@ -1075,7 +1075,6 @@ class AppStructurePollingTask(AppStructureTask):
 
         if oldest_corporation_timestamp + refresh_interval > now:
             remaining_interval: datetime.timedelta = (oldest_corporation_timestamp + refresh_interval) - (now)
-            # remaining_sleep_interval = min(refresh_interval.total_seconds(), remaining_interval.total_seconds())
             self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {oldest_corporation_id=}, {remaining_interval=}")
             await asyncio.sleep(remaining_interval.total_seconds())
             return
@@ -1143,7 +1142,7 @@ class AppMarketHistoryTask(AppDatabaseTask):
             self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
 
         return []
-    
+
     @otel
     async def get_max_market_id(self) -> int:
 
@@ -1167,15 +1166,45 @@ class AppMarketHistoryTask(AppDatabaseTask):
         return max_id
 
     @otel
+    async def get_max_market_dates(self, max_id: int) -> dict[int, datetime.date]:
+
+        max_dates: typing.Final = dict()
+        max_id_lookback: typing.Final = 5
+
+        try:
+            async with await self.db.sessionmaker() as session, session.begin():
+                session: sqlalchemy.ext.asyncio.AsyncSession
+
+                query = (
+                    sqlalchemy.select(
+                        AppTables.MarketHistory.type_id,
+                        sqlalchemy.func.max(AppTables.MarketHistory.date)
+                    )
+                    .where(AppTables.MarketHistory.id >= (max_id - max_id_lookback))
+                    .group_by(AppTables.MarketHistory.type_id)
+                )
+
+                async for type_id, type_max_date in await session.stream(query):
+                    max_dates[type_id] = type_max_date
+
+        except Exception as ex:
+            otel_add_exception(ex)
+            self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
+
+        return max_dates
+
+    @otel
     async def run_once(self, client_session: collections.abc.MutableSet, type_id_list: list):
 
-        previous_max_id = await self.get_max_market_id()
+        previous_max_id: typing.Final = await self.get_max_market_id()
+        previous_max_dates: typing.Final = await self.get_max_market_dates(previous_max_id)
+        market_history_obj_set: typing.Final = set()
 
         for type_id in type_id_list:
-            request_params = { 'type_id': type_id }
+            request_params = {'type_id': type_id}
             url = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/markets/{AppConstants.MARKET_REGION}/history/"
             esi_result = await self.esi.pages(url, '', self.request_params | request_params)
-        
+
             if esi_result.status == http.HTTPStatus.NOT_MODIFIED:
                 self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {esi_result.status=}")
                 continue
@@ -1184,9 +1213,9 @@ class AppMarketHistoryTask(AppDatabaseTask):
                 self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {esi_result.status=}")
                 continue
 
+            type_id_max_date = previous_max_dates.get(type_id, datetime.date(1970, 1, 1))
             history_records: typing.Final = esi_result.data
 
-            history_obj_set = set()
             for x in history_records:
                 x: dict
 
@@ -1205,20 +1234,22 @@ class AppMarketHistoryTask(AppDatabaseTask):
                     else:
                         continue
                     edict[k] = v
-                history_obj_set.add(AppTables.MarketHistory(**edict))
-            
-            if len(history_obj_set) > 0:
-                try:
-                    async with await self.db.sessionmaker() as session:
-                        session: sqlalchemy.ext.asyncio.AsyncSession
-                        session.begin()
-                        session.add_all(history_obj_set)
-                        await session.commit()
 
-                except Exception as ex:
-                    otel_add_exception(ex)
-                    self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
+                obj = AppTables.MarketHistory(**edict)
+                if obj.date >= type_id_max_date:
+                    market_history_obj_set.add(obj)
 
+        if len(market_history_obj_set) > 0:
+            try:
+                async with await self.db.sessionmaker() as session:
+                    session: sqlalchemy.ext.asyncio.AsyncSession
+                    session.begin()
+                    session.add_all(market_history_obj_set)
+                    await session.commit()
+
+            except Exception as ex:
+                otel_add_exception(ex)
+                self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
 
     async def run(self, client_session: collections.abc.MutableSet):
         tracer: typing.Final = opentelemetry.trace.get_tracer_provider().get_tracer(inspect.currentframe().f_code.co_name)
@@ -1232,4 +1263,3 @@ class AppMarketHistoryTask(AppDatabaseTask):
                 self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
 
             await asyncio.sleep(AppConstants.MARKET_REFRESH_INTERVAL_SECONDS)
-
