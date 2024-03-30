@@ -55,7 +55,7 @@ class AppTask(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     async def run(self, client_session: collections.abc.MutableMapping):
-        pass
+        ...
 
     @property
     def request_params(self) -> dict:

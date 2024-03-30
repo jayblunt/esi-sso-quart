@@ -92,11 +92,16 @@ class AppFunctions:
     @otel
     async def get_active_timers(session: sqlalchemy.ext.asyncio.AsyncSession, now: datetime.datetime) -> list[AppTables.Structure]:
 
+        timer_states: typing.Final = ["armor_reinforce", "armor_vulnerable", "hull_reinforce", "hull_vulnerable", "shield_vulnerable"]
+
         timer_window: typing.Final = datetime.timedelta(minutes=15)
         query = (
             sqlalchemy.select(AppTables.Structure)
             .where(
-                AppTables.Structure.state_timer_end > now - timer_window,
+                sqlalchemy.and_(
+                    AppTables.Structure.state_timer_end > now - timer_window,
+                    AppTables.Structure.state.in_(timer_states)
+                )
             )
             .join(AppTables.Structure.system)
             .join(AppTables.Structure.corporation)
@@ -210,7 +215,7 @@ class AppFunctions:
             .where(
                 sqlalchemy.and_(
                     AppTables.Structure.fuel_expires == sqlalchemy.sql.expression.null(),
-                    AppTables.Structure.state.not_in(["anchoring"])
+                    AppTables.Structure.state.not_in(["anchoring", "unanchored", "unknown"])
                 )
             )
             .join(AppTables.Structure.system)
@@ -563,7 +568,7 @@ class AppFunctions:
                 .where(
                     sqlalchemy.and_(
                         max_alias.observer_id.notin_(observer_skip_set),
-                        max_alias.last_updated.between(period_start_date, period_end_date, symmetric=True),
+                        max_alias.last_updated.between(period_start_date, period_end_date, symmetric=True)
                     )
                 )
                 .join(inner_query, (max_alias.observer_id == inner_query.c.observer_id) & (max_alias.observer_history_id == inner_query.c.max_id))
