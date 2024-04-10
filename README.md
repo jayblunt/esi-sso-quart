@@ -42,10 +42,9 @@ The application uses the following scopes:
   - `esi-corporations.read_structures.v1`
   - `esi-industry.read_corporation_mining.v1`
 
-Set environent variables for the ClientID and ClientSecret:
+Set environent variable for the ClientID:
 
 ```shell
-export EVEONLINE_CLIENT_SECRET='<client_secret_from_developers_eveonline_com>'
 export EVEONLINE_CLIENT_ID='<client_id_from_developers_eveonline_com'
 ```
 
