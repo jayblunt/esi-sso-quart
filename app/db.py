@@ -1,5 +1,7 @@
 import datetime
 import enum
+import logging
+import inspect
 import typing
 
 import sqlalchemy
@@ -8,7 +10,7 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
-from support.telemetry import otel
+from support.telemetry import otel, otel_add_exception
 
 
 class AppAccessType(enum.Enum):
@@ -24,6 +26,15 @@ class AppAuthType(enum.Enum):
     LOGIN_USER = 3
     LOGIN_CONTRIBUTOR = 4
     REFRESH_FAILURE = 5
+
+
+class OAuthType(enum.Enum):
+    LOGIN = 0
+    LOGOUT = 1
+    REFRESH = 2
+    LOGIN_USER = 3
+    LOGIN_CONTRIBUTOR = 4
+    REFRESH_FAILURE = 10
 
 
 class AppTables:
@@ -52,6 +63,18 @@ class AppTables:
 
     class Character(Base):
         __tablename__: typing.Final = "esi_characters"
+        character_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
+        corporation_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(nullable=False)
+        alliance_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(nullable=True)
+        birthday: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(nullable=False)
+        name: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(nullable=False)
+
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}({self.character_id=}, {self.name=})"
+
+    class CharacterHistory(Base):
+        __tablename__: typing.Final = "esi_character_history"
+        timestamp: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), primary_key=True, nullable=False)
         character_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
         corporation_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(nullable=False)
         alliance_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(nullable=True)
@@ -344,14 +367,7 @@ class AppTables:
         system_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(nullable=False)
         type_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
         yield_percent: sqlalchemy.orm.Mapped[float] = sqlalchemy.orm.mapped_column(nullable=False)
-
-    # class SSODebugLog(Base):
-    #     __tablename__: typing.Final = "app_sso_debug_log"
-    #     timestamp: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(primary_key=True, server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
-    #     json: sqlalchemy.orm.Mapped[dict | list | None] = sqlalchemy.orm.mapped_column(sqlalchemy.JSON, nullable=False)
-
-    #     def __repr__(self) -> str:
-    #         return f"{self.__class__.__name__}(timestamp={self.timestamp})"
+        moon_r: sqlalchemy.orm.Mapped[float] = sqlalchemy.orm.mapped_column(nullable=True)
 
     class MarketHistory(Base):
         __tablename__: typing.Final = "app_market_history"
@@ -394,6 +410,27 @@ class AppTables:
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}({self.timestamp=}, {self.corporation_id=}, {self.character_id=})"
 
+    class OAuthSession(Base):
+        __tablename__: typing.Final = "oauth_session"
+        timestamp: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
+        owner: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
+        character_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
+        session_active: sqlalchemy.orm.Mapped[bool] = sqlalchemy.orm.mapped_column(nullable=False, primary_key=True, server_default=sqlalchemy.sql.true())
+        session_id: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(nullable=False, primary_key=True)
+        session_scopes: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(nullable=False)
+        refresh_token: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(nullable=False)
+        access_token_iat: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(nullable=False)
+        access_token_exp: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(nullable=False)
+        access_token: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(nullable=False)
+
+    class OAuthLog(Base):
+        __tablename__: typing.Final = "oauth_log"
+        timestamp: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(primary_key=True, server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
+        owner: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
+        character_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
+        session_id: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(nullable=False)
+        auth_type: sqlalchemy.orm.Mapped[OAuthType] = sqlalchemy.orm.mapped_column(nullable=False)
+
     class Configuration(Base):
         __tablename__: typing.Final = "app_configuration"
         key: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
@@ -401,6 +438,7 @@ class AppTables:
 
     class AccessControls(Base):
         __tablename__: typing.Final = "app_access_control"
+        timestamp: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now(), nullable=False)
         id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
         type: sqlalchemy.orm.Mapped[AppAccessType] = sqlalchemy.orm.mapped_column(primary_key=True, nullable=False)
         permit: sqlalchemy.orm.Mapped[bool] = sqlalchemy.orm.mapped_column(nullable=False)
@@ -430,20 +468,45 @@ class AppTables:
 
 class AppDatabase:
 
-    def __init__(self, db: str, echo: bool = False) -> None:
-        self._engine: typing.Final = sqlalchemy.ext.asyncio.create_async_engine(db, echo=echo, pool_size=4, max_overflow=4)
+    engine: sqlalchemy.ext.asyncio.AsyncEngine
+    logger: logging.Logger
+
+    def __init__(self, url: str, logger: logging.Logger, /, echo: bool = False) -> None:
+        self.engine: typing.Final = sqlalchemy.ext.asyncio.create_async_engine(url, echo=echo, pool_size=4, max_overflow=4)
+        self.logger: typing.Final = logger
         self._sessionmaker = None
         self._initialized = False
 
     async def _initialize(self) -> None:
         if not self._initialized:
-            async with self._engine.begin() as transaction:
+            async with self.engine.begin() as transaction:
                 await transaction.run_sync(AppTables.Base.metadata.create_all)
             self._initialized = True
 
     @otel
     async def sessionmaker(self) -> sqlalchemy.ext.asyncio.AsyncSession:
         if self._sessionmaker is None:
-            self._sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(self._engine)
-            # self._sessionmaker = sqlalchemy.orm.sessionmaker(self._engine, expire_on_commit=False, class_=sqlalchemy.ext.asyncio.AsyncSession)
+            self._sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(self.engine)
         return self._sessionmaker()
+
+    @otel
+    async def add_all(self, obj: typing.Iterable[AppTables.Base], /) -> bool:
+        result = False
+        if obj:
+            try:
+                async with await self.sessionmaker() as session:
+                    session: sqlalchemy.ext.asyncio.AsyncSession
+                    session.begin()
+                    session.add_all(obj)
+                    await session.commit()
+                    result = True
+            except Exception as ex:
+                otel_add_exception(ex)
+                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
+        return result
+
+    @otel
+    async def add(self, obj: AppTables.Base, /) -> bool:
+        if obj:
+            return await self.add_all({obj})
+        return False

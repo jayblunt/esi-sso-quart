@@ -17,7 +17,7 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
-from app import (AppConstants, AppDatabase, AppDatabaseTask, AppESI, AppSSO,
+from app import (AppConstants, AppDatabase, AppDatabaseTask, AppESI,
                  AppTables, MoonExtractionCompletedEvent,
                  MoonExtractionScheduledEvent, StructureStateChangedEvent)
 from support.telemetry import otel, otel_add_exception
@@ -221,7 +221,6 @@ class AppExtractionState(AppCommonState):
                 self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {structure_id=} {want_add=}, {now_exists=}, {len(now_edict)=}")
                 async with await self.db.sessionmaker() as session:
                     session: sqlalchemy.ext.asyncio.AsyncSession
-
                     session.begin()
                     session.add(AppTables.ExtractionHistory(**now_edict))
                     await session.commit()
@@ -382,24 +381,23 @@ class AppStructureTask(AppDatabaseTask):
         return rval
 
     @otel
-    async def run_structures(self, now: datetime.datetime, character_id: int, corporation_id: int, access_token: str) -> None:
+    async def run_structures(self, now: datetime.datetime, character_id: int, corporation_id: int, access_token: str) -> bool:
 
         url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/corporations/{corporation_id}/structures/"
 
         esi_result = await self.esi.pages(url, access_token, self.request_params)
+        if esi_result.status not in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] or esi_result.data is None:
+            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {esi_result.status=}")
+            return False
+
         if esi_result.status == http.HTTPStatus.NOT_MODIFIED:
             self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {esi_result.status=}")
-            return
-
-        if esi_result.status not in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] or esi_result.data is None:
-            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {esi_result.status=}")
-            return
+            return True
 
         structures: typing.Final = esi_result.data
-
         if structures is None:
-            self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {corporation_id=} {structures=}")
-            return
+            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {corporation_id=} {structures=}")
+            return False
 
         # Add the structures to the query log
         try:
@@ -418,6 +416,8 @@ class AppStructureTask(AppDatabaseTask):
         await self.backfill_corporations({corporation_id})
 
         for x in structures:
+            await asyncio.sleep(0)
+
             edict: typing.Final[dict[str, int | bool | datetime.datetime]] = dict({
                 "character_id": character_id,
                 "corporation_id": corporation_id
@@ -473,6 +473,8 @@ class AppStructureTask(AppDatabaseTask):
         # Remove deleted
         deleted_structure_id_set: typing.Final = set(previous_structure_id_set) - set(current_structure_obj_dict.keys())
         for structure_id in deleted_structure_id_set:
+            await asyncio.sleep(0)
+
             obj = await self.structure_state.get(structure_id)
             if obj.has_moon_drill:
                 await self.extraction_state.set(structure_id, dict(), False)
@@ -531,7 +533,7 @@ class AppStructureTask(AppDatabaseTask):
 
         # Stop here if there are no structures
         if not len(current_structure_obj_dict) > 0:
-            return
+            return True
 
         # Now update the AppTables.Structure table
         try:
@@ -548,6 +550,8 @@ class AppStructureTask(AppDatabaseTask):
                 existing_structure_obj_dict: typing.Final = {x.structure_id: x async for x in await session.stream_scalars(query)}
 
                 for structure_id, obj in current_structure_obj_dict.items():
+                    await asyncio.sleep(0)
+
                     existing_obj: AppTables.Structure = existing_structure_obj_dict.get(structure_id)
 
                     if not existing_obj:
@@ -572,6 +576,8 @@ class AppStructureTask(AppDatabaseTask):
         except Exception as ex:
             otel_add_exception(ex)
             self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
+
+        return True
 
     @otel
     async def roll_extractions(self, now: datetime.datetime, character_id: int, corporation_id: int, changed_structure_id_set: set) -> None:
@@ -602,7 +608,6 @@ class AppStructureTask(AppDatabaseTask):
 
                 completed_extraction_dict: typing.Final[dict[int, AppTables.CompletedExtraction]] = {x.structure_id: x async for x in await session.stream_scalars(query)}
 
-                # migrated_structure_id_set = set()
                 for scheduled_structure_id, scheduled_obj in scheduled_extraction_dict.items():
 
                     # XXX change removal logic for auto-fracture here?
@@ -663,24 +668,23 @@ class AppStructureTask(AppDatabaseTask):
             self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
 
     @otel
-    async def run_extractions(self, now: datetime.datetime, character_id: int, corporation_id: int, access_token: str) -> None:
+    async def run_extractions(self, now: datetime.datetime, character_id: int, corporation_id: int, access_token: str) -> bool:
 
         url = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/corporation/{corporation_id}/mining/extractions/"
 
         esi_result = await self.esi.pages(url, access_token, self.request_params)
+        if esi_result.status not in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] or esi_result.data is None:
+            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {esi_result.status=}")
+            return False
+
         if esi_result.status == http.HTTPStatus.NOT_MODIFIED:
             self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {esi_result.status=}")
-            return
-
-        if esi_result.status not in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] or esi_result.data is None:
-            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {esi_result.status=}")
-            return
+            return True
 
         extractions: typing.Final = esi_result.data
-
         if extractions is None:
-            self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {corporation_id=} {extractions=}")
-            return
+            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {corporation_id=} {extractions=}")
+            return False
 
         # Add the extractions to the query log
         try:
@@ -698,6 +702,8 @@ class AppStructureTask(AppDatabaseTask):
         self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {previous_structure_id_set=}")
 
         for x in extractions:
+            await asyncio.sleep(0)
+
             edict: typing.Final[dict[str, int | bool | datetime.datetime]] = dict({
                 "character_id": character_id,
                 "corporation_id": corporation_id,
@@ -754,7 +760,7 @@ class AppStructureTask(AppDatabaseTask):
 
         # Stop here if there are no structures
         if not len(current_extractions_obj_dict) > 0:
-            return
+            return True
 
         # Now update the AppTables.Structure table
         try:
@@ -807,25 +813,26 @@ class AppStructureTask(AppDatabaseTask):
             otel_add_exception(ex)
             self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
 
+        return True
+
     @otel
-    async def run_observers(self, now: datetime.datetime, character_id: int, corporation_id: int, access_token: str) -> None:
+    async def run_observers(self, now: datetime.datetime, character_id: int, corporation_id: int, access_token: str) -> bool:
 
         url = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/corporation/{corporation_id}/mining/observers/"
 
         esi_result = await self.esi.pages(url, access_token, self.request_params)
+        if esi_result.status not in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] or esi_result.data is None:
+            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {esi_result.status=}")
+            return False
+
         if esi_result.status == http.HTTPStatus.NOT_MODIFIED:
             self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {esi_result.status=}")
-            return
-
-        if esi_result.status not in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] or esi_result.data is None:
-            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {esi_result.status=}")
-            return
+            return True
 
         observers: typing.Final = esi_result.data
-
         if observers is None:
-            self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {corporation_id=} {observers=}")
-            return
+            self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {corporation_id=} {observers=}")
+            return False
 
         try:
             async with await self.db.sessionmaker() as session, session.begin():
@@ -843,6 +850,8 @@ class AppStructureTask(AppDatabaseTask):
         self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {previous_observer_id_set=}")
 
         for x in observers:
+            await asyncio.sleep(0)
+
             edict: dict[str, int | bool | datetime.datetime] = dict({
                 "corporation_id": corporation_id,
             })
@@ -863,7 +872,6 @@ class AppStructureTask(AppDatabaseTask):
             observer_changed = await self.observer_state.set(observer_id, corporation_id, edict, True, force_set=True)
             if observer_changed:
                 changed_observer_id_set.add(observer_id)
-            # changed_observer_id_set.add(observer_id)
 
         self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {changed_observer_id_set=}")
 
@@ -904,6 +912,8 @@ class AppStructureTask(AppDatabaseTask):
             if len(observer_records) > 0:
                 observer: typing.Final[AppTables.ObserverHistory] = await self.observer_state.get(observer_id, corporation_id)
                 for x in observer_records:
+                    await asyncio.sleep(0)
+
                     edict: dict[str, int | bool | datetime.datetime] = dict({
                         "observer_history_id": observer.id,
                         "corporation_id": corporation_id,
@@ -944,33 +954,13 @@ class AppStructureTask(AppDatabaseTask):
                     otel_add_exception(ex)
                     self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
 
-    @otel
-    async def run(self, client_session: collections.abc.MutableMapping) -> None:
-
-        is_director_role: typing.Final = client_session.get(AppSSO.ESI_CHARACTER_IS_DIRECTOR_ROLE, False)
-        is_station_manager_role: typing.Final = client_session.get(AppSSO.ESI_CHARACTER_IS_STATION_MANAGER_ROLE, False)
-        is_accountant_role: typing.Final = client_session.get(AppSSO.ESI_CHARACTER_IS_ACCOUNTANT_ROLE, False)
-
-        character_id: typing.Final = int(client_session.get(AppSSO.ESI_CHARACTER_ID, 0))
-        corporation_id: typing.Final = int(client_session.get(AppSSO.ESI_CORPORATION_ID, 0))
-        access_token: typing.Final = client_session.get(AppSSO.ESI_ACCESS_TOKEN, '')
-
-        now: typing.Final = datetime.datetime.now(tz=datetime.UTC)
-
-        if any([is_director_role, is_station_manager_role]) and "esi-corporations.read_structures.v1" in client_session.get(AppSSO.ESI_SCOPES, []):
-            await self.run_structures(now, character_id, corporation_id, access_token)
-
-        if any([is_director_role, is_station_manager_role]) and "esi-industry.read_corporation_mining.v1" in client_session.get(AppSSO.ESI_SCOPES, []):
-            await self.run_extractions(now, character_id, corporation_id, access_token)
-
-        if any([is_director_role, is_accountant_role]) and "esi-industry.read_corporation_mining.v1" in client_session.get(AppSSO.ESI_SCOPES, []):
-            await self.run_observers(now, character_id, corporation_id, access_token)
+        return True
 
 
 class AppStructurePollingTask(AppStructureTask):
 
     @otel
-    async def get_available_periodic_credentials(self, now: datetime.datetime) -> dict[int, AppTables.PeriodicCredentials]:
+    async def get_available_contributors(self, now: datetime.datetime) -> dict[int, AppTables.PeriodicCredentials]:
 
         available_credentials_dict: typing.Final = dict()
         try:
@@ -983,14 +973,11 @@ class AppStructurePollingTask(AppStructureTask):
                         sqlalchemy.and_(
                             AppTables.PeriodicCredentials.is_enabled.is_(True),
                             AppTables.PeriodicCredentials.is_station_manager_role.is_(True),
-                            AppTables.PeriodicCredentials.access_token_expiry > now
                         )
                     )
                     .order_by(
                         sqlalchemy.desc(AppTables.PeriodicCredentials.is_director_role),
-                        sqlalchemy.desc(AppTables.PeriodicCredentials.is_accountant_role),
-                        sqlalchemy.desc(AppTables.PeriodicCredentials.is_station_manager_role),
-                        sqlalchemy.asc(AppTables.PeriodicCredentials.access_token_expiry)
+                        sqlalchemy.desc(AppTables.PeriodicCredentials.is_accountant_role)
                     )
                 )
 
@@ -1007,7 +994,7 @@ class AppStructurePollingTask(AppStructureTask):
         return available_credentials_dict
 
     @otel
-    async def get_refresh_times(self, corporation_id_list: list) -> dict[int, datetime.datetime]:
+    async def get_corporation_refresh_times(self, corporation_id_list: list) -> dict[int, datetime.datetime]:
 
         corporation_refresh_history_dict: typing.Final = {x: datetime.datetime(2000, 1, 1, 0, 0, 0, tzinfo=datetime.UTC) for x in corporation_id_list}
         try:
@@ -1031,7 +1018,7 @@ class AppStructurePollingTask(AppStructureTask):
         return corporation_refresh_history_dict
 
     @otel
-    async def set_refresh_times(self, corporation_id: int, character_id: int, timestamp: datetime.datetime) -> None:
+    async def set_corporation_refresh_time(self, corporation_id: int, character_id: int, timestamp: datetime.datetime) -> None:
         try:
             async with await self.db.sessionmaker() as session, session.begin():
                 session: sqlalchemy.ext.asyncio.AsyncSession
@@ -1058,18 +1045,18 @@ class AppStructurePollingTask(AppStructureTask):
             self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
 
     @otel
-    async def run_once(self, client_session: collections.abc.MutableSet):
+    async def run_once(self, client_session: collections.abc.MutableSet, /):
 
         refresh_interval: typing.Final = datetime.timedelta(seconds=AppConstants.CORPORATION_REFRESH_INTERVAL_SECONDS)
         now: typing.Final = datetime.datetime.now(tz=datetime.UTC)
 
-        available_corporation_id_dict: typing.Final = await self.get_available_periodic_credentials(now)
+        available_corporation_id_dict: typing.Final = await self.get_available_contributors(now)
         if len(available_corporation_id_dict.keys()) == 0:
             self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {len(available_corporation_id_dict.keys())=}")
             await asyncio.sleep(refresh_interval.total_seconds())
             return
 
-        corporation_refresh_history_dict: typing.Final[dict] = await self.get_refresh_times(available_corporation_id_dict.keys())
+        corporation_refresh_history_dict: typing.Final[dict] = await self.get_corporation_refresh_times(available_corporation_id_dict.keys())
         oldest_corporation_id = sorted(corporation_refresh_history_dict.keys(), key=lambda x: corporation_refresh_history_dict[x])[0]
         oldest_corporation_timestamp = corporation_refresh_history_dict[oldest_corporation_id]
 
@@ -1081,33 +1068,46 @@ class AppStructurePollingTask(AppStructureTask):
 
         # Should make these asyncio tasks ...
         for corporation_id, oldest_corporation_timestamp in corporation_refresh_history_dict.items():
+            await asyncio.sleep(0)
 
             if oldest_corporation_timestamp + refresh_interval > now:
                 continue
 
             credentials: typing.Final = available_corporation_id_dict[corporation_id]
             character_id: typing.Final = credentials.character_id
-            access_token: typing.Final = credentials.access_token
-            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {corporation_id=}, {character_id=}, {credentials.is_director_role=}, {credentials.is_station_manager_role=}, {credentials.is_accountant_role=}")
+            if credentials.access_token_expiry < now:
+                self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {corporation_id=}, {character_id=}, {credentials.access_token_expiry=} < {now=}")
+            else:
+                access_token: typing.Final = credentials.access_token
+                self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {corporation_id=}, {character_id=}, {credentials.is_director_role=}, {credentials.is_station_manager_role=}, {credentials.is_accountant_role=}")
 
-            # XXX: fixme
-            # need structures first, because of the db relationships .. urgh
-            if any([credentials.is_director_role, credentials.is_station_manager_role]):
-                await self.run_structures(now, character_id, corporation_id, access_token)
-                await self.run_extractions(now, character_id, corporation_id, access_token)
+                # XXX: fixme
+                # need structures first, because of the db relationships .. urgh
+                run_structures_result = True
+                run_extractions_result = True
+                run_observers_result = True
+                if any([credentials.is_director_role, credentials.is_station_manager_role]):
+                    run_structures_result = await self.run_structures(now, character_id, corporation_id, access_token)
+                    run_extractions_result = await self.run_extractions(now, character_id, corporation_id, access_token)
 
-            if any([credentials.is_director_role, credentials.is_accountant_role]):
-                await self.run_observers(now, character_id, corporation_id, access_token)
+                if any([credentials.is_director_role, credentials.is_accountant_role]):
+                    run_observers_result = await self.run_observers(now, character_id, corporation_id, access_token)
 
-            await self.set_refresh_times(corporation_id, character_id, now)
+                logmsglevel = logging.INFO
+                if not all([run_structures_result, run_extractions_result, run_observers_result]):
+                    logmsglevel = logging.ERROR
+                self.logger.log(logmsglevel, f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {corporation_id=}, {character_id=}, {run_structures_result=}, {run_extractions_result=}, {run_observers_result=}")
+
+            await self.set_corporation_refresh_time(corporation_id, character_id, now)
 
         self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: updates complete")
 
-    async def run(self, client_session: collections.abc.MutableSet):
-        tracer: typing.Final = opentelemetry.trace.get_tracer_provider().get_tracer(inspect.currentframe().f_code.co_name)
+    async def run(self, client_session: collections.abc.MutableSet, /):
         while True:
+            tracer: typing.Final = opentelemetry.trace.get_tracer_provider().get_tracer(self.__module__)
             try:
-                with tracer.start_as_current_span(inspect.currentframe().f_code.co_name):
+                # with contextlib.nullcontext():
+                with tracer.start_as_current_span(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}"):
                     await self.run_once(client_session)
             except Exception as ex:
                 otel_add_exception(ex)
@@ -1130,10 +1130,9 @@ class AppMarketHistoryTask(AppDatabaseTask):
                 results = set()
 
                 for q in queries:
-                    results |= {x async for x in await session.stream_scalars(q)}
+                    results.update({x async for x in await session.stream_scalars(q)})
 
-                for k, v in AppConstants.COMPRESSED_TYPE_DICT.items():
-                    results |= {k, v}
+                results.update(AppConstants.COMPRESSED_TYPE_DICT)
 
                 return sorted(list(results))
 
@@ -1194,13 +1193,14 @@ class AppMarketHistoryTask(AppDatabaseTask):
         return max_dates
 
     @otel
-    async def run_once(self, client_session: collections.abc.MutableSet, type_id_list: list):
+    async def run_once(self, client_session: collections.abc.MutableSet, type_id_list: list, /):
 
         previous_max_id: typing.Final = await self.get_max_market_id()
         previous_max_dates: typing.Final = await self.get_max_market_dates(previous_max_id)
         market_history_obj_set: typing.Final = set()
 
         for type_id in type_id_list:
+            await asyncio.sleep(0)
             request_params = {'type_id': type_id}
             url = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/markets/{AppConstants.MARKET_REGION}/history/"
             esi_result = await self.esi.pages(url, '', self.request_params | request_params)
@@ -1217,6 +1217,7 @@ class AppMarketHistoryTask(AppDatabaseTask):
             history_records: typing.Final = esi_result.data
 
             for x in history_records:
+                await asyncio.sleep(0)
                 x: dict
 
                 edict: dict[str, int | bool | datetime.datetime] = dict({
@@ -1251,11 +1252,11 @@ class AppMarketHistoryTask(AppDatabaseTask):
                 otel_add_exception(ex)
                 self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
 
-    async def run(self, client_session: collections.abc.MutableSet):
-        tracer: typing.Final = opentelemetry.trace.get_tracer_provider().get_tracer(inspect.currentframe().f_code.co_name)
+    async def run(self, client_session: collections.abc.MutableSet, /):
         while True:
+            tracer: typing.Final = opentelemetry.trace.get_tracer_provider().get_tracer(__name__)
             try:
-                with tracer.start_as_current_span(inspect.currentframe().f_code.co_name):
+                with tracer.start_as_current_span(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}"):
                     type_id_list = await self.get_market_type_ids()
                     await self.run_once(client_session, type_id_list)
             except Exception as ex:

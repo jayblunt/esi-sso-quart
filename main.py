@@ -1,31 +1,49 @@
 import asyncio
+import contextlib
 import http
 import inspect
 import logging
 import os
+import platform
 import typing
 import uuid
 
+import colorlog
+import hypercorn.asyncio
+import hypercorn.config
+import hypercorn.middleware
 import opentelemetry.instrumentation.asgi
+# import opentelemetry.trace
 import quart
 import quart.sessions
 import quart_session
 
-from app import (AppDatabase, AppESI, AppFunctions, AppRequest, AppSSO, AppTables, AppAccessEvent,
-                 AppTask, AppTemplates)
+from app import (AppAccessEvent, AppDatabase, AppESI, AppFunctions, AppRequest,
+                 AppSSO, AppSSOHookProvider, AppTables, AppTask, AppTemplates,
+                 CCPSSOProvider)
 from support.telemetry import otel, otel_initialize
-from tasks import (AppAccessControlTask, AppMoonYieldTask,
-                   AppEventConsumerTask, AppStructurePollingTask,
-                   ESIAllianceBackfillTask,
+from tasks import (AppAccessControlTask, AppEventConsumerTask,
+                   AppMarketHistoryTask, AppMoonYieldTask,
+                   AppStructurePollingTask, ESIAllianceBackfillTask,
                    ESINPCorporationBackfillTask,
                    ESIUniverseConstellationsBackfillTask,
                    ESIUniverseRegionsBackfillTask,
-                   ESIUniverseSystemsBackfillTask,
-                   AppMarketHistoryTask)
+                   ESIUniverseSystemsBackfillTask)
 
 BASEDIR: typing.Final = os.path.dirname(os.path.realpath(__file__))
 
+for environment_variable in ['ESI_CLIENT_ID', 'ESI_SQLALCHEMY_DB_URL']:
+    assert len(os.getenv(environment_variable, '')) > 0, f'{environment_variable} is required'
+
 app: typing.Final = quart.Quart(__name__)
+
+app.logger.setLevel(logging.INFO)
+for handler in app.logger.handlers:
+    if isinstance(handler, logging.StreamHandler):
+        app.logger.removeHandler(handler)
+handler = colorlog.StreamHandler()
+handler.setFormatter(colorlog.ColoredFormatter('%(log_color)s[%(asctime)s] %(levelname)s in %(module)s: %(message)s'))
+app.logger.addHandler(handler)
 
 app.config.from_mapping({
     "DEBUG": False,
@@ -35,7 +53,6 @@ app.config.from_mapping({
     "SESSION_TYPE": "redis",
     "SESSION_REVERSE_PROXY": True,
     "SESSION_PERMANENT": True,
-    # "SESSION_PROTECTION": True,
     "SESSION_COOKIE_HTTPONLY": True,
     "SESSION_COOKIE_SAMESITE": "Lax",
     "SESSION_COOKIE_SECURE": True,
@@ -47,26 +64,25 @@ app.config.from_mapping({
     "RESPONSE_TIMEOUT": 15,
 })
 
-evesso_config: typing.Final = {
-    "client_id": os.getenv("EVEONLINE_CLIENT_ID", ""),
-    "scopes": [
-        "publicData",
-        "esi-corporations.read_structures.v1",
-        "esi-characters.read_corporation_roles.v1",
-        "esi-industry.read_corporation_mining.v1",
-    ]
-}
-
-app.logger.setLevel(logging.INFO)
 
 quart_session.Session(app)
 
 esi: typing.Final = AppESI.factory(app.logger)
 db: typing.Final = AppDatabase(
-    os.getenv("SQLALCHEMY_DB_URL", ""),
+    os.getenv("ESI_SQLALCHEMY_DB_URL", ""),
+    app.logger
 )
 eventqueue: typing.Final = asyncio.Queue()
-sso: typing.Final = AppSSO(app, esi, db, eventqueue, **evesso_config)
+sso = AppSSO(app, esi, db, eventqueue,
+             client_id=os.getenv("ESI_CLIENT_ID", ""),
+             provider=CCPSSOProvider(),
+             hook_provider=AppSSOHookProvider(esi, db, eventqueue, app.logger),
+             client_scopes=[
+                 "publicData",
+                 "esi-corporations.read_structures.v1",
+                 "esi-characters.read_corporation_roles.v1",
+                 "esi-industry.read_corporation_mining.v1",
+             ])
 evesession: typing.Final = app.session_interface.session_class(sid="global", permanent=False)
 evesession[AppTask.CONFIGDIR] = os.path.abspath(os.path.join(BASEDIR, "data"))
 shutdown_event: typing.Final = asyncio.Event()
@@ -146,12 +162,20 @@ async def _about() -> quart.ResponseReturnValue:
 
     ar: typing.Final = await AppFunctions.get_app_request(db, quart.session, quart.request)
 
+    platform_info: typing.Final = {
+        'python_version': platform.python_version(),
+        'system': platform.system(),
+        'release': platform.release(),
+        'processor': platform.processor()
+    }
+
     return await quart.render_template(
         "about.html",
         character_id=ar.character_id,
         is_contributor_character=ar.contributor,
         is_magic_character=ar.magic_character,
-        is_about_page=True
+        is_about_page=True,
+        platform_info=platform_info
     )
 
 
@@ -168,40 +192,48 @@ async def _top(top_type: str) -> quart.ResponseReturnValue:
 
         if any([ar.contributor, ar.magic_character]):
 
+            # tracer_name: typing.Final = inspect.currentframe().f_code.co_name
+            # tracer: typing.Final = opentelemetry.trace.get_tracer_provider().get_tracer(tracer_name)
             history = None
 
-            try:
-                async with await db.sessionmaker() as session:
-                    history = await AppFunctions.get_moon_mining_top(session, ar.ts)
+            # with tracer.start_as_current_span(f"{tracer_name}.collect"):
+            with contextlib.nullcontext():
+                try:
+                    async with await db.sessionmaker() as session:
+                        history = await AppFunctions.get_moon_mining_top(session, ar.ts)
 
-            except Exception as ex:
-                app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex=}")
+                except Exception as ex:
+                    app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex=}")
 
-            top_observers: typing.Final = list()
-            top_observers_isk_dict: typing.Final = dict()
-            for (observer_id, isk) in history.observers:
-                top_observers.append(observer_id)
-                top_observers_isk_dict[observer_id] = isk
+            # with tracer.start_as_current_span(f"{tracer_name}.process"):
+            with contextlib.nullcontext():
+                top_observers: typing.Final = list()
+                top_observers_isk_dict: typing.Final = dict()
+                for (observer_id, isk) in history.observers:
+                    top_observers.append(observer_id)
+                    top_observers_isk_dict[observer_id] = isk
 
-            top_characters: typing.Final = list()
-            top_characters_isk_dict: typing.Final = dict()
-            for (character_id, isk) in history.characters:
-                top_characters.append(character_id)
-                top_characters_isk_dict[character_id] = isk
+                top_characters: typing.Final = list()
+                top_characters_isk_dict: typing.Final = dict()
+                for (character_id, isk) in history.characters:
+                    top_characters.append(character_id)
+                    top_characters_isk_dict[character_id] = isk
 
-            return await quart.render_template(
-                "mining_rankings.html",
-                character_id=ar.character_id,
-                is_contributor_character=ar.contributor,
-                is_magic_character=ar.magic_character,
-                top_period_start=history.start_date,
-                top_period_end=history.end_date,
-                top_characters=top_characters,
-                top_characters_isk=top_characters_isk_dict,
-                top_observers=top_observers,
-                top_observers_isk=top_observers_isk_dict,
-                observer_timestamps=history.observer_timestamps,
-                observer_names=history.observer_names)
+            # with tracer.start_as_current_span(f"{tracer_name}.render"):
+            with contextlib.nullcontext():
+                return await quart.render_template(
+                    "mining_rankings.html",
+                    character_id=ar.character_id,
+                    is_contributor_character=ar.contributor,
+                    is_magic_character=ar.magic_character,
+                    top_period_start=history.start_date,
+                    top_period_end=history.end_date,
+                    top_characters=top_characters,
+                    top_characters_isk=top_characters_isk_dict,
+                    top_observers=top_observers,
+                    top_observers_isk=top_observers_isk_dict,
+                    observer_timestamps=history.observer_timestamps,
+                    observer_names=history.observer_names)
 
         else:
             await eventqueue.put(AppAccessEvent(character_id=ar.character_id, url=quart.request.url, permitted=False))
@@ -270,7 +302,7 @@ async def _moon(moon_id: int) -> quart.ResponseReturnValue:
             mined_quantity_timestamp=moon_mining_history_timestamp,
             mined_types=sorted(list(mined_types_set)),
             weekday_names=['M', 'T', 'W', 'T', 'F', 'S', 'S'],
-            timeofday_names=[f"{(x-time_chunking):02d}-{(x):02d}" for x in range(time_chunking, 24 + time_chunking) if x % time_chunking == 0],
+            timeofday_names=[f"{(x - time_chunking):02d}-{(x):02d}" for x in range(time_chunking, 24 + time_chunking) if x % time_chunking == 0],
         )
 
     elif ar.character_id > 0:
@@ -330,7 +362,6 @@ async def _root() -> quart.ResponseReturnValue:
             unscheduled_extractions=unscheduled_extraction_results,
             last_update=last_update_results,
             structure_counts=structure_counts,
-            character_trusted=ar.trusted,
             is_homne_page=True
         )
 
@@ -355,7 +386,7 @@ if __name__ == "__main__":
     AppTemplates.add_templates(app, db)
 
     app_debug: typing.Final = app.config.get("DEBUG", False)
-    app_port: typing.Final = app.config.get("PORT", 5050)
+    app_port = app.config.get("PORT", 5050)
     app_host: typing.Final = app.config.get("HOST", "127.0.0.1")
 
     # app_log_file: typing.Final = os.path.join(BASEDIR, "logs", "app.log")
@@ -368,9 +399,6 @@ if __name__ == "__main__":
     if app_debug:
         app.run(host=app_host, port=app_port, debug=app_debug)
     else:
-        import hypercorn.asyncio
-        import hypercorn.config
-        from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
         app_trusted_hosts: typing.Final = ["127.0.0.1", "::1"]
         app_bind_hosts: typing.Final = [x for x in app_trusted_hosts]
@@ -382,6 +410,7 @@ if __name__ == "__main__":
         # XXX: hack for development server.
         development_flag_file = os.path.join(BASEDIR, "development.txt")
         if os.path.exists(development_flag_file):
+            app_port = 5055
             with open(development_flag_file) as ifp:
                 app_bind_hosts.clear()
                 app_bind_hosts.append("0.0.0.0")
@@ -399,8 +428,8 @@ if __name__ == "__main__":
                 app.asgi_app
             )
 
-            app.asgi_app = ProxyHeadersMiddleware(
-                app.asgi_app, trusted_hosts=app_trusted_hosts
+            app.asgi_app = hypercorn.middleware.ProxyFixMiddleware(
+                app.asgi_app
             )
 
             await hypercorn.asyncio.serve(app, config, shutdown_trigger=shutdown_event.wait)

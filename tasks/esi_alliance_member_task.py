@@ -11,20 +11,22 @@ import sqlalchemy.exc
 import sqlalchemy.ext.asyncio
 import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
+import opentelemetry.trace
 import sqlalchemy.sql
 
-from app import AppConstants, AppESIResult, AppSSO, AppTables, AppTask
+from app import AppConstants, AppESIResult, AppTables, AppTask
 from support.telemetry import otel, otel_add_exception
 
 
 class ESIAlliancMemberTask(AppTask):
 
     @otel
-    async def run(self, client_session: collections.abc.MutableMapping):
+    async def run_once(self, client_session: collections.abc.MutableMapping, /):
 
         corporation_id_set: typing.Final = set()
 
-        alliance_id: typing.Final = int(client_session.get(AppSSO.ESI_ALLIANCE_ID, 0))
+        # XXX: This obviously isn't running anywhere
+        alliance_id: typing.Final = 0
 
         # XXX: Add CAS to CAStabouts ...
         if alliance_id in [99002329]:
@@ -85,6 +87,7 @@ class ESIAlliancMemberTask(AppTask):
 
                         if len(task_list) > 0:
                             for esi_result in await asyncio.gather(*task_list):
+                                await asyncio.sleep(0)
                                 esi_result: AppESIResult
 
                                 if not esi_result:
@@ -112,3 +115,8 @@ class ESIAlliancMemberTask(AppTask):
             except Exception as ex:
                 otel_add_exception(ex)
                 self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
+
+    async def run(self, client_session: collections.abc.MutableMapping, /):
+        tracer = opentelemetry.trace.get_tracer_provider().get_tracer(__name__)
+        with tracer.start_as_current_span(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}"):
+            await self.run_once(client_session)

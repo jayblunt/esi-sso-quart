@@ -181,7 +181,7 @@ class AppDatabaseTask(AppTask):
                         if len(type_task_list) > 0:
                             task_result_list = await asyncio.gather(*type_task_list)
                             session.begin()
-                            session.add_all([obj for obj in task_result_list if obj])
+                            session.add_all([obj for obj in filter(None, task_result_list)])
                             await session.commit()
 
         except Exception as ex:
@@ -224,7 +224,7 @@ class AppDatabaseTask(AppTask):
                         if len(task_list) > 0:
                             task_result_list = await asyncio.gather(*task_list)
                             session.begin()
-                            session.add_all([obj for obj in task_result_list if obj])
+                            session.add_all([obj for obj in filter(None, task_result_list)])
                             await session.commit()
 
         except Exception as ex:
@@ -267,7 +267,7 @@ class AppDatabaseTask(AppTask):
                         if len(character_task_list) > 0:
                             task_result_list = await asyncio.gather(*character_task_list)
                             session.begin()
-                            session.add_all([obj for obj in task_result_list if obj])
+                            session.add_all([obj for obj in filter(None, task_result_list)])
                             await session.commit()
 
         except Exception as ex:
@@ -311,7 +311,7 @@ class AppDatabaseTask(AppTask):
                         if len(corporation_task_list) > 0:
                             task_result_list = await asyncio.gather(*corporation_task_list)
                             session.begin()
-                            session.add_all([obj for obj in task_result_list if obj])
+                            session.add_all([obj for obj in filter(None, task_result_list)])
                             await session.commit()
 
         except Exception as ex:

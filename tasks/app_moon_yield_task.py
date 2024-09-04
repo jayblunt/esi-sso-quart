@@ -13,6 +13,7 @@ import sqlalchemy.ext.asyncio
 import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
+import opentelemetry.trace
 
 from app import AppDatabaseTask, AppTables
 from support.telemetry import otel, otel_add_exception
@@ -24,18 +25,18 @@ class MoonYieldData(typing.NamedTuple):
     planet_id: int
     moon_id: int
     yield_percent: float
+    moon_r: int | None
 
 
 class AppMoonYieldTask(AppDatabaseTask):
 
     @otel
-    async def run(self, client_session: collections.abc.MutableSet):
+    async def run_once(self, client_session: collections.abc.MutableSet, /):
 
         self.logger.info(f"> {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
 
         moon_data_filename: typing.Final = os.path.abspath(os.path.join(self.configdir, "moon_data.json"))
 
-        @otel
         def read_moon_data(logger: logging.Logger, filename: str) -> list:
 
             moon_data_list: typing.Final = list()
@@ -66,9 +67,9 @@ class AppMoonYieldTask(AppDatabaseTask):
             35835, 35825, 35832, 35826, 35836, 35833, 45496, 45499, 45501, 45513, 45495,
             45500, 45494, 45490, 45492, 45504, 45511, 45493, 45491, 45497, 45498, 45510,
             45512, 46280, 46282, 46292, 46288, 46284, 46302, 46296, 46281, 46297, 46293,
-            46298, 46316, 46308, 46318, 46283, 46300, 46301, 46303}
-        for x in bootstrap:
-            type_id_set.add(x)
+            46298, 46316, 46308, 46318, 46283, 46300, 46301, 46303
+        }
+        type_id_set.update(bootstrap)
 
         if len(moon_data_list) > 0:
 
@@ -95,7 +96,12 @@ class AppMoonYieldTask(AppDatabaseTask):
                     obj_set: typing.Final = set()
                     for md in moon_data_list:
                         md: MoonYieldData
-                        obj = AppTables.MoonYield(type_id=md.type_id, system_id=md.system_id, planet_id=md.planet_id, moon_id=md.moon_id, yield_percent=md.yield_percent)
+                        obj = AppTables.MoonYield(type_id=md.type_id,
+                                                  system_id=md.system_id,
+                                                  planet_id=md.planet_id,
+                                                  moon_id=md.moon_id,
+                                                  yield_percent=md.yield_percent,
+                                                  moon_r=md.moon_r)
                         obj_set.add(obj)
                         type_id_set.add(obj.type_id)
 
@@ -111,3 +117,8 @@ class AppMoonYieldTask(AppDatabaseTask):
             await self.backfill_types(type_id_set)
 
         self.logger.info(f"< {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
+
+    async def run(self, client_session: collections.abc.MutableSet, /):
+        tracer = opentelemetry.trace.get_tracer_provider().get_tracer(__name__)
+        with tracer.start_as_current_span(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}"):
+            await self.run_once(client_session)

@@ -9,7 +9,7 @@ from support.telemetry import otel
 
 from .db import AppDatabase
 from .functions import AppFunctions
-from .sso import AppSSO
+from .constants import AppSessionKeys
 
 
 class AppTemplateCsacheEnum(enum.Enum):
@@ -36,7 +36,7 @@ class AppTemplates:
     @otel
     def _login_type(input: str) -> str:
         client_session: typing.Final = quart.session
-        login_type = client_session.get(AppSSO.APP_SESSION_TYPE, "USER")
+        login_type = client_session.get(AppSessionKeys.KEY_APP_SESSION_TYPE, "USER")
         if login_type == "CONTRIBUTOR":
             return "contributor"
         else:
