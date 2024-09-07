@@ -1,6 +1,7 @@
 # Byte-compiled / optimized / DLL files
 python3.10-env/
 python3.11-env/
+python3.12-env/
 __pycache__/
 *.py[cod]
 *$py.class

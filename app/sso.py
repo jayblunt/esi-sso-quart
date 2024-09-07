@@ -1,18 +1,17 @@
 import asyncio
 import base64
-import collections.abc
 import dataclasses
 import datetime
 import http
 import inspect
 import secrets
+import logging
 import typing
 import urllib.parse
 import uuid
 
 import aiohttp
 import aiohttp.client_exceptions
-import dateutil.parser
 import hashlib
 import jose.exceptions
 import jose.jwt
@@ -25,141 +24,235 @@ import sqlalchemy.sql
 
 from support.telemetry import otel, otel_add_exception
 
-from .constants import AppConstants
-from .db import AppAuthType, AppDatabase, AppTables
+from .constants import AppSessionKeys
+from .db import AppDatabase, AppTables, OAuthType
 from .esi import AppESI, AppESIResult
-from .events import SSOLoginEvent, SSOLogoutEvent, SSOTokenRefreshEvent
+
+
+class OAuthProvider:
+
+    @property
+    def url(self) -> str:
+        return None
+
+    @property
+    def document(self) -> dict:
+        return dict()
+
+    @property
+    def authorization_endpoint(self) -> str:
+        return self.document.get('authorization_endpoint')
+
+    @property
+    def token_endpoint(self) -> str:
+        return self.document.get('token_endpoint')
+
+    @property
+    def revocation_endpoint(self) -> str:
+        return self.document.get('revocation_endpoint')
+
+    @property
+    def audience(self) -> str:
+        return ''
+
+    @otel
+    async def decode_access_token(self, access_token: str, jwks: typing.Optional[list[str]] = None) -> dict:
+        if jwks is None:
+            return None
+
+        if not len(jwks) > 0:
+            return None
+
+        jwt_unverified_header: typing.Final = await asyncio.to_thread(jose.jwt.get_unverified_header, access_token)
+        if not len(jwt_unverified_header) > 0:
+            return None
+
+        jwt_key = None
+        for jwk_candidate in jwks:
+            if not isinstance(jwk_candidate, dict):
+                continue
+
+            jwt_key_match = True
+            for header_key in set(jwt_unverified_header.keys()).intersection({"kid", "alg"}):
+                if jwt_unverified_header.get(header_key) != jwk_candidate.get(header_key):
+                    jwt_key_match = False
+                    break
+
+            if jwt_key_match:
+                jwt_key = jwk_candidate
+                break
+
+        decoded_token = None
+        if jwt_key:
+            try:
+                decoded_token = await asyncio.to_thread(jose.jwt.decode, access_token, key=jwt_key, issuer=self.document.get('issuer'), audience=self.audience)
+            except jose.exceptions.JWTError as ex:
+                pass
+
+        return decoded_token
 
 
 @dataclasses.dataclass(frozen=True)
-class AppSSORecord:
-    session_id: str
+class OAuthRecord:
+    owner: str
     character_id: int
-    corporation_id: int
-    alliance_id: int
-    character_name: str
-    character_birthday: datetime.datetime
-    is_director_role: bool
-    is_accountant_role: bool
-    is_station_manager_role: bool
-    scopes: list[str]
-    access_token: str
+    session_active: bool
+    session_id: str
+    session_scopes: str
+    refresh_token: str
     access_token_iat: datetime.datetime
     access_token_exp: datetime.datetime
-    refresh_token: str
+    access_token: str
 
 
-class AppSSOFunctions:
+class OAuthHookProvider:
 
-    @staticmethod
-    async def authlog(db: AppDatabase, character_id: int, session_id: str, auth_type: AppAuthType) -> bool:
+    async def on_event(self, oauthevent: OAuthType, oauthrecord: OAuthRecord, /) -> None:
+        pass
+
+
+class AppSSOStorage:
+
+    db: AppDatabase
+    eventqueue: asyncio.Queue
+    logger: logging.Logger
+
+    def __init__(self,
+                 db: AppDatabase,
+                 eventqueue: asyncio.Queue,
+                 logger: logging.Logger) -> None:
+
+        self.db: typing.Final = db
+        self.eventqueue: typing.Final = eventqueue
+        self.logger: typing.Final = logger
+
+    @otel
+    async def put_authlog(self, owner: str, character_id: int, session_id: str, auth_type: OAuthType) -> bool:
         try:
-            async with await db.sessionmaker() as session:
-                session.begin()
-                session.add(AppTables.AuthLog(character_id=character_id, session_id=session_id, auth_type=auth_type))
-                await session.commit()
-            return True
-        except Exception as ex:
-            otel_add_exception(ex)
-        return False
-
-    # @staticmethod
-    # async def debuglog(db: AppDatabase, payload: dict[str, typing.Any]) -> bool:
-    #     try:
-    #         async with await db.sessionmaker() as session:
-    #             session.begin()
-    #             session.add(AppTables.SSODebugLog(json=payload))
-    #             await session.commit()
-    #         return True
-    #     except Exception as ex:
-    #         otel_add_exception(ex)
-    #     return False
-
-    @staticmethod
-    async def update_credentials(db: AppDatabase, character_id: int, sso_record: AppSSORecord | None) -> bool:
-        if not character_id > 0:
-            return False
-
-        try:
-            async with await db.sessionmaker() as session:
+            async with await self.db.sessionmaker() as session, session.begin():
                 session: sqlalchemy.ext.asyncio.AsyncSession
-
-                session.begin()
-
-                if sso_record is not None:
-
-                    query = (
-                        sqlalchemy.delete(AppTables.Character)
-                        .where(AppTables.Character.character_id == character_id)
-                    )
-                    await session.execute(query)
-
-                    session.add(AppTables.Character(
-                        character_id=sso_record.character_id,
-                        corporation_id=sso_record.corporation_id,
-                        alliance_id=sso_record.alliance_id,
-                        birthday=sso_record.character_birthday,
-                        name=sso_record.character_name
-                    ))
-
-                query = (
-                    sqlalchemy.delete(AppTables.PeriodicCredentials)
-                    .where(AppTables.PeriodicCredentials.character_id == character_id)
-                )
-                await session.execute(query)
-
-                if sso_record is not None:
-
-                    previous_is_permitted = sso_record.is_station_manager_role
-                    previous_is_enabled = previous_is_permitted
-
-                    obj = AppTables.PeriodicCredentials(
-                        character_id=sso_record.character_id,
-                        corporation_id=sso_record.corporation_id,
-                        is_permitted=previous_is_permitted,
-                        is_enabled=previous_is_enabled,
-                        is_director_role=sso_record.is_director_role,
-                        is_accountant_role=sso_record.is_accountant_role,
-                        is_station_manager_role=sso_record.is_station_manager_role,
-                        session_id=sso_record.session_id,
-                        access_token_issued=sso_record.access_token_iat,
-                        access_token_expiry=sso_record.access_token_exp,
-                        refresh_token=sso_record.refresh_token,
-                        access_token=sso_record.access_token
-                    )
-
-                    session.add(obj)
-
+                session.add(AppTables.OAuthLog(
+                    owner=owner,
+                    character_id=character_id,
+                    session_id=session_id,
+                    auth_type=auth_type
+                ))
                 await session.commit()
-            return True
         except Exception as ex:
             otel_add_exception(ex)
-        return False
+            return False
+        else:
+            return True
+
+    @otel
+    async def put_authrecord(self, oauth: OAuthRecord) -> bool:
+
+        try:
+            async with await self.db.sessionmaker() as session, session.begin():
+                session: sqlalchemy.ext.asyncio.AsyncSession
+                query = (
+                    sqlalchemy.select(AppTables.OAuthSession)
+                    .where(sqlalchemy.and_(
+                        AppTables.OAuthSession.owner == oauth.owner,
+                        AppTables.OAuthSession.character_id == oauth.character_id
+                    ))
+                )
+                query_result = await session.execute(query)
+                query_obj = query_result.scalar_one_or_none()
+                if query_obj:
+                    await session.delete(query_obj)
+                session.add(AppTables.OAuthSession(
+                    owner=oauth.owner,
+                    character_id=oauth.character_id,
+                    session_active=oauth.session_active,
+                    session_id=oauth.session_id,
+                    session_scopes=oauth.session_scopes,
+                    refresh_token=oauth.refresh_token,
+                    access_token_iat=oauth.access_token_iat,
+                    access_token_exp=oauth.access_token_exp,
+                    access_token=oauth.access_token
+                ))
+
+                # XXX TEMP HACK
+                query = (
+                    sqlalchemy.delete(AppTables.OAuthSession)
+                    .where(sqlalchemy.and_(
+                        AppTables.OAuthSession.owner == str(oauth.character_id),
+                        AppTables.OAuthSession.character_id == oauth.character_id
+                    ))
+                )
+                query_result = await session.execute(query)
+
+                await session.commit()
+        except Exception as ex:
+            otel_add_exception(ex)
+            return False
+        else:
+            return True
+
+    @otel
+    async def first_authrecord(self) -> OAuthRecord:
+        try:
+            async with await self.db.sessionmaker() as session, session.begin():
+                session: sqlalchemy.ext.asyncio.AsyncSession
+                query = (
+                    sqlalchemy.select(AppTables.OAuthSession.session_id)
+                    .where(AppTables.OAuthSession.session_active == sqlalchemy.sql.expression.true())
+                    .order_by(sqlalchemy.asc(AppTables.OAuthSession.access_token_exp))
+                    .limit(1)
+                )
+                query_result = await session.execute(query)
+                query_session_id = query_result.scalar_one_or_none()
+                if query_session_id:
+                    return await self.get_authrecord(query_session_id)
+        except Exception as ex:
+            otel_add_exception(ex)
+
+        return None
+
+    @otel
+    async def get_authrecord(self, session_id: str) -> OAuthRecord:
+        try:
+            async with await self.db.sessionmaker() as session, session.begin():
+                session: sqlalchemy.ext.asyncio.AsyncSession
+                query = (
+                    sqlalchemy.select(AppTables.OAuthSession)
+                    .where(AppTables.OAuthSession.session_id == session_id)
+                )
+                query_result = await session.execute(query)
+                query_obj = query_result.scalar_one_or_none()
+                if query_obj:
+                    return OAuthRecord(
+                        owner=query_obj.owner,
+                        character_id=query_obj.character_id,
+                        session_active=query_obj.session_active,
+                        session_id=query_obj.session_id,
+                        session_scopes=query_obj.session_scopes,
+                        refresh_token=query_obj.refresh_token,
+                        access_token_iat=query_obj.access_token_iat,
+                        access_token_exp=query_obj.access_token_exp,
+                        access_token=query_obj.access_token
+                    )
+        except Exception as ex:
+            otel_add_exception(ex)
+
+        return None
 
 
 class AppSSO:
 
-    CONNFIGURATION_URL: typing.Final = 'https://login.eveonline.com/.well-known/oauth-authorization-server'
-
-    JWT_AUDIENCE: typing.Final = "EVE Online"
-
-    APP_SESSION_TYPE: typing.Final = "session_type"
-
-    ESI_CHARACTER_ID: typing.Final = "character_id"
-    ESI_CORPORATION_ID: typing.Final = "corporation_id"
-    ESI_ALLIANCE_ID: typing.Final = "alliance_id"
-
-    ESI_CHARACTER_IS_DIRECTOR_ROLE: typing.Final = "is_director_role"
-    ESI_CHARACTER_IS_ACCOUNTANT_ROLE: typing.Final = "is_accountant_role"
-    ESI_CHARACTER_IS_STATION_MANAGER_ROLE: typing.Final = "is_station_manager_role"
-
-    ESI_SCOPES: typing.Final = "scopes"
-    ESI_ACCESS_TOKEN: typing.Final = "access_token"
-    ESI_REFRESH_TOKEN: typing.Final = "refresh_token"
-
-    APP_SESSION_ID: typing.Final = "session_id"
-    APP_PCKE_VERIFIER: typing.Final = "pcke_verifier"
-    REQUEST_PATH: typing.Final = "request.path"
+    app: quart.Quart
+    esi: AppESI
+    db: AppDatabase
+    eventqueue: asyncio.Queue
+    client_id: str
+    provider: OAuthProvider
+    hook_provider: OAuthHookProvider
+    storage: AppSSOStorage
+    client_scopes: list[str]
+    login_route: str
+    logout_route: str
+    callback_route: str
 
     @otel
     def __init__(self,
@@ -168,8 +261,9 @@ class AppSSO:
                  db: AppDatabase,
                  eventqueue: asyncio.Queue,
                  client_id: str,
-                 configuration_url: str | None = None,
-                 scopes: list[str] = ['publicData'],
+                 client_scopes: list[str] = ['publicData'],
+                 provider: OAuthProvider | None = None,
+                 hook_provider: OAuthHookProvider | None = None,
                  login_route: str = '/sso/login',
                  logout_route: str = '/sso/logout',
                  callback_route: str = '/sso/callback') -> None:
@@ -181,17 +275,17 @@ class AppSSO:
         self.logger: typing.Final = app.logger
 
         self.client_id: typing.Final = client_id
+        self.client_scopes: typing.Final = client_scopes
 
-        self.configuration_url: typing.Final = configuration_url or self.CONNFIGURATION_URL
-        self.scopes: typing.Final = scopes
+        self.provider: typing.Final = provider or OAuthProvider()
+        self.hook_provider: typing.Final = hook_provider or OAuthHookProvider()
+        self.storage: typing.Final = AppSSOStorage(self.db, self.eventqueue, self.logger)
 
         self.login_route: typing.Final = login_route
         self.logout_route: typing.Final = logout_route
         self.callback_route: typing.Final = callback_route
 
-        self.request_params: typing.Final = dict()
-        self.configuration: dict = dict()
-        self.jwks_uri: str
+        self.jwks_uri: str | None = None
         self.jwks: list[dict] = list()
         self.refresh_jwks_task: asyncio.Task | None = None
 
@@ -200,30 +294,26 @@ class AppSSO:
         @app.before_serving
         @otel
         async def _esi_sso_setup() -> None:
-            self.configuration = await self._get_json(self.configuration_url)
 
-            required_configuration_keys = ["token_endpoint", "authorization_endpoint", "issuer", "jwks_uri"]
-            if not all(map(lambda x: bool(self.configuration.get(x)), required_configuration_keys)):
-                raise Exception(f"{inspect.currentframe().f_code.co_name}: configuration at {self.configuration_url} is invalid")
+            if not all([self.provider.authorization_endpoint, self.provider.token_endpoint]):
+                raise Exception(f"{inspect.currentframe().f_code.co_name}: invalid provider {self.provider=}")
 
-            self.jwks_uri = self.configuration["jwks_uri"]
-            self.jwks = await self._get_jwks(self.jwks_uri)
-            self.refresh_jwks_task = asyncio.create_task(self._refresh_jwks_task(), name=self._refresh_jwks_task.__name__)
+            self.jwks_uri = self.provider.document.get('jwks_uri')
+            if self.jwks_uri:
+                self.jwks = await self._get_jwks(self.jwks_uri)
+                self.refresh_jwks_task = asyncio.create_task(self._refresh_jwks_task(), name=self._refresh_jwks_task.__name__)
 
             self.refresh_token_task = asyncio.create_task(self._refresh_token_task(), name=self._refresh_token_task.__name__)
-            # self.refresh_token_task = None
 
-            app.add_url_rule(self.callback_route, self.callback_endpoint, view_func=self.esi_sso_callback, methods=["GET"])
-            app.add_url_rule(self.logout_route, self.logout_endpoint, view_func=self.esi_sso_logout, methods=["GET"])
-            app.add_url_rule(self.login_route, self.login_endpoint, view_func=self.esi_sso_login, methods=["GET"], defaults={'variant': 'user'})
-            app.add_url_rule(f"{self.login_route}/<string:variant>", self.login_endpoint, view_func=self.esi_sso_login, methods=["GET"])
+            app.add_url_rule(self.callback_route, self.callback_endpoint, view_func=self.oauth_callback, methods=["GET"])
+            app.add_url_rule(self.logout_route, self.logout_endpoint, view_func=self.oauth_logout, methods=["GET"])
+            app.add_url_rule(self.login_route, self.login_endpoint, view_func=self.oauth_login, methods=["GET"], defaults={'variant': 'user'})
+            app.add_url_rule(f"{self.login_route}/<string:variant>", self.login_endpoint, view_func=self.oauth_login, methods=["GET"])
 
         @app.after_serving
         @otel
         async def _esi_sso_teardown() -> None:
-            for task in [self.refresh_jwks_task, self.refresh_token_task]:
-                if task is None:
-                    continue
+            for task in filter(None, [self.refresh_jwks_task, self.refresh_token_task]):
                 if not task.cancelled():
                     task.cancel()
 
@@ -255,10 +345,10 @@ class AppSSO:
     async def _get_json(self, url: str, esi_access_token: str = '') -> dict:
         session_headers: typing.Final = dict()
         if len(esi_access_token) > 0:
-            session_headers["Authorization"] = f"Bearer {esi_access_token}"
+            session_headers.update({"Authorization": f"Bearer {esi_access_token}"})
 
         async with aiohttp.ClientSession(headers=session_headers) as http_session:
-            esi_result = await self.esi.get(http_session, url, request_params=self.request_params)
+            esi_result = await self.esi.get(http_session, url)
             if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and esi_result.data is not None:
                 return esi_result.data
 
@@ -290,182 +380,94 @@ class AppSSO:
         while True:
             now: typing.Final = datetime.datetime.now(tz=datetime.UTC)
 
-            obj: AppTables.PeriodicCredentials | None = None
-            try:
-                async with await self.db.sessionmaker() as session:
-                    session: sqlalchemy.ext.asyncio.AsyncSession
-
-                    query = (
-                        sqlalchemy.select(AppTables.PeriodicCredentials)
-                        .where(AppTables.PeriodicCredentials.is_enabled.is_(True))
-                        .order_by(sqlalchemy.asc(AppTables.PeriodicCredentials.access_token_expiry))
-                        .limit(1)
-                    )
-                    query_results: sqlalchemy.engine.Result = await session.execute(query)
-                    obj = query_results.scalar_one_or_none()
-
-            except Exception as ex:
-                otel_add_exception(ex)
-                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
+            oauthrecord = await self.storage.first_authrecord()
+            if oauthrecord is None:
+                self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: no active credentials")
                 await asyncio.sleep(refresh_interval.total_seconds())
                 continue
 
-            if obj is None:
-                self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: no permitted credentials")
-                await asyncio.sleep(refresh_interval.total_seconds())
-                continue
-
-            if not isinstance(obj, AppTables.PeriodicCredentials):
-                self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: no permitted credentials")
-                await asyncio.sleep(refresh_interval.total_seconds())
-                continue
-
-            if obj.access_token_expiry > now + refresh_buffer:
-                remaining_interval: datetime.timedelta = (obj.access_token_expiry) - (now + refresh_buffer)
+            if oauthrecord.access_token_exp > (now + refresh_buffer):
+                remaining_interval: datetime.timedelta = (oauthrecord.access_token_exp) - (now + refresh_buffer)
                 remaining_sleep_interval = min(refresh_interval.total_seconds(), remaining_interval.total_seconds())
+                self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {oauthrecord.character_id} refresh in {int(remaining_interval.total_seconds())}, sleeping {int(remaining_sleep_interval)}")
                 await asyncio.sleep(remaining_sleep_interval)
                 continue
 
             esi_status = await self.esi.status()
             if esi_status is False:
-                self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: esi is not really available")
+                self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: esi is not really available")
                 await asyncio.sleep(refresh_interval.total_seconds())
                 continue
 
-            character_id: typing.Final = int(obj.character_id)
-            session_id: typing.Final = obj.session_id
-            refresh_token: typing.Final = obj.refresh_token
+            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh {oauthrecord.character_id=}")
+            refresh_result: typing.Final = await self.oauth_refresh(oauthrecord.session_id, oauthrecord.refresh_token)
 
-            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh {obj.character_id=} / {obj.corporation_id=}")
-            sso_record = await self.esi_sso_refresh(session_id, refresh_token)
-            await AppSSOFunctions.update_credentials(self.db, character_id, sso_record)
-            if sso_record:
-                await AppSSOFunctions.authlog(self.db, character_id, session_id, AppAuthType.REFRESH)
-
-                # if self.eventqueue:
-                #     await self.eventqueue.put(SSOTokenRefreshEvent(character_id=character_id, session_id=session_id))
-
+            updated_authrecord = None
+            authevent = OAuthType.REFRESH_FAILURE
+            if refresh_result.status == http.HTTPStatus.OK:
+                authevent = OAuthType.REFRESH
+                updated_authrecord = await self.oauth_decode_token_response(oauthrecord.session_id, refresh_result.data)
             else:
-                await AppSSOFunctions.authlog(self.db, character_id, session_id, AppAuthType.REFRESH_FAILURE)
+                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh {oauthrecord.character_id=}, {refresh_result=}")
+
+            if not updated_authrecord:
+                updated_authrecord = dataclasses.replace(oauthrecord, session_active=False)
+
+            await asyncio.gather(
+                self.storage.put_authrecord(updated_authrecord),
+                self.storage.put_authlog(updated_authrecord.owner, updated_authrecord.character_id, updated_authrecord.session_id, authevent)
+            )
+
+            await self.hook_provider.on_event(authevent, updated_authrecord)
 
     @otel
-    async def esi_decode_token(self, session_id: str, token_response: dict) -> dict:
-
+    async def oauth_decode_token_response(self, session_id: str, token_response: dict) -> OAuthRecord:
         token_response = token_response or dict()
+
+        now: typing.Final = datetime.datetime.now(tz=datetime.UTC)
 
         required_response_keys: typing.Final = ["access_token", "token_type", "refresh_token"]
         if not all(map(lambda x: bool(token_response.get(x)), required_response_keys)):
-            return dict()
-
-        jwt_unverified_header: typing.Final = jose.jwt.get_unverified_header(token_response["access_token"])
-        jwt_key = None
-        for jwk_candidate in self.jwks:
-            if not type(jwk_candidate) is dict:
-                continue
-
-            jwt_key_match = True
-            for header_key in set(jwt_unverified_header.keys()).intersection({"kid", "alg"}):
-                if jwt_unverified_header.get(header_key) != jwk_candidate.get(header_key):
-                    jwt_key_match = False
-                    break
-
-            if jwt_key_match:
-                jwt_key = jwk_candidate
-                break
-
-        decoded_acess_token = None
-        if jwt_key is not None:
-            try:
-                decoded_acess_token = jose.jwt.decode(token_response["access_token"], key=jwt_key, issuer=self.configuration.get('issuer'), audience=self.JWT_AUDIENCE)
-            except jose.exceptions.JWTError as ex:
-                otel_add_exception(ex)
-                self.logger.error(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
-                return dict()
-
-        # if decoded_acess_token is not None:
-        #     await AppSSOFunctions.debuglog(self.db, decoded_acess_token)
-
-        return decoded_acess_token
-
-    @otel
-    async def esi_unpack_token_response(self, session_id: str, token_response: dict) -> AppSSORecord:
-        now: typing.Final = datetime.datetime.now(tz=datetime.UTC)
-
-        decoded_acess_token = await self.esi_decode_token(session_id, token_response)
-        if decoded_acess_token is None:
             return None
+
+        access_token: typing.Final = token_response.get('access_token')
+        refresh_token: typing.Final = token_response.get('refresh_token')
+
+        decoded_acess_token = await self.provider.decode_access_token(access_token, self.jwks)
+        if decoded_acess_token is None:
+            decoded_acess_token = dict()
+
+        access_token_iat: typing.Final = datetime.datetime.fromtimestamp(decoded_acess_token.get('iat', int(now.timestamp())), tz=datetime.UTC)
+        access_token_exp: typing.Final = datetime.datetime.fromtimestamp(decoded_acess_token.get('exp', int(now.timestamp())), tz=datetime.UTC)
+        if not all([access_token, refresh_token, access_token_iat, access_token_exp]):
+            return None
+
+        session_scopes = decoded_acess_token.get('scp', decoded_acess_token.get('scope', ''))
+        if isinstance(session_scopes, list):
+            session_scopes = " ".join(map(lambda x: str(x).strip(), session_scopes))
+        session_scopes = session_scopes.strip()
+
+        owner = decoded_acess_token.get('owner', '')
+        if isinstance(owner, bytes):
+            owner = owner.decode()
 
         character_id: typing.Final = int(decoded_acess_token.get('sub', '0').split(':')[-1])
         if not character_id > 0:
             return None
 
-        access_token: typing.Final = token_response.get('access_token')
-        refresh_token: typing.Final = token_response.get('refresh_token')
-        if access_token is None or refresh_token is None:
-            return None
-
-        scopes = decoded_acess_token.get('scp', [])
-        if type(scopes) is str:
-            scopes = [scopes]
-
-        character_result = dict()
-        character_roles_result = dict()
-        session_headers: typing.Final = {
-            "Authorization": f"Bearer {access_token}"
-        }
-        async with aiohttp.ClientSession(headers=session_headers, connector=aiohttp.TCPConnector(limit_per_host=AppConstants.ESI_LIMIT_PER_HOST)) as http_session:
-            request_params: typing.Final = {
-                "datasource": "tranquility",
-                "language": "en"
-            }
-
-            task_list: typing.Final = list()
-            task_list.append(self.esi.get(http_session, f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/characters/{character_id}/", request_params=self.request_params | request_params))
-            if "esi-characters.read_corporation_roles.v1" in scopes:
-                task_list.append(self.esi.get(http_session, f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/characters/{character_id}/roles/", request_params=self.request_params | request_params))
-
-            for esi_result in await asyncio.gather(*task_list):
-                esi_result: AppESIResult
-
-                if not esi_result:
-                    continue
-
-                if esi_result.status not in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] or esi_result.data is None:
-                    continue
-                if len(esi_result.data) == 0:
-                    continue
-                if bool(esi_result.data.get('roles', False)):
-                    character_roles_result |= esi_result.data
-                elif bool(esi_result.data.get('name', False)):
-                    character_result |= esi_result.data
-
-        conversions: typing.Final = {
-            'birthday': lambda x: dateutil.parser.parse(str(x)).replace(tzinfo=datetime.UTC)
-        }
-        for k, v in conversions.items():
-            if k in character_result.keys():
-                character_result[k] = v(character_result[k])
-
-        epoch: typing.Final = datetime.datetime(1970, 1, 1, 0, 0, 0, tzinfo=datetime.UTC)
-        return AppSSORecord(
-            session_id=session_id,
+        return OAuthRecord(
+            owner=owner,
             character_id=character_id,
-            corporation_id=character_result.get('corporation_id', 0),
-            alliance_id=character_result.get('alliance_id', 0),
-            character_name=character_result.get('name', None),
-            character_birthday=character_result.get('birthday', epoch),
-            is_director_role=bool('Director' in character_roles_result.get('roles', [])),
-            is_accountant_role=bool('Accountant' in character_roles_result.get('roles', [])),
-            is_station_manager_role=bool('Station_Manager' in character_roles_result.get('roles', [])),
-            scopes=character_roles_result.get('roles', []),
-            access_token=access_token,
-            access_token_iat=datetime.datetime.fromtimestamp(decoded_acess_token.get('iat', int(now.timestamp())), tz=datetime.UTC),
-            access_token_exp=datetime.datetime.fromtimestamp(decoded_acess_token.get('exp', int(now.timestamp())), tz=datetime.UTC),
-            refresh_token=refresh_token
-        )
+            session_active=True,
+            session_id=session_id,
+            session_scopes=session_scopes,
+            refresh_token=refresh_token,
+            access_token_iat=access_token_iat,
+            access_token_exp=access_token_exp,
+            access_token=access_token)
 
     @otel
-    async def esi_sso_login(self, variant: str) -> quart.ResponseReturnValue:
+    async def oauth_login(self, variant: str) -> quart.ResponseReturnValue:
 
         """
         Handle the login process - the redirect to ESI with our client information
@@ -477,23 +479,21 @@ class AppSSO:
 
         client_session: typing.Final = quart.session
 
-        client_session[AppSSO.APP_SESSION_ID] = uuid.uuid4().hex
+        client_session[AppSessionKeys.KEY_APP_SESSION_ID] = uuid.uuid4().hex
 
         login_scopes = ['publicData']
         if variant == 'user':
             login_scopes = ['publicData']
         elif variant == 'contributor':
-            login_scopes = self.scopes
+            login_scopes = self.client_scopes
 
         if len(login_scopes) == 1 and 'publicData' in login_scopes:
-            client_session[AppSSO.APP_SESSION_TYPE] = "USER"
+            client_session[AppSessionKeys.KEY_APP_SESSION_TYPE] = "USER"
         else:
-            client_session[AppSSO.APP_SESSION_TYPE] = "CONTRIBUTOR"
-
-        client_session[AppSSO.ESI_SCOPES] = login_scopes
+            client_session[AppSessionKeys.KEY_APP_SESSION_TYPE] = "CONTRIBUTOR"
 
         pcke_verifier: typing.Final = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().replace("=", "")
-        client_session[AppSSO.APP_PCKE_VERIFIER] = pcke_verifier
+        client_session[AppSessionKeys.KEY_OAUTH_PCKE_VERIFIER] = pcke_verifier
 
         sha256: typing.Final = hashlib.sha256()
         sha256.update(pcke_verifier.encode())
@@ -505,17 +505,17 @@ class AppSSO:
             'client_id': self.client_id,
             'redirect_uri': self.callback_url,
             'scope': " ".join(login_scopes),
-            'state': client_session[AppSSO.APP_SESSION_ID],
+            'state': client_session[AppSessionKeys.KEY_APP_SESSION_ID],
             'code_challenge': pcke_challenge,
             'code_challenge_method': 'S256',
         }
 
-        redirect_url: typing.Final = f"{self.configuration['authorization_endpoint']}?{urllib.parse.urlencode(redirect_params)}"
+        redirect_url = urllib.parse.urlparse(self.provider.authorization_endpoint)._replace(query=urllib.parse.urlencode(redirect_params)).geturl()
 
         return quart.redirect(redirect_url)
 
     @otel
-    async def esi_sso_logout(self) -> quart.ResponseReturnValue:
+    async def oauth_logout(self) -> quart.ResponseReturnValue:
 
         """
         Handle the logout process - clear the sesssion cooke, remove any credentials
@@ -524,24 +524,23 @@ class AppSSO:
 
         client_session: typing.Final = quart.session
 
-        character_id: typing.Final = client_session.get(AppSSO.ESI_CHARACTER_ID, 0)
-        session_id: typing.Final = client_session.get(AppSSO.APP_SESSION_ID, '')
+        session_id: typing.Final = client_session.get(AppSessionKeys.KEY_APP_SESSION_ID, '')
 
-        if character_id > 0:
-
-            await AppSSOFunctions.update_credentials(self.db, character_id, None)
-
-            await AppSSOFunctions.authlog(self.db, character_id, session_id, AppAuthType.LOGOUT)
-
-            if self.eventqueue:
-                await self.eventqueue.put(SSOLogoutEvent(character_id=character_id, session_id=session_id))
+        oauthrecord = await self.storage.get_authrecord(session_id)
+        if oauthrecord:
+            oauthrecord = dataclasses.replace(oauthrecord, session_active=False)
+            await asyncio.gather(
+                self.storage.put_authlog(oauthrecord.owner, oauthrecord.character_id, oauthrecord.session_id, OAuthType.LOGOUT),
+                self.storage.put_authrecord(oauthrecord)
+            )
+            await self.hook_provider.on_event(OAuthType.LOGOUT, oauthrecord)
 
         client_session.clear()
 
-        return quart.redirect("/")
+        return quart.redirect(quart.session.get(AppSessionKeys.KEY_APP_REQUEST_PATH, "/"))
 
     @otel
-    async def esi_sso_callback(self) -> quart.ResponseReturnValue:
+    async def oauth_callback(self) -> quart.ResponseReturnValue:
 
         """
         Handle the callback from ESI. The route for this has to be the one
@@ -553,7 +552,7 @@ class AppSSO:
 
         client_session: typing.Final = quart.session
 
-        session_id: typing.Final = client_session.get(AppSSO.APP_SESSION_ID, quart.request.args["state"])
+        session_id: typing.Final = client_session.get(AppSessionKeys.KEY_APP_SESSION_ID, quart.request.args["state"])
 
         required_callback_keys: typing.Final = ["code", "state"]
         if not all(map(lambda x: bool(quart.request.args.get(x)), required_callback_keys)):
@@ -562,89 +561,62 @@ class AppSSO:
         if quart.request.args["state"] != session_id:
             quart.abort(http.HTTPStatus.BAD_REQUEST, f"invalid session state in {self.callback_route}")
 
-        post_token_url = self.configuration.get('token_endpoint', '')
-        post_session_headers: typing.Final = {
-            "Host": urllib.parse.urlparse(post_token_url).netloc,
-        }
+        pcke_verifier: typing.Final = client_session.get(AppSessionKeys.KEY_OAUTH_PCKE_VERIFIER)
+        if pcke_verifier is None:
+            quart.abort(http.HTTPStatus.BAD_REQUEST, f"invalid session state in {self.callback_route}")
+        del client_session[AppSessionKeys.KEY_OAUTH_PCKE_VERIFIER]
 
-        token_response = dict()
-        async with aiohttp.ClientSession(headers=post_session_headers) as http_session:
+        async with aiohttp.ClientSession() as http_session:
+            post_request_headers: typing.Final = {"Host": urllib.parse.urlparse(self.provider.token_endpoint).netloc}
             post_body: typing.Final = {
                 "grant_type": "authorization_code",
                 'client_id': self.client_id,
                 'redirect_uri': self.callback_url,
                 "code": quart.request.args['code'],
-                'code_verifier': client_session[AppSSO.APP_PCKE_VERIFIER]
+                'code_verifier': pcke_verifier
             }
 
-            post_result: typing.Final = await self.esi.post(http_session, post_token_url, post_body)
-            if post_result.status == http.HTTPStatus.OK:
-                token_response = post_result.data
+            token_result = await self.esi.post(http_session, self.provider.token_endpoint, post_body, request_headers=post_request_headers)
 
-        sso_record: typing.Final = await self.esi_unpack_token_response(session_id, token_response)
-        if sso_record is None:
+        if token_result is None:
+            return http.HTTPStatus.SERVICE_UNAVAILABLE
+        elif token_result.status != http.HTTPStatus.OK:
+            return token_result.status
+
+        oauthrecord = await self.oauth_decode_token_response(session_id, token_result.data)
+        if oauthrecord is None:
             quart.abort(http.HTTPStatus.BAD_GATEWAY, "invalid token_response")
 
-        character_id: typing.Final = sso_record.character_id
+        authevent = OAuthType.LOGIN_USER
+        if client_session[AppSessionKeys.KEY_APP_SESSION_TYPE] == "CONTRIBUTOR":
+            authevent = OAuthType.LOGIN_CONTRIBUTOR
 
-        await AppSSOFunctions.update_credentials(self.db, character_id, sso_record)
-        await self.esi_update_client_session(client_session, character_id, sso_record)
+        client_session[AppSessionKeys.KEY_ESI_CHARACTER_ID] = oauthrecord.character_id
+        client_session[AppSessionKeys.KEY_APP_SESSION_ID] = oauthrecord.session_id
 
-        login_type = AppAuthType.LOGIN_USER
-        if client_session[AppSSO.APP_SESSION_TYPE] == "CONTRIBUTOR":
-            login_type = AppAuthType.LOGIN_CONTRIBUTOR
+        await asyncio.gather(
+            self.storage.put_authlog(oauthrecord.owner, oauthrecord.character_id, oauthrecord.session_id, authevent),
+            self.storage.put_authrecord(oauthrecord)
+        )
 
-        await AppSSOFunctions.authlog(self.db, character_id, session_id, login_type)
+        self.logger.info(f'{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: --- FIVE ---')
 
-        if self.eventqueue:
-            await self.eventqueue.put(SSOLoginEvent(character_id=character_id, session_id=session_id, login_type=login_type.name))
+        await self.hook_provider.on_event(authevent, oauthrecord)
 
-        return quart.redirect(quart.session.get(AppSSO.REQUEST_PATH, "/"))
+        self.logger.info(f'{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: --- SIX ---')
+
+        return quart.redirect(quart.session.get(AppSessionKeys.KEY_APP_REQUEST_PATH, "/"))
 
     @otel
-    async def esi_sso_refresh(self, session_id: str, refresh_token: str) -> AppSSORecord:
+    async def oauth_refresh(self, session_id: str, refresh_token: str) -> AppESIResult:
 
-        """
-        Handle the ``access_token`` refresh - used for ``contributor`` logins.
-        """
-
-        post_token_url: typing.Final = self.configuration['token_endpoint']
-
-        post_session_headers: typing.Final = {
-            "Host": urllib.parse.urlparse(post_token_url).netloc
-        }
-
-        token_response = dict()
-        async with aiohttp.ClientSession(headers=post_session_headers) as http_session:
+        async with aiohttp.ClientSession() as http_session:
+            post_request_headers: typing.Final = {"Host": urllib.parse.urlparse(self.provider.token_endpoint).netloc}
             post_body: typing.Final = {
                 "grant_type": "refresh_token",
                 "refresh_token": refresh_token,
                 "client_id": self.client_id
             }
-            post_result: typing.Final = await self.esi.post(http_session, post_token_url, post_body)
-            if post_result.status == http.HTTPStatus.OK:
-                token_response = post_result.data
+            return await self.esi.post(http_session, self.provider.token_endpoint, post_body, request_headers=post_request_headers)
 
-        return await self.esi_unpack_token_response(session_id, token_response)
-
-    @otel
-    async def esi_update_client_session(self, client_session: collections.abc.MutableMapping, character_id: int, sso_record: AppSSORecord | None):
-
-        if sso_record is None or not character_id > 0:
-            client_session.clear()
-            return
-
-        # This presumes the client session keys are the same as the column names in the
-        # in the PeriodicCredentials and the same as the dictionary keys.
-
-        client_session.update({
-            AppSSO.ESI_CHARACTER_ID: sso_record.character_id,
-            AppSSO.ESI_CORPORATION_ID: sso_record.corporation_id,
-            AppSSO.ESI_ALLIANCE_ID: sso_record.alliance_id,
-            AppSSO.ESI_CHARACTER_IS_ACCOUNTANT_ROLE: sso_record.is_accountant_role,
-            AppSSO.ESI_CHARACTER_IS_DIRECTOR_ROLE: sso_record.is_director_role,
-            AppSSO.ESI_CHARACTER_IS_STATION_MANAGER_ROLE: sso_record.is_station_manager_role,
-            AppSSO.ESI_SCOPES: sso_record.scopes,
-            AppSSO.ESI_ACCESS_TOKEN: sso_record.access_token,
-            AppSSO.ESI_REFRESH_TOKEN: sso_record.refresh_token
-        })
+        return None

@@ -2,11 +2,13 @@ import asyncio
 import functools
 import typing
 
-import opentelemetry.exporter.otlp.proto.grpc.metric_exporter
+import opentelemetry.exporter.otlp.proto.http.metric_exporter
 import opentelemetry.exporter.otlp.proto.http.trace_exporter
 import opentelemetry.instrumentation.aiohttp_client
-import opentelemetry.instrumentation.asyncpg
-import opentelemetry.instrumentation.jinja2
+import opentelemetry.instrumentation.asgi
+# import opentelemetry.instrumentation.asyncpg
+# import opentelemetry.instrumentation.jinja2
+import opentelemetry.instrumentation.sqlalchemy
 import opentelemetry.instrumentation.system_metrics
 import opentelemetry.metrics
 import opentelemetry.sdk.metrics
@@ -35,23 +37,27 @@ def otel_initialize() -> opentelemetry.trace.Tracer:
 
         opentelemetry.trace.set_tracer_provider(trace_provider)
 
-        instrumentor = opentelemetry.instrumentation.jinja2.Jinja2Instrumentor()
-        if not instrumentor.is_instrumented_by_opentelemetry:
-            instrumentor.instrument
+        # instrumentor = opentelemetry.instrumentation.jinja2.Jinja2Instrumentor()
+        # if not instrumentor.is_instrumented_by_opentelemetry:
+        #     instrumentor.instrument()
 
         instrumentor = opentelemetry.instrumentation.aiohttp_client.AioHttpClientInstrumentor()
         if not instrumentor.is_instrumented_by_opentelemetry:
-            instrumentor.instrument
+            instrumentor.instrument()
 
         # instrumentor = opentelemetry.instrumentation.psycopg2.Psycopg2Instrumentor()
         # if not instrumentor.is_instrumented_by_opentelemetry:
         #     instrumentor.instrument()
 
-        instrumentor = opentelemetry.instrumentation.asyncpg.AsyncPGInstrumentor()
+        # instrumentor = opentelemetry.instrumentation.asyncpg.AsyncPGInstrumentor()
+        # if not instrumentor.is_instrumented_by_opentelemetry:
+        #     instrumentor.instrument()
+
+        instrumentor = opentelemetry.instrumentation.sqlalchemy.SQLAlchemyInstrumentor()
         if not instrumentor.is_instrumented_by_opentelemetry:
             instrumentor.instrument()
 
-        meter_exporter: typing.Final = opentelemetry.exporter.otlp.proto.grpc.metric_exporter.OTLPMetricExporter()
+        meter_exporter: typing.Final = opentelemetry.exporter.otlp.proto.http.metric_exporter.OTLPMetricExporter()
 
         meter_provider: typing.Final = opentelemetry.sdk.metrics.MeterProvider(
             metric_readers=[opentelemetry.sdk.metrics.export.PeriodicExportingMetricReader(
@@ -82,14 +88,16 @@ def otel(func: typing.Callable[FuncParams, FuncReturns]) -> typing.Callable[Func
         if asyncio.iscoroutinefunction(func):
             @functools.wraps(func)
             async def async_wrapper(*args: FuncParams.args, **kwargs: FuncParams.kwargs) -> FuncReturns:
-                tracer = opentelemetry.trace.get_tracer_provider().get_tracer(func.__module__)
+                tracer = opentelemetry.trace.get_tracer_provider().get_tracer(__name__)
+                # with contextlib.nullcontext():
                 with tracer.start_as_current_span(f"{func.__class__.__name__}.{func.__name__}"):
                     return await func(*args, **kwargs)
             return async_wrapper
         else:
             @functools.wraps(func)
             def wrapper(*args: FuncParams.args, **kwargs: FuncParams.kwargs) -> FuncReturns:
-                tracer = opentelemetry.trace.get_tracer_provider().get_tracer(func.__module__)
+                tracer = opentelemetry.trace.get_tracer_provider().get_tracer(__name__)
+                # with contextlib.nullcontext():
                 with tracer.start_as_current_span(f"{func.__class__.__name__}.{func.__name__}"):
                     return func(*args, **kwargs)
             return wrapper

@@ -3,9 +3,12 @@ import contextlib
 import dataclasses
 import datetime
 import functools
+import hashlib
 import inspect
 import typing
+import urllib.parse
 
+import icalendar
 import opentelemetry.trace
 import quart
 import quart.sessions
@@ -18,9 +21,8 @@ import sqlalchemy.sql.functions
 
 from support.telemetry import otel, otel_add_event
 
-from .constants import AppConstants
+from .constants import AppConstants, AppSessionKeys
 from .db import AppAccessType, AppDatabase, AppTables
-from .sso import AppSSO
 
 
 @dataclasses.dataclass(frozen=True)
@@ -31,7 +33,6 @@ class AppRequest:
     corpporation_id: int = 0
     alliance_id: int = 0
     permitted: bool = False
-    trusted: bool = False
     contributor: bool = False
     suspect: bool = False
     magic_character: bool = False
@@ -51,27 +52,43 @@ class AppFunctions:
 
     @staticmethod
     @otel
+    async def get_esi_corporation_alliance_ids(evedb: AppDatabase, character_id: int, /) -> tuple[int, int]:
+        corporation_id, alliance_id = 0, 0
+        if character_id > 0:
+            with contextlib.suppress(Exception):
+                async with await evedb.sessionmaker() as session, session.begin():
+                    session: sqlalchemy.ext.asyncio.AsyncSession
+                    query = (
+                        sqlalchemy.select(AppTables.Character)
+                        .where(AppTables.Character.character_id == character_id)
+                        .limit(1)
+                    )
+                    query_result: sqlalchemy.engine.Result = await session.execute(query)
+                    result = query_result.scalar_one_or_none()
+                    if isinstance(result, AppTables.Character):
+                        corporation_id = result.corporation_id
+                        alliance_id = result.alliance_id
+        return corporation_id, alliance_id
+
+    @staticmethod
+    @otel
     async def get_app_request(evedb: AppDatabase, session: quart.sessions.SessionMixin, request: quart.Request) -> AppRequest:
 
-        character_id: typing.Final = session.get(AppSSO.ESI_CHARACTER_ID, 0)
-        corpporation_id: typing.Final = session.get(AppSSO.ESI_CORPORATION_ID, 0)
-        alliance_id: typing.Final = session.get(AppSSO.ESI_ALLIANCE_ID, 0)
+        character_id: typing.Final = session.get(AppSessionKeys.KEY_ESI_CHARACTER_ID, 0)
+        corpporation_id, alliance_id = await AppFunctions.get_esi_corporation_alliance_ids(evedb, character_id)
 
         permitted: typing.Final = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id)
-        trusted: typing.Final = await AppFunctions.is_trusted(evedb, character_id, corpporation_id, alliance_id)
-        # contributor: typing.Final = await AppFunctions.is_contributor(evedb, character_id, corpporation_id, alliance_id)
-        contributor: typing.Final = any([session.get(AppSSO.APP_SESSION_TYPE, "USER") == "CONTRIBUTOR", character_id in AppConstants.MAGIC_ADMINS | AppConstants.MAGIC_CONTRIBUTORS])
+        contributor: typing.Final = any([session.get(AppSessionKeys.KEY_APP_SESSION_TYPE, "USER") == "CONTRIBUTOR", character_id in AppConstants.MAGIC_ADMINS | AppConstants.MAGIC_CONTRIBUTORS])
         suspect: typing.Final = character_id in AppConstants.MAGIC_SUSPECTS
         magic_character: typing.Final = character_id in AppConstants.MAGIC_ADMINS | AppConstants.MAGIC_CONTRIBUTORS
 
-        session[AppSSO.REQUEST_PATH] = quart.request.path
+        session[AppSessionKeys.KEY_APP_REQUEST_PATH] = quart.request.path
 
         ar = AppRequest(session=session,
                         character_id=character_id,
                         corpporation_id=corpporation_id,
                         alliance_id=alliance_id,
                         permitted=permitted,
-                        trusted=trusted,
                         contributor=contributor,
                         suspect=suspect,
                         magic_character=magic_character)
@@ -215,6 +232,7 @@ class AppFunctions:
             .where(
                 sqlalchemy.and_(
                     AppTables.Structure.fuel_expires == sqlalchemy.sql.expression.null(),
+                    AppTables.Structure.unanchors_at == sqlalchemy.sql.expression.null(),
                     AppTables.Structure.state.not_in(["anchoring", "unanchored", "unknown"])
                 )
             )
@@ -294,8 +312,6 @@ class AppFunctions:
                 )
             )
             .order_by(sqlalchemy.desc(AppTables.ExtractionHistory.chunk_arrival_time))
-            # .options(sqlalchemy.orm.selectinload(EveTables.ExtractionHistory.corporation))
-            # .options(sqlalchemy.orm.selectinload(EveTables.ExtractionHistory.moon))
             .limit(10)
         )
 
@@ -400,6 +416,7 @@ class AppFunctions:
 
         tracer_name: typing.Final = inspect.currentframe().f_code.co_name
         tracer: opentelemetry.trace.Tracer = opentelemetry.trace.get_tracer_provider().get_tracer(tracer_name)
+        # with contextlib.nullcontext():
         with tracer.start_as_current_span(f"{tracer_name}.results"):
             async for type_id, average in await session.stream(outer_query):
                 type_id_prices[type_id] = float(average)
@@ -517,6 +534,7 @@ class AppFunctions:
         period_end_date = now.date()
         period_start_date = period_end_date - datetime.timedelta(days=28)
 
+        # with contextlib.nullcontext():
         with tracer.start_as_current_span(f"{tracer_name}.market_prices"):
             type_id_prices = await AppFunctions.get_market_prices(session, period_start_date, period_end_date)
 
@@ -809,29 +827,3 @@ class AppFunctions:
                 if obj is not None:
                     return True
         return False
-
-    @staticmethod
-    @otel
-    async def is_trusted(evedb: AppDatabase, character_id: int, corpporation_id: int, alliance_id: int) -> bool:
-        is_permitted = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id, check_trust=False)
-        is_trusted = await AppFunctions.is_permitted(evedb, character_id, corpporation_id, alliance_id, check_trust=True)
-
-        if is_permitted and not is_trusted:
-            async with await evedb.sessionmaker() as session:
-
-                query = (
-                    sqlalchemy.select(AppTables.PeriodicCredentials)
-                    .where(
-                        sqlalchemy.and_(
-                            AppTables.PeriodicCredentials.is_enabled.is_(True),
-                            AppTables.PeriodicCredentials.character_id == character_id,
-                        )
-                    )
-                )
-
-                query_result: sqlalchemy.engine.Result = await session.execute(query)
-                obj = query_result.scalar_one_or_none()
-                if obj is not None:
-                    is_trusted = True
-
-        return is_trusted

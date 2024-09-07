@@ -79,8 +79,9 @@
 </section>
 <section id="technical_info">
     <h3>Technical Info</h3>
-    <p>This site is mostly async python with aiohttp and sqlalchemy.</p>
-    <p> The server is a <a href="https://www.vultr.com">www.vultr.com</a> virtual server. It is running <a href="https://www.openbsd.org">OpenBSD</a>. The framework used is <a href="https://quart.palletsprojects.com/en/latest/">Quart</a>.
+    <p>This site is mostly async Python ({{platform_info.python_version}}) with aiohttp and sqlalchemy.</p>
+    <p> The server is a <a href="https://www.vultr.com">www.vultr.com</a> virtual server. It is running <a href="https://www.openbsd.org">{{platform_info.system}}</a> ({{platform_info.release}} {{platform_info.processor}})
+        The framework used is <a href="https://quart.palletsprojects.com/en/latest/">Quart</a>.
         The TLS reverse proxy is <a href="https://nginx.org/">nginx</a>. </p>
 </section>
 <section id="credits">

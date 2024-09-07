@@ -1,11 +1,10 @@
 aiohttp>=3.9
 aioredis>=2
 asyncpg
+colorlog
 discord
-grpcio>=1.53.2,<=1.53.2
 hypercorn
 icalendar
-opentelemetry-exporter-otlp-proto-grpc
 opentelemetry-exporter-otlp-proto-http
 opentelemetry-instrumentation
 opentelemetry-instrumentation-aiohttp-client
@@ -15,6 +14,7 @@ opentelemetry-instrumentation-asyncpg
 opentelemetry-instrumentation-dbapi
 opentelemetry-instrumentation-jinja2
 opentelemetry-instrumentation-psycopg2
+opentelemetry-instrumentation-sqlalchemy
 opentelemetry-instrumentation-system-metrics
 python-dateutil
 python-jose

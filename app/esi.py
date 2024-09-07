@@ -36,13 +36,16 @@ class AppESI:
     SELF: typing.ClassVar = None
 
     @classmethod
-    def factory(cls, logger: logging.Logger):
+    def factory(cls, logger: logging.Logger, /):
         if cls.SELF is None:
-            redis_pool: typing.Final = redis.asyncio.ConnectionPool.from_url("redis://localhost/1", decode_responses=True)
+            redis_pool: typing.Final = redis.asyncio.ConnectionPool.from_url("redis://127.0.0.1/1", decode_responses=True)
             cls.SELF = cls(redis_pool, logger)
         return cls.SELF
 
-    def __init__(self, redis_pool: redis.asyncio.ConnectionPool, logger: logging.Logger) -> None:
+    redis_pool: redis.asyncio.ConnectionPool
+    logger: logging.Logger
+
+    def __init__(self, redis_pool: redis.asyncio.ConnectionPool, logger: logging.Logger, /) -> None:
         self.redis_pool: typing.Final = redis_pool
         self.logger: typing.Final = logger
 
@@ -53,7 +56,7 @@ class AppESI:
         return u
 
     @otel
-    async def get(self, http_session: aiohttp.ClientSession, url: str, request_headers: dict = None, request_params: dict = None) -> AppESIResult:
+    async def get(self, http_session: aiohttp.ClientSession, url: str, /, request_headers: dict = None, request_params: dict = None) -> AppESIResult:
 
         request_headers = request_headers or dict()
 
@@ -66,7 +69,7 @@ class AppESI:
             async with redis.asyncio.Redis.from_pool(self.redis_pool) as rc:
                 pv: typing.Final = await rc.get(json_key)
                 if pv:
-                    previous_json = json.loads(pv)
+                    previous_json = await asyncio.to_thread(json.loads, pv)
 
         previous_etag: str = None
         with contextlib.suppress(redis.RedisError):
@@ -80,6 +83,7 @@ class AppESI:
 
         attempts_remaining = AppConstants.ESI_ERROR_RETRY_COUNT
         while result_data is None and attempts_remaining > 0:
+            result_loglevel = logging.INFO
             try:
                 async with await http_session.get(url, headers=request_headers, params=request_params) as response:
                     result_status = response.status
@@ -96,9 +100,10 @@ class AppESI:
                                 lifetime = int(lifetime.total_seconds())
 
                             with contextlib.suppress(redis.RedisError):
+                                response_json_str = await asyncio.to_thread(json.dumps, response_json)
                                 async with redis.asyncio.Redis.from_pool(self.redis_pool) as rc:
                                     tasks: typing.Final = list()
-                                    tasks.append(rc.setex(name=json_key, value=json.dumps(response_json), time=lifetime))
+                                    tasks.append(rc.setex(name=json_key, value=response_json_str, time=lifetime))
                                     tasks.append(rc.setex(name=etag_key, value=response_etag, time=lifetime))
                                     await asyncio.gather(*tasks)
                         break
@@ -107,9 +112,12 @@ class AppESI:
                         result_data = previous_json
                         break
 
+                    if (100 * response.status // 100) == http.HTTPStatus.BAD_REQUEST:
+                        result_loglevel = logging.ERROR
+
                     attempts_remaining -= 1
                     otel_add_error(f"{response.url} -> {response.status}")
-                    self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {response.url} -> {response.status} / {await response.text()}")
+                    self.logger.log(result_loglevel, f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {response.url} -> {response.status} / {await response.text()}")
                     if response.status in [http.HTTPStatus.BAD_REQUEST, http.HTTPStatus.FORBIDDEN]:
                         attempts_remaining = 0
                     if attempts_remaining > 0:
@@ -131,7 +139,7 @@ class AppESI:
         return AppESIResult(result_status, result_data)
 
     @otel
-    async def post(self, http_session: aiohttp.ClientSession, url: str, body: dict, request_headers: dict = None, request_params: dict = None) -> AppESIResult:
+    async def post(self, http_session: aiohttp.ClientSession, url: str, body: dict, /, request_headers: dict = None, request_params: dict = None) -> AppESIResult:
 
         result_status = http.HTTPStatus.NOT_FOUND
         result_data = None
@@ -182,7 +190,7 @@ class AppESI:
 
         return False
 
-    async def pages(self, url: str, access_token: str, request_params: dict = None) -> AppESIResult:
+    async def pages(self, url: str, access_token: str, /, request_params: dict = None, connector: typing.Optional[aiohttp.TCPConnector] = None) -> AppESIResult:
 
         session_headers: typing.Final = dict()
         if len(access_token) > 0:
@@ -200,7 +208,7 @@ class AppESI:
             async with redis.asyncio.Redis.from_pool(self.redis_pool) as rc:
                 pv = await rc.get(json_key)
                 if pv is not None:
-                    previous_json = json.loads(pv)
+                    previous_json = await asyncio.to_thread(json.loads, pv)
 
         previous_pages: int = 0
         with contextlib.suppress(redis.RedisError):
@@ -218,9 +226,13 @@ class AppESI:
 
         result_status = http.HTTPStatus.NOT_FOUND
         result_data = None
+        result_loglevel = logging.INFO
         maxpageno: int = 0
 
-        async with aiohttp.ClientSession(headers=session_headers, connector=aiohttp.TCPConnector(limit_per_host=AppConstants.ESI_LIMIT_PER_HOST)) as http_session:
+        if connector is None:
+            connector = aiohttp.TCPConnector(limit_per_host=AppConstants.ESI_LIMIT_PER_HOST)
+
+        async with aiohttp.ClientSession(headers=session_headers, connector=connector) as http_session:
 
             attempts_remaining = AppConstants.ESI_ERROR_RETRY_COUNT
             while result_data is None and attempts_remaining > 0:
@@ -241,9 +253,10 @@ class AppESI:
                                     lifetime = int(lifetime.total_seconds())
 
                                 with contextlib.suppress(redis.RedisError):
+                                    response_json_str = await asyncio.to_thread(json.dumps, response_json)
                                     async with redis.asyncio.Redis.from_pool(self.redis_pool) as rc:
                                         tasks: typing.Final = list()
-                                        tasks.append(rc.setex(name=json_key, value=json.dumps(response_json), time=lifetime))
+                                        tasks.append(rc.setex(name=json_key, value=response_json_str, time=lifetime))
                                         tasks.append(rc.setex(name=pages_key, value=response_pages, time=lifetime))
                                         tasks.append(rc.setex(name=etag_key, value=response_etag, time=lifetime))
                                         await asyncio.gather(*tasks)
@@ -262,8 +275,9 @@ class AppESI:
                         else:
                             attempts_remaining -= 1
                             otel_add_error(f"{response.url} -> {response.status}")
-                            self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name, f"{response.url} -> {response.status}"))
+                            self.logger.warning("- {}.{}: {}".format(self.__class__.__name__, inspect.currentframe().f_code.co_name, f"{response.url} -> {response.status} {await response.text()}"))
                             if response.status in [http.HTTPStatus.BAD_REQUEST, http.HTTPStatus.FORBIDDEN]:
+                                result_loglevel = logging.ERROR
                                 attempts_remaining = 0
                             if attempts_remaining > 0:
                                 await asyncio.sleep(AppConstants.ESI_ERROR_SLEEP_TIME * AppConstants.ESI_ERROR_SLEEP_MODIFIERS.get(response.status, 1))
@@ -293,5 +307,5 @@ class AppESI:
                                 result_data = None
                                 break
 
-        self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {redis_url} -> {result_status}")
+        self.logger.log(result_loglevel, f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {redis_url} -> {result_status}")
         return AppESIResult(result_status, result_data)

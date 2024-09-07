@@ -13,8 +13,9 @@ import sqlalchemy.ext.asyncio
 import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
+import opentelemetry.trace
 
-from app import AppConstants, AppSSO, AppTables, AppTask
+from app import AppConstants, AppTables, AppTask
 from support.telemetry import otel, otel_add_error, otel_add_exception
 
 
@@ -22,27 +23,27 @@ class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
 
     @property
     @abc.abstractmethod
-    def object_class(self) -> typing.Any:
-        pass
+    def object_class(self) -> type:
+        ...
 
-    def object_valid(self, obj: typing.Any) -> bool:
+    def object_valid(self, obj: object) -> bool:
         return isinstance(obj, self.object_class)
 
     @abc.abstractmethod
-    def object_id(self, obj: typing.Any) -> int:
-        pass
+    def object_id(self, obj: type) -> int:
+        ...
 
     @abc.abstractmethod
     def index_url(self) -> str:
-        pass
+        ...
 
     @abc.abstractmethod
     def item_url(self, id: int) -> str:
-        pass
+        ...
 
     @abc.abstractmethod
     def item_dict(self, id: int, input: dict) -> dict:
-        pass
+        ...
 
     @otel
     async def _get_item_dict(self, id: int, http_session: aiohttp.ClientSession) -> dict:
@@ -79,21 +80,18 @@ class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
         self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {id} -> {None}")
         return None
 
-    @otel
-    async def run(self, client_session: collections.abc.MutableMapping):
-
+    async def run_once(self, client_session: collections.abc.MutableMapping, /):
         self.logger.info(f"> {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
 
         url: typing.Final = self.index_url()
-        access_token: typing.Final = client_session.get(AppSSO.ESI_ACCESS_TOKEN, '')
 
-        esi_result: typing.Final = await self.esi.pages(url, access_token, request_params=self.request_params)
+        esi_result: typing.Final = await self.esi.pages(url, '', request_params=self.request_params)
         if esi_result.status == http.HTTPStatus.NOT_MODIFIED:
             self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {esi_result.status=}")
             return
 
         obj_id_set: typing.Final = set()
-        if esi_result.status == http.HTTPStatus.OK:
+        if esi_result.status == http.HTTPStatus.OK and esi_result.data is not None:
             obj_id_set.update(set(esi_result.data))
 
         existing_obj_id_set: typing.Final = set()
@@ -123,11 +121,13 @@ class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
 
                 if len(task_list) > 0:
                     task_result_list = await asyncio.gather(*task_list)
-                    add_edict_list.extend([x for x in task_result_list if x])
+                    add_edict_list.extend([x for x in filter(None, task_result_list)])
 
             if len(add_edict_list) > 0:
                 add_obj_list = list()
                 for edict in add_edict_list:
+                    await asyncio.sleep(0)
+
                     if any([edict is None, len(edict) == 0]):
                         continue
                     add_obj_list.append(self.object_class(**edict))
@@ -143,14 +143,19 @@ class ESIBackfillTask(AppTask, metaclass=abc.ABCMeta):
 
         self.logger.info(f"< {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
 
+    async def run(self, client_session: collections.abc.MutableMapping, /):
+        tracer = opentelemetry.trace.get_tracer_provider().get_tracer(__name__)
+        with tracer.start_as_current_span(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}"):
+            await self.run_once(client_session)
+
 
 class ESIUniverseRegionsBackfillTask(ESIBackfillTask):
 
     @property
-    def object_class(self) -> typing.Any:
+    def object_class(self) -> type:
         return AppTables.UniverseRegion
 
-    def object_id(self, obj: typing.Any) -> int:
+    def object_id(self, obj: AppTables.UniverseRegion) -> int:
         if isinstance(obj, self.object_class):
             return obj.region_id
         return 0
@@ -178,10 +183,10 @@ class ESIUniverseRegionsBackfillTask(ESIBackfillTask):
 class ESIUniverseConstellationsBackfillTask(ESIBackfillTask):
 
     @property
-    def object_class(self) -> typing.Any:
+    def object_class(self) -> type:
         return AppTables.UniverseConstellation
 
-    def object_id(self, obj: typing.Any) -> int:
+    def object_id(self, obj: AppTables.UniverseConstellation) -> int:
         if isinstance(obj, self.object_class):
             return obj.constellation_id
         return 0
@@ -209,10 +214,10 @@ class ESIUniverseConstellationsBackfillTask(ESIBackfillTask):
 class ESIUniverseSystemsBackfillTask(ESIBackfillTask):
 
     @property
-    def object_class(self) -> typing.Any:
+    def object_class(self) -> type:
         return AppTables.UniverseSystem
 
-    def object_id(self, obj: typing.Any) -> int:
+    def object_id(self, obj: AppTables.UniverseSystem) -> int:
         if isinstance(obj, self.object_class):
             return obj.system_id
         return 0
@@ -240,10 +245,10 @@ class ESIUniverseSystemsBackfillTask(ESIBackfillTask):
 class ESIAllianceBackfillTask(ESIBackfillTask):
 
     @property
-    def object_class(self) -> typing.Any:
+    def object_class(self) -> type:
         return AppTables.Alliance
 
-    def object_id(self, obj: typing.Any) -> int:
+    def object_id(self, obj: AppTables.Alliance) -> int:
         if isinstance(obj, self.object_class):
             return obj.alliance_id
         return 0
@@ -268,10 +273,10 @@ class ESIAllianceBackfillTask(ESIBackfillTask):
 class ESINPCorporationBackfillTask(ESIBackfillTask):
 
     @property
-    def object_class(self) -> typing.Any:
+    def object_class(self) -> type:
         return AppTables.Corporation
 
-    def object_id(self, obj: typing.Any) -> int:
+    def object_id(self, obj: AppTables.Corporation) -> int:
         if isinstance(obj, self.object_class):
             return obj.corporation_id
         return 0

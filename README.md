@@ -45,7 +45,7 @@ The application uses the following scopes:
 Set environent variable for the ClientID:
 
 ```shell
-export EVEONLINE_CLIENT_ID='<client_id_from_developers_eveonline_com'
+export ESI_CLIENT_ID='<client_id_from_developers_eveonline_com'
 ```
 
 ## Database and SQLAlchemy 
@@ -53,7 +53,7 @@ export EVEONLINE_CLIENT_ID='<client_id_from_developers_eveonline_com'
 Should work with a suitable [SQLAlchemy](https://www.sqlalchemy.org) engine URL. I use:
 
 ```shell
-export SQLALCHEMY_DB_URL='postgresql+asyncpg://username:password@hostname/database'
+export ESI_SQLALCHEMY_DB_URL='postgresql+asyncpg://username:password@hostname/database'
 ```
 
 Setting this up on a local machine was approximately:

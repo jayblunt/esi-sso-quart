@@ -7,6 +7,7 @@ import sqlalchemy.ext.asyncio
 import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
+import opentelemetry.trace
 
 from app import AppAccessType, AppTables, AppTask
 from support.telemetry import otel, otel_add_exception
@@ -15,7 +16,7 @@ from support.telemetry import otel, otel_add_exception
 class AppAccessControlTask(AppTask):
 
     @otel
-    async def run(self, client_session: collections.abc.MutableMapping):
+    async def run_once(self, client_session: collections.abc.MutableMapping, /):
 
         self.logger.info(f"> {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
 
@@ -45,3 +46,8 @@ class AppAccessControlTask(AppTask):
             self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
 
         self.logger.info(f"< {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}")
+
+    async def run(self, client_session: collections.abc.MutableSet, /):
+        tracer = opentelemetry.trace.get_tracer_provider().get_tracer(__name__)
+        with tracer.start_as_current_span(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}"):
+            await self.run_once(client_session)

@@ -1,3 +1,4 @@
+import asyncio
 import dataclasses
 import datetime
 import functools
@@ -16,11 +17,6 @@ class AppEvent:
 @dataclasses.dataclass(frozen=True)
 class SSOEvent(AppEvent):
     character_id: int = 0
-    # corporation_id: int = 0
-    # alliance_id: int = 0
-    # is_permitted: bool = False
-    # is_trusted: bool = False
-    # is_contributor: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
