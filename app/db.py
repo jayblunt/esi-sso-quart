@@ -1,7 +1,7 @@
 import datetime
 import enum
-import logging
 import inspect
+import logging
 import typing
 
 import sqlalchemy
