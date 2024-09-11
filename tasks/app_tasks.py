@@ -17,9 +17,9 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
-from app import (AppConstants, AppDatabase, AppDatabaseTask, AppESI,
-                 AppTables, MoonExtractionCompletedEvent,
-                 MoonExtractionScheduledEvent, StructureStateChangedEvent)
+from app import (AppConstants, AppDatabase, AppDatabaseTask, AppESI, AppTables,
+                 MoonExtractionCompletedEvent, MoonExtractionScheduledEvent,
+                 StructureStateChangedEvent)
 from support.telemetry import otel, otel_add_exception
 
 

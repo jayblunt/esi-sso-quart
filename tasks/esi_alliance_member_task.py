@@ -6,12 +6,12 @@ import typing
 
 import aiohttp
 import aiohttp.client_exceptions
+import opentelemetry.trace
 import sqlalchemy
 import sqlalchemy.exc
 import sqlalchemy.ext.asyncio
 import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
-import opentelemetry.trace
 import sqlalchemy.sql
 
 from app import AppConstants, AppESIResult, AppTables, AppTask

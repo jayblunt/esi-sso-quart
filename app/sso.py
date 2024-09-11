@@ -2,17 +2,17 @@ import asyncio
 import base64
 import dataclasses
 import datetime
+import hashlib
 import http
 import inspect
-import secrets
 import logging
+import secrets
 import typing
 import urllib.parse
 import uuid
 
 import aiohttp
 import aiohttp.client_exceptions
-import hashlib
 import jose.exceptions
 import jose.jwt
 import quart
@@ -92,6 +92,21 @@ class OAuthProvider:
         return decoded_token
 
 
+class OAuthPCKE:
+
+    challenge: str
+    verifier: str
+    method: str = 'S256'
+
+    def __init__(self, challenge: typing.Optional[str] = None):
+        self.challenge = challenge
+        if challenge is None:
+            sha256: typing.Final = hashlib.sha256()
+            self.verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().replace("=", "")
+            sha256.update(self.verifier.encode())
+            self.challenge = base64.urlsafe_b64encode(sha256.digest()).decode().replace("=", "")
+
+
 @dataclasses.dataclass(frozen=True)
 class OAuthRecord:
     owner: str
@@ -111,7 +126,7 @@ class OAuthHookProvider:
         pass
 
 
-class AppSSOStorage:
+class OAuthStorageProvider:
 
     db: AppDatabase
     eventqueue: asyncio.Queue
@@ -127,7 +142,7 @@ class AppSSOStorage:
         self.logger: typing.Final = logger
 
     @otel
-    async def put_authlog(self, owner: str, character_id: int, session_id: str, auth_type: OAuthType) -> bool:
+    async def put_ssolog(self, owner: str, character_id: int, session_id: str, auth_type: OAuthType) -> bool:
         try:
             async with await self.db.sessionmaker() as session, session.begin():
                 session: sqlalchemy.ext.asyncio.AsyncSession
@@ -145,7 +160,7 @@ class AppSSOStorage:
             return True
 
     @otel
-    async def put_authrecord(self, oauth: OAuthRecord) -> bool:
+    async def put_ssorecord(self, oauth: OAuthRecord) -> bool:
 
         try:
             async with await self.db.sessionmaker() as session, session.begin():
@@ -191,7 +206,7 @@ class AppSSOStorage:
             return True
 
     @otel
-    async def first_authrecord(self) -> OAuthRecord:
+    async def first_ssorecord(self) -> OAuthRecord:
         try:
             async with await self.db.sessionmaker() as session, session.begin():
                 session: sqlalchemy.ext.asyncio.AsyncSession
@@ -248,7 +263,7 @@ class AppSSO:
     client_id: str
     provider: OAuthProvider
     hook_provider: OAuthHookProvider
-    storage: AppSSOStorage
+    storage: OAuthStorageProvider
     client_scopes: list[str]
     login_route: str
     logout_route: str
@@ -279,7 +294,7 @@ class AppSSO:
 
         self.provider: typing.Final = provider or OAuthProvider()
         self.hook_provider: typing.Final = hook_provider or OAuthHookProvider()
-        self.storage: typing.Final = AppSSOStorage(self.db, self.eventqueue, self.logger)
+        self.storage: typing.Final = OAuthStorageProvider(self.db, self.eventqueue, self.logger)
 
         self.login_route: typing.Final = login_route
         self.logout_route: typing.Final = logout_route
@@ -380,7 +395,7 @@ class AppSSO:
         while True:
             now: typing.Final = datetime.datetime.now(tz=datetime.UTC)
 
-            oauthrecord = await self.storage.first_authrecord()
+            oauthrecord = await self.storage.first_ssorecord()
             if oauthrecord is None:
                 self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: no active credentials")
                 await asyncio.sleep(refresh_interval.total_seconds())
@@ -414,8 +429,8 @@ class AppSSO:
                 updated_authrecord = dataclasses.replace(oauthrecord, session_active=False)
 
             await asyncio.gather(
-                self.storage.put_authrecord(updated_authrecord),
-                self.storage.put_authlog(updated_authrecord.owner, updated_authrecord.character_id, updated_authrecord.session_id, authevent)
+                self.storage.put_ssorecord(updated_authrecord),
+                self.storage.put_ssolog(updated_authrecord.owner, updated_authrecord.character_id, updated_authrecord.session_id, authevent)
             )
 
             await self.hook_provider.on_event(authevent, updated_authrecord)
@@ -492,13 +507,8 @@ class AppSSO:
         else:
             client_session[AppSessionKeys.KEY_APP_SESSION_TYPE] = "CONTRIBUTOR"
 
-        pcke_verifier: typing.Final = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().replace("=", "")
-        client_session[AppSessionKeys.KEY_OAUTH_PCKE_VERIFIER] = pcke_verifier
-
-        sha256: typing.Final = hashlib.sha256()
-        sha256.update(pcke_verifier.encode())
-        hash_digest: typing.Final = sha256.digest()
-        pcke_challenge: typing.Final = base64.urlsafe_b64encode(hash_digest).decode().replace("=", "")
+        pcke: typing.Final = OAuthPCKE()
+        client_session[AppSessionKeys.KEY_OAUTH_PCKE_VERIFIER] = pcke.verifier
 
         redirect_params: typing.Final = {
             'response_type': 'code',
@@ -506,8 +516,8 @@ class AppSSO:
             'redirect_uri': self.callback_url,
             'scope': " ".join(login_scopes),
             'state': client_session[AppSessionKeys.KEY_APP_SESSION_ID],
-            'code_challenge': pcke_challenge,
-            'code_challenge_method': 'S256',
+            'code_challenge': pcke.challenge,
+            'code_challenge_method': pcke.method
         }
 
         redirect_url = urllib.parse.urlparse(self.provider.authorization_endpoint)._replace(query=urllib.parse.urlencode(redirect_params)).geturl()
@@ -530,8 +540,8 @@ class AppSSO:
         if oauthrecord:
             oauthrecord = dataclasses.replace(oauthrecord, session_active=False)
             await asyncio.gather(
-                self.storage.put_authlog(oauthrecord.owner, oauthrecord.character_id, oauthrecord.session_id, OAuthType.LOGOUT),
-                self.storage.put_authrecord(oauthrecord)
+                self.storage.put_ssolog(oauthrecord.owner, oauthrecord.character_id, oauthrecord.session_id, OAuthType.LOGOUT),
+                self.storage.put_ssorecord(oauthrecord)
             )
             await self.hook_provider.on_event(OAuthType.LOGOUT, oauthrecord)
 
@@ -595,8 +605,8 @@ class AppSSO:
         client_session[AppSessionKeys.KEY_APP_SESSION_ID] = oauthrecord.session_id
 
         await asyncio.gather(
-            self.storage.put_authlog(oauthrecord.owner, oauthrecord.character_id, oauthrecord.session_id, authevent),
-            self.storage.put_authrecord(oauthrecord)
+            self.storage.put_ssolog(oauthrecord.owner, oauthrecord.character_id, oauthrecord.session_id, authevent),
+            self.storage.put_ssorecord(oauthrecord)
         )
 
         self.logger.info(f'{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: --- FIVE ---')

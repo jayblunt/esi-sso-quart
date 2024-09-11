@@ -1,20 +1,23 @@
-import aiohttp
 import asyncio
-import logging
 import dataclasses
 import datetime
-import dateutil.parser
+import http
 import inspect
+import logging
+import typing
+
+import aiohttp
+import dateutil.parser
 import sqlalchemy
 import sqlalchemy.ext.asyncio
-import typing
-import http
-from .events import SSOLoginEvent, SSOLogoutEvent, SSOTokenRefreshEvent
-from .db import AppDatabase, AppAuthType, OAuthType, AppTables
+
+from support.telemetry import otel, otel_add_exception
+
 from .constants import AppConstants
-from .esi import AppESIResult, AppESI
-from .sso import OAuthProvider, OAuthHookProvider, OAuthRecord
-from support.telemetry import otel_add_exception, otel
+from .db import AppAuthType, AppDatabase, AppTables, OAuthType
+from .esi import AppESI, AppESIResult
+from .events import SSOLoginEvent, SSOLogoutEvent, SSOTokenRefreshEvent
+from .sso import OAuthHookProvider, OAuthProvider, OAuthRecord
 
 
 class CCPSSOProvider(OAuthProvider):

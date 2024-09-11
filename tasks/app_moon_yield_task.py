@@ -7,13 +7,13 @@ import logging
 import os
 import typing
 
+import opentelemetry.trace
 import sqlalchemy
 import sqlalchemy.exc
 import sqlalchemy.ext.asyncio
 import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
-import opentelemetry.trace
 
 from app import AppDatabaseTask, AppTables
 from support.telemetry import otel, otel_add_exception

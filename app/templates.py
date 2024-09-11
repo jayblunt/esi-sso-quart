@@ -7,9 +7,9 @@ import quart.sessions
 
 from support.telemetry import otel
 
+from .constants import AppSessionKeys
 from .db import AppDatabase
 from .functions import AppFunctions
-from .constants import AppSessionKeys
 
 
 class AppTemplateCsacheEnum(enum.Enum):

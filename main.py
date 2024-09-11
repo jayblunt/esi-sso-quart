@@ -389,13 +389,6 @@ if __name__ == "__main__":
     app_port = app.config.get("PORT", 5050)
     app_host: typing.Final = app.config.get("HOST", "127.0.0.1")
 
-    # app_log_file: typing.Final = os.path.join(BASEDIR, "logs", "app.log")
-    # app_log_dir: typing.Final = os.path.dirname(app_log_file)
-    # if not os.path.isdir(app_log_dir):
-    #     os.makedirs(app_log_dir, 0o755)
-
-    # logging.basicConfig(level=logging.INFO, filename=app_log_file)
-
     if app_debug:
         app.run(host=app_host, port=app_port, debug=app_debug)
     else:

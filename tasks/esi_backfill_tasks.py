@@ -8,12 +8,12 @@ import typing
 
 import aiohttp
 import aiohttp.client_exceptions
+import opentelemetry.trace
 import sqlalchemy
 import sqlalchemy.ext.asyncio
 import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
-import opentelemetry.trace
 
 from app import AppConstants, AppTables, AppTask
 from support.telemetry import otel, otel_add_error, otel_add_exception
