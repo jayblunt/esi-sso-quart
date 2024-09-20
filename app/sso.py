@@ -115,6 +115,7 @@ class OAuthRecord:
     session_id: str
     session_scopes: str
     refresh_token: str
+    refresh_timestamp: datetime.datetime
     access_token_iat: datetime.datetime
     access_token_exp: datetime.datetime
     access_token: str
@@ -183,6 +184,7 @@ class OAuthStorageProvider:
                     session_id=oauth.session_id,
                     session_scopes=oauth.session_scopes,
                     refresh_token=oauth.refresh_token,
+                    refresh_timestamp=oauth.refresh_timestamp,
                     access_token_iat=oauth.access_token_iat,
                     access_token_exp=oauth.access_token_exp,
                     access_token=oauth.access_token
@@ -212,8 +214,11 @@ class OAuthStorageProvider:
                 session: sqlalchemy.ext.asyncio.AsyncSession
                 query = (
                     sqlalchemy.select(AppTables.OAuthSession.session_id)
-                    .where(AppTables.OAuthSession.session_active == sqlalchemy.sql.expression.true())
-                    .order_by(sqlalchemy.asc(AppTables.OAuthSession.access_token_exp))
+                    .where(sqlalchemy.and_(
+                        AppTables.OAuthSession.session_active == sqlalchemy.sql.expression.true(),
+                        AppTables.OAuthSession.refresh_timestamp.isnot(None)
+                    ))
+                    .order_by(sqlalchemy.asc(AppTables.OAuthSession.refresh_timestamp))
                     .limit(1)
                 )
                 query_result = await session.execute(query)
@@ -244,6 +249,7 @@ class OAuthStorageProvider:
                         session_id=query_obj.session_id,
                         session_scopes=query_obj.session_scopes,
                         refresh_token=query_obj.refresh_token,
+                        refresh_timestamp=query_obj.access_token_exp,
                         access_token_iat=query_obj.access_token_iat,
                         access_token_exp=query_obj.access_token_exp,
                         access_token=query_obj.access_token
@@ -390,20 +396,20 @@ class AppSSO:
                 break
 
     async def _refresh_token_task(self) -> None:
-        refresh_buffer: typing.Final = datetime.timedelta(seconds=30)
-        refresh_interval: typing.Final = datetime.timedelta(seconds=300)
+        token_refresh_buffer: typing.Final = datetime.timedelta(seconds=30)
+        token_refresh_interval: typing.Final = datetime.timedelta(seconds=300)
         while True:
             now: typing.Final = datetime.datetime.now(tz=datetime.UTC)
 
             oauthrecord = await self.storage.first_ssorecord()
             if oauthrecord is None:
                 self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: no active credentials")
-                await asyncio.sleep(refresh_interval.total_seconds())
+                await asyncio.sleep(token_refresh_interval.total_seconds())
                 continue
 
-            if oauthrecord.access_token_exp > (now + refresh_buffer):
-                remaining_interval: datetime.timedelta = (oauthrecord.access_token_exp) - (now + refresh_buffer)
-                remaining_sleep_interval = min(refresh_interval.total_seconds(), remaining_interval.total_seconds())
+            if oauthrecord.access_token_exp > (now + token_refresh_buffer):
+                remaining_interval: datetime.timedelta = (oauthrecord.access_token_exp) - (now + token_refresh_buffer)
+                remaining_sleep_interval = min(token_refresh_interval.total_seconds(), remaining_interval.total_seconds())
                 self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {oauthrecord.character_id} refresh in {int(remaining_interval.total_seconds())}, sleeping {int(remaining_sleep_interval)}")
                 await asyncio.sleep(remaining_sleep_interval)
                 continue
@@ -411,29 +417,37 @@ class AppSSO:
             esi_status = await self.esi.status()
             if esi_status is False:
                 self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: esi is not really available")
-                await asyncio.sleep(refresh_interval.total_seconds())
+                await asyncio.sleep(token_refresh_interval.total_seconds())
                 continue
 
             self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh {oauthrecord.character_id=}")
             refresh_result: typing.Final = await self.oauth_refresh(oauthrecord.session_id, oauthrecord.refresh_token)
 
             updated_authrecord = None
-            authevent = OAuthType.REFRESH_FAILURE
+            updated_authevent = None
             if refresh_result.status == http.HTTPStatus.OK:
-                authevent = OAuthType.REFRESH
+                updated_authevent = OAuthType.REFRESH
                 updated_authrecord = await self.oauth_decode_token_response(oauthrecord.session_id, refresh_result.data)
-            else:
-                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh {oauthrecord.character_id=}, {refresh_result=}")
 
-            if not updated_authrecord:
+            # 4xx: fail
+            elif refresh_result.status in [http.HTTPStatus.UNAUTHORIZED, http.HTTPStatus.FORBIDDEN]:
+                updated_authevent = OAuthType.REFRESH_FAILURE
+                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh {oauthrecord.character_id=}, {refresh_result=}")
                 updated_authrecord = dataclasses.replace(oauthrecord, session_active=False)
 
-            await asyncio.gather(
-                self.storage.put_ssorecord(updated_authrecord),
-                self.storage.put_ssolog(updated_authrecord.owner, updated_authrecord.character_id, updated_authrecord.session_id, authevent)
-            )
+            # Not a 4xx: schedule re-try
+            else:
+                next_refresh_time = now + token_refresh_interval
+                updated_authrecord = dataclasses.replace(oauthrecord, refresh_timestamp=next_refresh_time)
+                self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh {oauthrecord.character_id=}, {refresh_result=}, {updated_authrecord.refresh_timestamp=}")
 
-            await self.hook_provider.on_event(authevent, updated_authrecord)
+            tasks = [self.storage.put_ssorecord(updated_authrecord)]
+            if updated_authevent:
+                tasks.append(self.storage.put_ssolog(updated_authrecord.owner, updated_authrecord.character_id, updated_authrecord.session_id, updated_authevent))
+            await asyncio.gather(*tasks)
+
+            if updated_authevent:
+                await self.hook_provider.on_event(updated_authevent, updated_authrecord)
 
     @otel
     async def oauth_decode_token_response(self, session_id: str, token_response: dict) -> OAuthRecord:
@@ -477,6 +491,7 @@ class AppSSO:
             session_id=session_id,
             session_scopes=session_scopes,
             refresh_token=refresh_token,
+            refresh_timestamp=access_token_exp,
             access_token_iat=access_token_iat,
             access_token_exp=access_token_exp,
             access_token=access_token)
@@ -520,6 +535,7 @@ class AppSSO:
             'code_challenge_method': pcke.method
         }
 
+        # redirect_url: typing.Final = f"{self.provider.authorization_endpoint}?{urllib.parse.urlencode(redirect_params)}"
         redirect_url = urllib.parse.urlparse(self.provider.authorization_endpoint)._replace(query=urllib.parse.urlencode(redirect_params)).geturl()
 
         return quart.redirect(redirect_url)

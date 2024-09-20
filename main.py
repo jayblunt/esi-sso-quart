@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import datetime
 import http
 import inspect
 import logging
@@ -53,6 +54,7 @@ app.config.from_mapping({
     "SESSION_TYPE": "redis",
     "SESSION_REVERSE_PROXY": True,
     "SESSION_PERMANENT": True,
+    "PERMANENT_SESSION_LIFETIME": datetime.timedelta(weeks=6),
     "SESSION_COOKIE_HTTPONLY": True,
     "SESSION_COOKIE_SAMESITE": "Lax",
     "SESSION_COOKIE_SECURE": True,
