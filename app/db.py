@@ -419,6 +419,7 @@ class AppTables:
         session_id: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(nullable=False, primary_key=True)
         session_scopes: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(nullable=False)
         refresh_token: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(nullable=False)
+        refresh_timestamp: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(nullable=False)
         access_token_iat: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(nullable=False)
         access_token_exp: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(nullable=False)
         access_token: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(nullable=False)
