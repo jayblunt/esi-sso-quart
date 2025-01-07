@@ -17,6 +17,7 @@ opentelemetry-instrumentation-psycopg2
 opentelemetry-instrumentation-sqlalchemy
 opentelemetry-instrumentation-system-metrics
 python-dateutil
+python-dotenv
 python-jose
 quart>=0.19
 quart-session
@@ -24,4 +25,3 @@ redis
 SQLAlchemy>=2
 urllib3>=1.26,<2.0
 uvicorn
-dotenv
