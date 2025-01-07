@@ -33,6 +33,9 @@ from tasks import (AppAccessControlTask, AppEventConsumerTask,
 
 BASEDIR: typing.Final = os.path.dirname(os.path.realpath(__file__))
 
+from dotenv import load_dotenv
+load_dotenv()
+
 for environment_variable in ['ESI_CLIENT_ID', 'ESI_SQLALCHEMY_DB_URL']:
     assert len(os.getenv(environment_variable, '')) > 0, f'{environment_variable} is required'
 
