@@ -134,7 +134,7 @@ def otel_add_error(description: str | None = None) -> None:
         span.set_status(status=opentelemetry.trace.StatusCode.ERROR, description=description)
 
 
-def otel_add_exception(ex: Exception) -> None:
+def otel_add_exception(ex: BaseException) -> None:
     global _OTEL_INITIALIZED
     if not _OTEL_INITIALIZED:
         return

@@ -931,6 +931,9 @@ class AppStructureTask(AppDatabaseTask):
                     try:
                         obj = AppTables.ObserverRecordHistory(**edict)
                         type_id_set.add(obj.type_id)
+                        compressed_type_id = AppConstants.COMPRESSED_TYPE_DICT.get(obj.type_id)
+                        if compressed_type_id:
+                            type_id_set.add(compressed_type_id)
                         character_id_set.add(obj.character_id)
                         observer_records_set.add(obj)
                     except Exception as ex:
@@ -938,6 +941,7 @@ class AppStructureTask(AppDatabaseTask):
                         self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
 
             if len(type_id_set) > 0:
+                self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {type_id_set=}")
                 await self.backfill_types(type_id_set)
 
             if len(character_id_set) > 0:
@@ -1080,6 +1084,15 @@ class AppStructurePollingTask(AppStructureTask):
             else:
                 access_token: typing.Final = credentials.access_token
                 self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {corporation_id=}, {character_id=}, {credentials.is_director_role=}, {credentials.is_station_manager_role=}, {credentials.is_accountant_role=}")
+
+                esi_token_valid = await self.esi.verify(access_token)
+                logmsglevel = logging.INFO
+                if not esi_token_valid:
+                    logmsglevel = logging.ERROR
+
+                self.logger.log(logmsglevel, f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {character_id=}, {access_token=}, {esi_token_valid=}")
+                if not esi_token_valid:
+                    continue
 
                 # XXX: fixme
                 # need structures first, because of the db relationships .. urgh

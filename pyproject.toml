@@ -1,7 +1,21 @@
 [tool.pyright]
 ignore = ["other", "utility_conversion.py"]
-reportOptionalIterable = false
+reportOptionalIterable = true
+typeCheckingMode = "off"
 
 [tool.flake8]
 max-line-length = 240
 extend-ignore = "E501"
+
+[tool.pylint]
+ignore = ["other", "scratch", "utility_conversion.py"]
+max-line-length = 240
+
+[tool.pylint."messages control"]
+disable = [
+    "line-too-long",
+    "empty-docstring",
+    "missing-function-docstring",
+    "missing-class-docstring",
+    "missing-module-docstring"
+]

@@ -29,12 +29,19 @@ class AppTask(metaclass=abc.ABCMeta):
     CONFIGDIR: typing.Final = "CONFIGDIR"
     ENVIRONMENT: typing.Final = "ENVIRONMENT"
 
+    logger: logging.Logger
+    esi: AppESI
+    db: AppDatabase
+    eventqueue: asyncio.Queue
+    name: str
+    configdir: str
+
     @otel
-    def __init__(self, client_session: collections.abc.MutableMapping, esi: AppESI, db: AppDatabase, eventqueue: asyncio.Queue, logger: logging.Logger | None = None):
+    def __init__(self, client_session: collections.abc.MutableMapping, esi: AppESI, db: AppDatabase, eventqueue: asyncio.Queue, logger: typing.Optional[logging.Logger] = None):
         self.esi: typing.Final = esi
         self.db: typing.Final = db
         self.eventqueue: typing.Final = eventqueue
-        self.logger: typing.Final = logger
+        self.logger: typing.Final = logger or logging.getLogger(__name__)
         self.name: typing.Final = self.__class__.__name__
         self.configdir: typing.Final = os.path.abspath(client_session.get(self.CONFIGDIR, "."))
 
@@ -45,7 +52,7 @@ class AppTask(metaclass=abc.ABCMeta):
             client_session[self.name] = True
             self.task = asyncio.create_task(self.manage_task(client_session), name=self.__class__.__name__)
 
-    async def manage_task(self, client_session: collections.abc.MutableMapping):
+    async def manage_task(self, client_session: collections.abc.MutableMapping, /):
         try:
             await self.run(client_session)
         except asyncio.CancelledError as ex:
@@ -54,7 +61,7 @@ class AppTask(metaclass=abc.ABCMeta):
         client_session[self.name] = False
 
     @abc.abstractmethod
-    async def run(self, client_session: collections.abc.MutableMapping):
+    async def run(self, client_session: collections.abc.MutableMapping, /):
         ...
 
     @property
@@ -71,7 +78,7 @@ class AppDatabaseTask(AppTask):
     async def _get_type(self, type_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.UniverseType:
         url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/universe/types/{type_id}/"
         esi_result = await self.esi.get(http_session, url, request_params=self.request_params)
-        if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and esi_result.data is not None:
+        if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and isinstance(esi_result.data, dict):
             edict: typing.Final = dict()
             for k, v in esi_result.data.items():
                 if k in ["name"]:
@@ -89,7 +96,7 @@ class AppDatabaseTask(AppTask):
     async def _get_character(self, character_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.Corporation:
         url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/characters/{character_id}/"
         esi_result = await self.esi.get(http_session, url, request_params=self.request_params)
-        if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and esi_result.data is not None:
+        if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and isinstance(esi_result.data, dict):
             edict: typing.Final = dict({
                 "character_id": character_id
             })
@@ -116,7 +123,7 @@ class AppDatabaseTask(AppTask):
     async def _get_corporation(self, corporation_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.Corporation:
         url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/corporations/{corporation_id}/"
         esi_result = await self.esi.get(http_session, url, request_params=self.request_params)
-        if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and esi_result.data is not None:
+        if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and isinstance(esi_result.data, dict):
             edict: typing.Final = dict({
                 "corporation_id": corporation_id
             })
@@ -133,7 +140,7 @@ class AppDatabaseTask(AppTask):
     async def _get_moon(self, moon_id: int, http_session: aiohttp.ClientSession) -> None | AppTables.UniverseMoon:
         url: typing.Final = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/universe/moons/{moon_id}/"
         esi_result = await self.esi.get(http_session, url, request_params=self.request_params)
-        if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and esi_result.data is not None:
+        if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and isinstance(esi_result.data, dict):
             edict: typing.Final = dict()
             for k, v in esi_result.data.items():
                 if k in ["name"]:
@@ -175,8 +182,8 @@ class AppDatabaseTask(AppTask):
                 if len(missing_type_id_set) > 0:
                     async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=AppConstants.ESI_LIMIT_PER_HOST)) as http_session:
                         type_task_list: typing.Final = list()
-                        for id in missing_type_id_set:
-                            type_task_list.append(self._get_type(id, http_session))
+                        for type_id in missing_type_id_set:
+                            type_task_list.append(self._get_type(type_id, http_session))
 
                         if len(type_task_list) > 0:
                             task_result_list = await asyncio.gather(*type_task_list)
@@ -305,8 +312,8 @@ class AppDatabaseTask(AppTask):
                 if len(missing_corporation_id_set) > 0:
                     async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=AppConstants.ESI_LIMIT_PER_HOST)) as http_session:
                         corporation_task_list: typing.Final = list()
-                        for id in corporation_id_set - existing_corporation_id_set:
-                            corporation_task_list.append(self._get_corporation(id, http_session))
+                        for corporation_id in corporation_id_set - existing_corporation_id_set:
+                            corporation_task_list.append(self._get_corporation(corporation_id, http_session))
 
                         if len(corporation_task_list) > 0:
                             task_result_list = await asyncio.gather(*corporation_task_list)

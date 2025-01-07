@@ -26,7 +26,7 @@ from support.telemetry import otel, otel_initialize
 from tasks import (AppAccessControlTask, AppEventConsumerTask,
                    AppMarketHistoryTask, AppMoonYieldTask,
                    AppStructurePollingTask, ESIAllianceBackfillTask,
-                   ESINPCorporationBackfillTask,
+                   ESIAlliancMemberTask, ESINPCorporationBackfillTask,
                    ESIUniverseConstellationsBackfillTask,
                    ESIUniverseRegionsBackfillTask,
                    ESIUniverseSystemsBackfillTask)
@@ -106,6 +106,7 @@ async def _before_serving() -> None:
 
         AppMarketHistoryTask(evesession, esi, db, eventqueue, app.logger)
         AppAccessControlTask(evesession, esi, db, eventqueue, app.logger)
+        ESIAlliancMemberTask(evesession, esi, db, eventqueue, app.logger)
         AppMoonYieldTask(evesession, esi, db, eventqueue, app.logger)
 
         AppStructurePollingTask(evesession, esi, db, eventqueue, app.logger)
@@ -207,16 +208,24 @@ async def _top(top_type: str) -> quart.ResponseReturnValue:
                 except Exception as ex:
                     app.logger.error(f"{inspect.currentframe().f_code.co_name}: {ex=}")
 
+            if history is None:
+                return await quart.render_template(
+                    "mining_history_none.html",
+                    character_id=ar.character_id,
+                    is_contributor_character=ar.contributor,
+                    is_magic_character=ar.magic_character)
+
+            top_observers: typing.Final = list()
+            top_observers_isk_dict: typing.Final = dict()
+            top_characters: typing.Final = list()
+            top_characters_isk_dict: typing.Final = dict()
+
             # with tracer.start_as_current_span(f"{tracer_name}.process"):
             with contextlib.nullcontext():
-                top_observers: typing.Final = list()
-                top_observers_isk_dict: typing.Final = dict()
                 for (observer_id, isk) in history.observers:
                     top_observers.append(observer_id)
                     top_observers_isk_dict[observer_id] = isk
 
-                top_characters: typing.Final = list()
-                top_characters_isk_dict: typing.Final = dict()
                 for (character_id, isk) in history.characters:
                     top_characters.append(character_id)
                     top_characters_isk_dict[character_id] = isk
@@ -224,7 +233,7 @@ async def _top(top_type: str) -> quart.ResponseReturnValue:
             # with tracer.start_as_current_span(f"{tracer_name}.render"):
             with contextlib.nullcontext():
                 return await quart.render_template(
-                    "mining_rankings.html",
+                    "mining_history.html",
                     character_id=ar.character_id,
                     is_contributor_character=ar.contributor,
                     is_magic_character=ar.magic_character,
@@ -235,7 +244,8 @@ async def _top(top_type: str) -> quart.ResponseReturnValue:
                     top_observers=top_observers,
                     top_observers_isk=top_observers_isk_dict,
                     observer_timestamps=history.observer_timestamps,
-                    observer_names=history.observer_names)
+                    observer_names=history.observer_names,
+                    missing_prices=history.missing_prices)
 
         else:
             await eventqueue.put(AppAccessEvent(character_id=ar.character_id, url=quart.request.url, permitted=False))

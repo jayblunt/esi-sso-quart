@@ -301,6 +301,7 @@ class AppSSOHookProvider(OAuthHookProvider):
 
     @otel
     async def on_refresh(self, oauthevent: OAuthType, oauthrecord: OAuthRecord, /) -> None:
+        esi_token_valid = await self.esi.verify(oauthrecord.access_token)
         await self.app_put_contributor_record(oauthrecord)
         if OAuthType.REFRESH_FAILURE == oauthevent:
             await self.app_authlog(oauthrecord.character_id, oauthrecord.session_id, AppAuthType.REFRESH_FAILURE)

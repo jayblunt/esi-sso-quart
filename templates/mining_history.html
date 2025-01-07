@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block content %}
+<section>
+    <h3>Information</h3>
+    <p>ISK Estimates are based on the jita average price of the compressed version of the mined ore as of the end of the reported period.
+        If I can't find a price for the compressed version of the mined ore then the price of the uncompressed ore is used.
+        Market liquidity is better for compressed ore than uncompressed so .. we should never fail to to find the compressed variant in Jita.
+    </p>
+</section>
+{% if is_contributor_character %}
+{% if missing_prices %}
+<section>
+    <h3>Missing Prices: {{ top_period_start|date }} - {{ top_period_end|date }}</h3>
+    <p>Missing prices for the following items. ISK totals will be wrong because of these.</p>
+    <table>
+        <thead>
+            <tr>
+                <th class="align_left">Missing Item ID</th>
+                <th class="align_left">Missing Item Name</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for typd_id in missing_prices %}
+            <tr>
+                <td class="align_left">{{ typd_id }}</td>
+                <td class="align_left">{{ typd_id|esi_type_name }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td></td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+</section>
+{% endif %}
+{% if top_observers and top_observers_isk and observer_names %}
+<section>
+    <h3>Structure Rankings: {{ top_period_start|date }} - {{ top_period_end|date }}</h3>
+    <p></p>
+    <table>
+        <thead>
+            <tr>
+                <th class="align_left">Structure</th>
+                <th class="align_right">Last Mining Update</th>
+                <th class="align_right">ISK</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for observer_id in top_observers %}
+            <tr>
+                <td class="align_left">{{ observer_names[observer_id] }}</td>
+                <td class="align_right">{{ observer_timestamps[observer_id]|datetime }}</td>
+                <td class="align_right">{{ top_observers_isk[observer_id]|commafy }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td></td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+</section>
+{% endif %}
+{% if top_observers and top_characters %}
+<p></p>
+<p></p>
+{% endif %}
+{% if top_characters and top_characters_isk %}
+<section>
+    <h3>Character Rankings: {{ top_period_start|date }} - {{ top_period_end|date }}</h3>
+    <p></p>
+    <table>
+        <thead>
+            <tr>
+                <th class="align_left">Character</th>
+                <th class="align_right">ISK</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for character_id in top_characters %}
+            <tr>
+                <td class="align_left"><a href="{{ character_id|zkillboard_character }}" target="_blank">{{
+                        character_id|esi_character_name }}</a></td>
+                <td class="align_right">{{ top_characters_isk[character_id]|commafy }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td></td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+</section>
+{% endif %}
+{% else %}
+<p>Once I get this accounting / counting bug sorted out, I'll put this back up. Until then {{ character_id|esi_character_name }} cannot see the data ...</p>
+{% endif %}
+{% endblock %}

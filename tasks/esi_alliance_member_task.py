@@ -14,19 +14,16 @@ import sqlalchemy.ext.asyncio.engine
 import sqlalchemy.orm
 import sqlalchemy.sql
 
-from app import AppConstants, AppESIResult, AppTables, AppTask
+from app import AppConstants, AppESIResult, AppTables, AppDatabaseTask, AppAccessType
 from support.telemetry import otel, otel_add_exception
 
 
-class ESIAlliancMemberTask(AppTask):
+class ESIAlliancMemberTask(AppDatabaseTask):
 
     @otel
-    async def run_once(self, client_session: collections.abc.MutableMapping, /):
+    async def run_once(self, alliance_id: int, /):
 
         corporation_id_set: typing.Final = set()
-
-        # XXX: This obviously isn't running anywhere
-        alliance_id: typing.Final = 0
 
         # XXX: Add CAS to CAStabouts ...
         if alliance_id in [99002329]:
@@ -65,58 +62,28 @@ class ESIAlliancMemberTask(AppTask):
                 self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
 
         if len(corporation_id_set) > 0:
-
-            try:
-                async with await self.db.sessionmaker() as session, session.begin():
-
-                    existing_corporation_id_set: typing.Final = set()
-
-                    query = sqlalchemy.select(AppTables.Corporation)
-                    async for obj in await session.stream_scalars(query):
-                        obj: AppTables.Corporation
-                        existing_corporation_id_set.add(obj)
-
-                    obj_set = set()
-
-                    async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=AppConstants.ESI_LIMIT_PER_HOST)) as http_session:
-
-                        task_list: typing.Final = list()
-                        for corporation_id in corporation_id_set - existing_corporation_id_set:
-                            url = f"{AppConstants.ESI_API_ROOT}{AppConstants.ESI_API_VERSION}/corporations/{corporation_id}/"
-                            task_list.append(self.esi.get(http_session, url, request_params=self.request_params))
-
-                        if len(task_list) > 0:
-                            for esi_result in await asyncio.gather(*task_list):
-                                await asyncio.sleep(0)
-                                esi_result: AppESIResult
-
-                                if not esi_result:
-                                    continue
-
-                                if esi_result.status in [http.HTTPStatus.OK, http.HTTPStatus.NOT_MODIFIED] and esi_result.data is not None:
-                                    edict: typing.Final = dict({
-                                        "corporation_id": corporation_id
-                                    })
-
-                                    for k, v in dict(esi_result.data).items():
-                                        if k in ["alliance_id"]:
-                                            v = int(v)
-                                        elif k not in ["name", "ticker"]:
-                                            continue
-                                        edict[k] = v
-
-                                    obj = AppTables.Corporation(**edict)
-                                    obj_set.add(obj)
-
-                    if len(obj_set) > 0:
-                        session.add_all(obj_set)
-                        await session.commit()
-
-            except Exception as ex:
-                otel_add_exception(ex)
-                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
+            await self.backfill_corporations(corporation_id_set)
 
     async def run(self, client_session: collections.abc.MutableMapping, /):
         tracer = opentelemetry.trace.get_tracer_provider().get_tracer(__name__)
+        alliance_id_set: typing.Final[set[int]] = set()
         with tracer.start_as_current_span(f"{self.__class__.__name__}.{inspect.currentframe().f_code.co_name}"):
-            await self.run_once(client_session)
+            try:
+                async with await self.db.sessionmaker() as session:
+                    session: sqlalchemy.ext.asyncio.AsyncSession
+
+                    query = (
+                        sqlalchemy.select(AppTables.AccessControls)
+                        .where(AppTables.AccessControls.type == AppAccessType.ALLIANCE)
+                    )
+
+                    async for obj, in await session.stream(query):
+                        obj: AppTables.AccessControls
+                        alliance_id_set.add(obj.id)
+
+            except sqlalchemy.exc.SQLAlchemyError as ex:
+                otel_add_exception(ex)
+                self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {ex=}")
+
+            for alliance_id in alliance_id_set:
+                await self.run_once(alliance_id)

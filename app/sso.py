@@ -208,6 +208,25 @@ class OAuthStorageProvider:
             return True
 
     @otel
+    async def count_ssorecord(self) -> int:
+        try:
+            async with await self.db.sessionmaker() as session, session.begin():
+                session: sqlalchemy.ext.asyncio.AsyncSession
+                query = (
+                    sqlalchemy.select(sqlalchemy.func.count(1))
+                    .where(sqlalchemy.and_(
+                        AppTables.OAuthSession.session_active == sqlalchemy.sql.expression.true(),
+                        AppTables.OAuthSession.refresh_timestamp.isnot(None)
+                    ))
+                )
+                query_result = await session.execute(query)
+                return query_result.scalar_one_or_none()
+        except Exception as ex:
+            otel_add_exception(ex)
+
+        return None
+
+    @otel
     async def first_ssorecord(self) -> OAuthRecord:
         try:
             async with await self.db.sessionmaker() as session, session.begin():
@@ -414,6 +433,13 @@ class AppSSO:
                 await asyncio.sleep(remaining_sleep_interval)
                 continue
 
+            session_count = await self.storage.count_ssorecord()
+            self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {session_count=}")
+            if session_count and session_count > 0 and session_count < token_refresh_buffer.total_seconds():
+                extra_sleep = token_refresh_buffer.total_seconds() / float(session_count)
+                self.logger.info(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: {session_count=} extra_sleep={extra_sleep:.3f}")
+                await asyncio.sleep(extra_sleep)
+
             esi_status = await self.esi.status()
             if esi_status is False:
                 self.logger.warning(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: esi is not really available")
@@ -430,7 +456,7 @@ class AppSSO:
                 updated_authrecord = await self.oauth_decode_token_response(oauthrecord.session_id, refresh_result.data)
 
             # 4xx: fail
-            elif refresh_result.status in [http.HTTPStatus.UNAUTHORIZED, http.HTTPStatus.FORBIDDEN]:
+            elif refresh_result.status in [http.HTTPStatus.BAD_REQUEST, http.HTTPStatus.UNAUTHORIZED, http.HTTPStatus.FORBIDDEN]:
                 updated_authevent = OAuthType.REFRESH_FAILURE
                 self.logger.error(f"- {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}: refresh {oauthrecord.character_id=}, {refresh_result=}")
                 updated_authrecord = dataclasses.replace(oauthrecord, session_active=False)

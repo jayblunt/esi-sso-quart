@@ -19,7 +19,7 @@ import sqlalchemy.orm
 import sqlalchemy.sql
 import sqlalchemy.sql.functions
 
-from support.telemetry import otel, otel_add_event
+from support.telemetry import otel, otel_add_event, otel_add_error
 
 from .constants import AppConstants, AppSessionKeys
 from .db import AppAccessType, AppDatabase, AppTables
@@ -46,6 +46,7 @@ class AppMoonMiningHistory:
     observers: list[tuple[int, dict[int, int]]]
     observer_timestamps: dict[int, datetime.datetime]
     observer_names: dict[int, str]
+    missing_prices: list[int]
 
 
 class AppFunctions:
@@ -384,7 +385,10 @@ class AppFunctions:
 
         query_result: sqlalchemy.engine.Result = await session.execute(query)
         moon_structure = query_result.scalar_one_or_none()
-        return moon_structure
+        if isinstance(moon_structure, AppTables.StructureHistory):
+            return moon_structure
+
+        return None
 
     @staticmethod
     @otel
@@ -516,7 +520,7 @@ class AppFunctions:
             lookup_type_id = type_id
             if compressed_type_id in type_id_prices.keys():
                 lookup_type_id = compressed_type_id
-            isk = float(quantity) * float(type_id_prices.get(lookup_type_id, 0.0))
+            isk = int(round(float(quantity) * float(type_id_prices.get(lookup_type_id, 0.0)), 0))
             character_total_isk[character_id] += isk
 
         return observer_history_timestamp, [(x, dict(character_results[x])) for x in sorted(character_total_isk, key=character_total_isk.get, reverse=True)], dict(character_total_isk)
@@ -539,7 +543,6 @@ class AppFunctions:
             type_id_prices = await AppFunctions.get_market_prices(session, period_start_date, period_end_date)
 
         observer_skip_set: typing.Final = {
-            1035982181280,  # Eggheron - Coffee House
         }
 
         character_isk_totals = collections.defaultdict(int)
@@ -548,8 +551,9 @@ class AppFunctions:
 
         observer_timestamp_dict: typing.Final = dict()
         observer_name_dict: typing.Final = dict()
+        missing_price_set: typing.Final = set()
 
-        with tracer.start_as_current_span(f"{tracer_name}.isk_totals"):
+        with tracer.start_as_current_span(f"{tracer_name}.isk_totals") as span:
 
             inner_alias = sqlalchemy.orm.aliased(AppTables.ObserverHistory, name="inner")
             inner_query = (
@@ -597,12 +601,21 @@ class AppFunctions:
             results = [x async for x in await session.stream(max_query)]
             for row in results:
                 structure_id, character_id, type_id, quantity, timestamp = row
-                if type_id not in type_id_prices.keys():
+                type_id_price = type_id_prices.get(type_id, 0)
+
+                compressed_type_id = AppConstants.COMPRESSED_TYPE_DICT.get(type_id)
+                if compressed_type_id:
+                    compressed_type_id_price = type_id_prices.get(compressed_type_id, 0)
+                    if compressed_type_id_price > 0:
+                        type_id_price = compressed_type_id_price
+
+                if abs(type_id_price) < .01:
+                    otel_add_error(f"type_id:{type_id} price is missing")
+                    missing_price_set.add(type_id)
                     print(f"MISSING: {type_id=}")
                     continue
-                compressed_type_id = AppConstants.COMPRESSED_TYPE_DICT.get(type_id)
-                lookup_type_id = compressed_type_id or type_id
-                isk = float(quantity) * float(type_id_prices[lookup_type_id])
+
+                isk = int(round(float(quantity) * float(type_id_price), 0))
 
                 character_isk_totals[character_id] += isk
                 character_structure_isk_totals[character_id][structure_id] += isk
@@ -649,7 +662,8 @@ class AppFunctions:
             characters=[(x, character_isk_totals[x]) for x in sorted(character_isk_totals, key=character_isk_totals.get, reverse=True)],
             observers=[(x, structure_isk_totals[x]) for x in sorted(structure_isk_totals, key=structure_isk_totals.get, reverse=True)],
             observer_timestamps=observer_timestamp_dict,
-            observer_names=observer_name_dict
+            observer_names=observer_name_dict,
+            missing_prices=sorted(list(missing_price_set))
         )
 
         # return period_start_date, period_end_date, [(x, character_isk_totals[x]) for x in sorted(character_isk_totals, key=character_isk_totals.get, reverse=True)]

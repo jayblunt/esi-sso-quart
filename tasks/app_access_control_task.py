@@ -23,8 +23,6 @@ class AppAccessControlTask(AppTask):
         acl_bootstrap_set: typing.Final = {
             AppTables.AccessControls(type=AppAccessType.ALLIANCE, id=99002329, permit=True, trust=True),
             AppTables.AccessControls(type=AppAccessType.CORPORATION, id=1000169, permit=True, trust=True),
-            AppTables.AccessControls(type=AppAccessType.CORPORATION, id=98508146, permit=True, trust=True),
-            AppTables.AccessControls(type=AppAccessType.CORPORATION, id=98629865, permit=True, trust=True),
         }
 
         try:

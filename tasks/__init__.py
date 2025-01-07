@@ -8,3 +8,4 @@ from .esi_backfill_tasks import (ESIAllianceBackfillTask,  # noqa: F401
                                  ESIUniverseConstellationsBackfillTask,
                                  ESIUniverseRegionsBackfillTask,
                                  ESIUniverseSystemsBackfillTask)
+from .esi_alliance_member_task import ESIAlliancMemberTask  # noqa: F401
