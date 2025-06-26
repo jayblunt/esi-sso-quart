@@ -92,7 +92,7 @@ class OAuthProvider:
         return decoded_token
 
 
-class OAuthPCKE:
+class OAuthPKCE:
 
     challenge: str
     verifier: str
@@ -105,6 +105,12 @@ class OAuthPCKE:
             self.verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().replace("=", "")
             sha256.update(self.verifier.encode())
             self.challenge = base64.urlsafe_b64encode(sha256.digest()).decode().replace("=", "")
+
+    # def verify(self, verifier: str, /):
+    #     sha256: typing.Final = hashlib.sha256()
+    #     sha256.update(verifier.encode())
+    #     challenge = base64.urlsafe_b64encode(sha256.digest()).decode().replace("=", "")
+    #     return self.challenge == challenge
 
 
 @dataclasses.dataclass(frozen=True)
@@ -548,8 +554,8 @@ class AppSSO:
         else:
             client_session[AppSessionKeys.KEY_APP_SESSION_TYPE] = "CONTRIBUTOR"
 
-        pcke: typing.Final = OAuthPCKE()
-        client_session[AppSessionKeys.KEY_OAUTH_PCKE_VERIFIER] = pcke.verifier
+        pkce: typing.Final = OAuthPKCE()
+        client_session[AppSessionKeys.KEY_OAUTH_PKCE_VERIFIER] = pkce.verifier
 
         redirect_params: typing.Final = {
             'response_type': 'code',
@@ -557,8 +563,8 @@ class AppSSO:
             'redirect_uri': self.callback_url,
             'scope': " ".join(login_scopes),
             'state': client_session[AppSessionKeys.KEY_APP_SESSION_ID],
-            'code_challenge': pcke.challenge,
-            'code_challenge_method': pcke.method
+            'code_challenge': pkce.challenge,
+            'code_challenge_method': pkce.method
         }
 
         # redirect_url: typing.Final = f"{self.provider.authorization_endpoint}?{urllib.parse.urlencode(redirect_params)}"
@@ -613,10 +619,10 @@ class AppSSO:
         if quart.request.args["state"] != session_id:
             quart.abort(http.HTTPStatus.BAD_REQUEST, f"invalid session state in {self.callback_route}")
 
-        pcke_verifier: typing.Final = client_session.get(AppSessionKeys.KEY_OAUTH_PCKE_VERIFIER)
-        if pcke_verifier is None:
+        pkce_verifier: typing.Final = client_session.get(AppSessionKeys.KEY_OAUTH_PKCE_VERIFIER)
+        if pkce_verifier is None:
             quart.abort(http.HTTPStatus.BAD_REQUEST, f"invalid session state in {self.callback_route}")
-        del client_session[AppSessionKeys.KEY_OAUTH_PCKE_VERIFIER]
+        del client_session[AppSessionKeys.KEY_OAUTH_PKCE_VERIFIER]
 
         async with aiohttp.ClientSession() as http_session:
             post_request_headers: typing.Final = {"Host": urllib.parse.urlparse(self.provider.token_endpoint).netloc}
@@ -625,7 +631,7 @@ class AppSSO:
                 'client_id': self.client_id,
                 'redirect_uri': self.callback_url,
                 "code": quart.request.args['code'],
-                'code_verifier': pcke_verifier
+                'code_verifier': pkce_verifier
             }
 
             token_result = await self.esi.post(http_session, self.provider.token_endpoint, post_body, request_headers=post_request_headers)

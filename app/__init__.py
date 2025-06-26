@@ -3,7 +3,7 @@ from .db import (AppAccessType, AppAuthType, AppDatabase,  # noqa: F401
                  AppTables)
 from .esi import AppESI, AppESIResult  # noqa: F401
 from .events import (AppAccessEvent, AppEvent, AppStructureEvent,  # noqa: F401
-                     MoonExtractionCompletedEvent,
+                     DeferredAppEvent, MoonExtractionCompletedEvent,
                      MoonExtractionScheduledEvent, SSOEvent, SSOLoginEvent,
                      SSOLogoutEvent, SSOTokenRefreshEvent,
                      StructureStateChangedEvent)

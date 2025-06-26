@@ -71,3 +71,27 @@ class StructureStateChangedEvent(AppStructureEvent):
     state_timer_start: datetime.datetime | None = None
     state_timer_end: datetime.datetime | None = None
     fuel_expires: datetime.datetime | None = None
+
+
+class DeferredAppEvent:
+
+    timeout: float
+    queue: asyncio.Queue | None
+    event: AppEvent | None
+
+    def __init__(self, timeout: float, queue: asyncio.Queue, event: AppEvent, /):
+        self.timeout: typing.Final = timeout
+        self.queue = queue
+        self.event = event
+        self.task: typing.Final = asyncio.create_task(self.run())
+
+    async def run(self) -> None:
+        if self.timeout > 0.0:
+            await asyncio.sleep(self.timeout)
+        if self.queue and self.event:
+            await self.queue.put(self.event)
+
+    def cancel(self) -> None:
+        self.queue = None
+        self.event = None
+        self.task.cancel()
