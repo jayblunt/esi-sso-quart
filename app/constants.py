@@ -18,8 +18,10 @@ class AppConstants:
         504: 37,
     }
 
-    MAGIC_ADMINS: typing.Final = {}
-    MAGIC_CONTRIBUTORS: typing.Final = {}
+    MAGIC_ADMINS: typing.Final = {
+    }
+    MAGIC_CONTRIBUTORS: typing.Final = {
+    }
     MAGIC_SUSPECTS: typing.Final = {}
 
     MARKET_REGION: typing.Final = 10000002
@@ -40,4 +42,4 @@ class AppSessionKeys:
     KEY_APP_SESSION_TYPE: typing.Final = "session_type"
     KEY_APP_REQUEST_PATH: typing.Final = "request.path"
     KEY_ESI_CHARACTER_ID: typing.Final = "character_id"
-    KEY_OAUTH_PCKE_VERIFIER: typing.Final = "pcke_verifier"
+    KEY_OAUTH_PKCE_VERIFIER: typing.Final = "pkce_verifier"
